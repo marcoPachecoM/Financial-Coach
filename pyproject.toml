@@ -1,0 +1,55 @@
+[project]
+name = "financial-coach-api"
+version = "0.1.0"
+description = "Secure Flask REST API foundation for a financial coaching application"
+readme = "README.md"
+requires-python = ">=3.14"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-q --strict-markers --disable-warnings --cov=app --cov-report=term-missing --cov-fail-under=80"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+omit = [
+  "tests/*",
+]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.14"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_any_generics = false
+check_untyped_defs = false
+no_implicit_optional = true
+strict_optional = true
+exclude = ["tests/"]
+
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+  "flask_limiter.*",
+  "flask_migrate.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["app.users.models"]
+ignore_errors = true
