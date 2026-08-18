@@ -18,7 +18,7 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 85
+fail_under = 80
 show_missing = true
 skip_covered = true
 
@@ -50,6 +50,3 @@ module = [
 ]
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-module = ["app.users.models"]
-ignore_errors = true

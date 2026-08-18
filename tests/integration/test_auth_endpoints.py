@@ -60,9 +60,7 @@ def test_me_unauthenticated(client):
 
 
 def test_refresh_rotation(client, refresh_token):
-    response = client.post(
-        "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
-    )
+    response = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
     assert response.status_code == 200
 
     old_payload = decode_token(refresh_token, allow_expired=True)

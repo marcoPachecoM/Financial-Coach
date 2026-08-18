@@ -6,9 +6,9 @@ from app.extensions.providers import provider_registry
 class TransactionService:
     def __init__(
         self,
-        connection_repository=ConnectionRepository(),
+        connection_repository: ConnectionRepository | None = None,
     ):
-        self.connection_repository = connection_repository
+        self.connection_repository = connection_repository or ConnectionRepository()
 
     def fetch_transactions(self, user_id, connection_id, page=1, page_size=10):
         connection = self.connection_repository.get_by_id(connection_id)

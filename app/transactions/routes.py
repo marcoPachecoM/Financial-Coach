@@ -1,8 +1,6 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
-from app.auth.decorators import roles_required
-
 from app.transactions.service import TransactionService
 
 transactions_bp = Blueprint("transactions", __name__, url_prefix="/api/v1/transactions")

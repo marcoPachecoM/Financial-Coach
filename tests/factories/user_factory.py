@@ -2,9 +2,7 @@ from app.common.passwords import PasswordService
 from app.users.models import User, UserRole
 
 
-def build_user(
-    username: str, email: str, role: UserRole, password: str = "StrongPass123!"
-) -> User:
+def build_user(username: str, email: str, role: UserRole, password: str = "StrongPass123!") -> User:
     return User(
         username=username,
         email=email,

@@ -2,8 +2,8 @@ from repository import ConnectionRepository
 
 
 class ConnectionService:
-    def __init__(self, connection_repository=ConnectionRepository()):
-        self.connection_repository = connection_repository
+    def __init__(self, connection_repository: ConnectionRepository | None = None):
+        self.connection_repository = connection_repository or ConnectionRepository()
 
     def create_connection(self, connection_data):
         return self.connection_repository.create(connection_data)

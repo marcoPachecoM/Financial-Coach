@@ -33,9 +33,7 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(HTTPException)
     def handle_http_exception(error: HTTPException):
-        message = (
-            error.description if isinstance(error.description, str) else "HTTP error."
-        )
+        message = error.description if isinstance(error.description, str) else "HTTP error."
         return error_response("HTTP_ERROR", message, error.code or 400)
 
     @app.errorhandler(Exception)

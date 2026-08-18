@@ -1,17 +1,16 @@
-from app.transactions.ingestion.base import TransactionProvider
-from app.transactions.domain.models import Transaction
 import pandas as pd
+
+from app.transactions.domain.models import Transaction
+from app.transactions.ingestion.base import TransactionProvider
 
 
 class CSVTransactionProvider(TransactionProvider):
-
     def fetch_transactions(
         self,
         connection,
         page: int = 1,
         page_size: int = 10,
     ) -> list[Transaction]:
-
         records = pd.read_csv(connection.external_id).to_dict(orient="records")
 
         start = (page - 1) * page_size

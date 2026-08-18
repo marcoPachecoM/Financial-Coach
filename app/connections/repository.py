@@ -1,8 +1,7 @@
 from sqlalchemy import select
 
-from app.extensions.database import db
-from app.users.models import User
 from app.connections.models import Connection
+from app.extensions.database import db
 
 
 class ConnectionRepository:

@@ -64,12 +64,8 @@ class BaseConfig:
     RATELIMIT_STORAGE_URI = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
     RATELIMIT_DEFAULT = os.getenv("RATE_LIMIT_DEFAULT", "100 per hour")
 
-    CORS_ALLOWED_ORIGINS = _parse_csv(
-        os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
-    )
-    CORS_SUPPORTS_CREDENTIALS = _parse_bool(
-        os.getenv("CORS_SUPPORTS_CREDENTIALS"), True
-    )
+    CORS_ALLOWED_ORIGINS = _parse_csv(os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"))
+    CORS_SUPPORTS_CREDENTIALS = _parse_bool(os.getenv("CORS_SUPPORTS_CREDENTIALS"), True)
 
     MAX_CONTENT_LENGTH = _parse_int(os.getenv("MAX_CONTENT_LENGTH"), 1024 * 1024)
     JSON_SORT_KEYS = False
@@ -115,10 +111,7 @@ class ProductionConfig(BaseConfig):
             "dev-only-secret-change-me",
             "dev-only-jwt-secret-change-me",
         }
-        if (
-            cls.SECRET_KEY in insecure_defaults
-            or cls.JWT_SECRET_KEY in insecure_defaults
-        ):
+        if cls.SECRET_KEY in insecure_defaults or cls.JWT_SECRET_KEY in insecure_defaults:
             raise ConfigError("Insecure default secrets are not allowed in production.")
 
 

@@ -1,4 +1,3 @@
-from app.connections.models import Connection
 import os
 from pathlib import Path
 
@@ -6,9 +5,9 @@ from dotenv import load_dotenv
 
 from app import create_app
 from app.common.passwords import PasswordService
+from app.connections.models import Connection
 from app.extensions.database import db
 from app.extensions.providers import Providers
-
 from app.users.models import User, UserRole
 from app.users.repository import UserRepository
 
@@ -63,17 +62,19 @@ def seed_demo_users() -> None:
         )
         db.session.add(user)
 
+    db.session.flush()
+
     for demo in DEMO_USERS:
-        user = repository.get_by_username(demo["username"])
-        if not user:
+        saved_user: User | None = repository.get_by_username(demo["username"])
+        if not saved_user:
             continue
 
         # Create a default connection for each demo user
         connection = Connection(
-            user_id=user.public_id,
+            user_id=saved_user.public_id,
             provider=Providers.CSV,
-            name=f"{user.username} Connection",
-            external_id=f"{ROOT_DIR}/mocks/{user.username}_clean_transactions.csv",
+            name=f"{saved_user.username} Connection",
+            external_id=f"{ROOT_DIR}/mocks/{saved_user.username}_clean_transactions.csv",
         )
         db.session.add(connection)
 

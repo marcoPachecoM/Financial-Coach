@@ -9,8 +9,8 @@ class Providers(str, enum.Enum):
 
 
 class ProviderRegistry:
-    def __init__(self):
-        self._providers = {}
+    def __init__(self) -> None:
+        self._providers: dict[str, TransactionProvider] = {}
 
     def register(self, provider_name, provider: TransactionProvider):
         self._providers[provider_name] = provider

@@ -7,9 +7,7 @@ class LoginSchema(Schema):
 
 
 class RefreshSchema(Schema):
-    refresh_token = fields.Str(
-        required=True, validate=validate.Length(min=20, max=4096)
-    )
+    refresh_token = fields.Str(required=True, validate=validate.Length(min=20, max=4096))
 
 
 class UserOutputSchema(Schema):

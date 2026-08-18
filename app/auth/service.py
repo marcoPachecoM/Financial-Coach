@@ -22,12 +22,9 @@ class AuthService:
         self.refresh_repository = refresh_repository or RefreshTokenRepository()
 
     def authenticate(self, email: str, password: str) -> User:
-
         user = self.user_repository.get_by_email(email)
         if user is None:
-            log_security_event(
-                "auth_failed", {"reason": "invalid_credentials", "email": email}
-            )
+            log_security_event("auth_failed", {"reason": "invalid_credentials", "email": email})
             raise UnauthorizedError("Invalid credentials.", code="INVALID_CREDENTIALS")
 
         if not user.is_active:
@@ -67,9 +64,7 @@ class AuthService:
         refresh_payload = decode_token(refresh_token, allow_expired=False)
         refresh_jti = str(refresh_payload["jti"])
         refresh_exp = datetime.fromtimestamp(float(refresh_payload["exp"]), tz=UTC)
-        self.refresh_repository.create(
-            jti=refresh_jti, user_id=user.id, expires_at=refresh_exp
-        )
+        self.refresh_repository.create(jti=refresh_jti, user_id=user.id, expires_at=refresh_exp)
 
         return {
             "access_token": access_token,
@@ -86,9 +81,7 @@ class AuthService:
         old_jti = str(payload.get("jti", ""))
 
         if not old_jti or not user_public_id:
-            raise UnauthorizedError(
-                "Invalid token claims.", code="INVALID_TOKEN_CLAIMS"
-            )
+            raise UnauthorizedError("Invalid token claims.", code="INVALID_TOKEN_CLAIMS")
 
         user = self.user_repository.get_by_public_id(user_public_id)
         if user is None or not user.is_active:
@@ -99,18 +92,14 @@ class AuthService:
             log_security_event(
                 "refresh_failed", {"reason": "unknown_jti", "user_id": user_public_id}
             )
-            raise UnauthorizedError(
-                "Invalid refresh token.", code="INVALID_REFRESH_TOKEN"
-            )
+            raise UnauthorizedError("Invalid refresh token.", code="INVALID_REFRESH_TOKEN")
 
         if token_state.is_revoked:
             self.refresh_repository.mark_reuse(token_state)
             log_security_event(
                 "refresh_reuse_detected", {"jti": old_jti, "user_id": user_public_id}
             )
-            raise UnauthorizedError(
-                "Refresh token reuse detected.", code="REFRESH_TOKEN_REUSE"
-            )
+            raise UnauthorizedError("Refresh token reuse detected.", code="REFRESH_TOKEN_REUSE")
 
         new_tokens = self.issue_tokens(user)
         new_payload = decode_token(new_tokens["refresh_token"], allow_expired=False)
@@ -123,9 +112,7 @@ class AuthService:
         payload = decode_token(refresh_token, allow_expired=True)
         jti = str(payload.get("jti", ""))
         if not jti:
-            raise UnauthorizedError(
-                "Invalid refresh token.", code="INVALID_REFRESH_TOKEN"
-            )
+            raise UnauthorizedError("Invalid refresh token.", code="INVALID_REFRESH_TOKEN")
 
         token_state = self.refresh_repository.get_by_jti(jti)
         if token_state and not token_state.is_revoked:

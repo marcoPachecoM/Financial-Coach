@@ -1,4 +1,4 @@
-from marshmallow import Schema, ValidationError, fields, validate
+from marshmallow import Schema, fields, validate
 
 
 class TransactionSchema(Schema):

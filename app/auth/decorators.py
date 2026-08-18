@@ -15,9 +15,7 @@ def roles_required(*allowed_roles: str):
             claims = get_jwt()
             role = str(claims.get("role", "")).upper()
             if role not in allowed:
-                raise ForbiddenError(
-                    "Insufficient role permissions.", code="ROLE_FORBIDDEN"
-                )
+                raise ForbiddenError("Insufficient role permissions.", code="ROLE_FORBIDDEN")
             return fn(*args, **kwargs)
 
         return wrapper
