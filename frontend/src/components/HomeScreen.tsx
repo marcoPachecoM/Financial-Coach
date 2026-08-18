@@ -8,6 +8,7 @@ import { UploadModal } from './common/UploadModal';
 import { MetricCards } from './dashboard/MetricCards';
 import { CategoryFilters } from './dashboard/CategoryFilters';
 import { SpendingTrendChart } from './dashboard/SpendingTrendChart';
+import { SpendingByCategoryChart } from './dashboard/SpendingByCategoryChart';
 import { TransactionsTable } from './dashboard/TransactionsTable';
 import { CopilotPanel } from './copilot/CopilotPanel';
 
@@ -71,10 +72,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const baseBalance = INITIAL_METRIC_SUMMARY.totalBalance;
     // Adjust balance based on expenses
     const adjustedBalance = baseBalance - totalSpent + 400;
-
-    console.log("Transacciones actuales:", transactions.length);
-    console.log("Límites calculados:", dateLimits);
-    console.log("Presets disponibles:", datePresets);
 
     return {
       ...INITIAL_METRIC_SUMMARY,
@@ -281,7 +278,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               selectedCategory={selectedCategory}
             />
 
-            {/* 4. Transactions Data Grid */}
+            {/* 4. Analytics: Spending by Category Chart */}
+            <SpendingByCategoryChart
+              transactions={dateFilteredTransactions}
+              selectedCategory={selectedCategory}
+              onSelectCategory={setSelectedCategory}
+            />
+
+            {/* 5. Transactions Data Grid */}
             <TransactionsTable
               transactions={dateFilteredTransactions}
               selectedCategory={selectedCategory}
