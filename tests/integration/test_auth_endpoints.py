@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 import jwt
 from flask_jwt_extended import decode_token
 
-
 from app.extensions.database import db
 from app.users.models import RefreshToken, TokenType
 

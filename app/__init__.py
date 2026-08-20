@@ -71,9 +71,7 @@ def _register_jwt_callbacks(app: Flask) -> None:
     @jwt.token_verification_loader
     def custom_token_verification(_jwt_header, jwt_payload):
         required_claims = app.config["JWT_REQUIRED_CLAIMS"]
-        missing_claims = [
-            claim for claim in required_claims if claim not in jwt_payload
-        ]
+        missing_claims = [claim for claim in required_claims if claim not in jwt_payload]
         if missing_claims:
             return False
 
@@ -99,13 +97,8 @@ def create_app(env_name: str | None = None) -> Flask:
     config_class.validate()
     app.config.from_mapping(config_to_dict(config_class))
 
-    if (
-        app.config["CORS_SUPPORTS_CREDENTIALS"]
-        and "*" in app.config["CORS_ALLOWED_ORIGINS"]
-    ):
-        raise ConfigError(
-            "Wildcard CORS origins are forbidden when credentials are enabled."
-        )
+    if app.config["CORS_SUPPORTS_CREDENTIALS"] and "*" in app.config["CORS_ALLOWED_ORIGINS"]:
+        raise ConfigError("Wildcard CORS origins are forbidden when credentials are enabled.")
 
     db.init_app(app)
     migrate.init_app(app, db)
