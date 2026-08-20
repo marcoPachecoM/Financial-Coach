@@ -6,11 +6,14 @@ class AppError(Exception):
     message = "An application error occurred."
     status_code = HTTPStatus.BAD_REQUEST
 
-    def __init__(self, message: str | None = None, code: str | None = None) -> None:
-        if message:
-            self.message = message
-        if code:
-            self.code = code
+    def __init__(
+        self,
+        message: str | None = None,
+        code: str | None = None,
+    ) -> None:
+        self.message = message or self.message
+        self.code = code or self.code
+
         super().__init__(self.message)
 
 

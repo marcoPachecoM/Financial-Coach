@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import date
 
 from app.connections.models import Connection
 from app.transactions.domain.models import Transaction
@@ -10,6 +11,8 @@ class TransactionProvider(ABC):
         self,
         connection: Connection,
         page: int = 1,
-        page_size: int = 10,
-    ) -> list[Transaction]:
-        pass
+        size: int = 10,
+        super_category: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> tuple[list[Transaction], int, bool]: ...

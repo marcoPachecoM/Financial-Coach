@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
 from app.extensions.database import db
-from app.users.models import RefreshToken, User, UserRole
+from app.users.models import RefreshToken, TokenType, User, UserRole
 
 
 @dataclass(frozen=True)
@@ -122,7 +122,7 @@ def access_token(app: Flask, admin_user: TestUser) -> str:
             identity=admin_user.public_id,
             additional_claims={
                 "role": admin_user.role.value,
-                "type": "access",
+                "type": TokenType.ACCESS,
                 "iss": app.config["JWT_ISSUER"],
                 "aud": app.config["JWT_AUDIENCE"],
             },
@@ -136,7 +136,6 @@ def refresh_token(app: Flask, admin_user: TestUser) -> str:
             identity=admin_user.public_id,
             additional_claims={
                 "role": admin_user.role.value,
-                "type": "refresh",
                 "iss": app.config["JWT_ISSUER"],
                 "aud": app.config["JWT_AUDIENCE"],
             },
@@ -161,7 +160,7 @@ def expired_access_token(app: Flask, admin_user: TestUser) -> str:
             identity=admin_user.public_id,
             additional_claims={
                 "role": admin_user.role.value,
-                "type": "access",
+                "type": TokenType.ACCESS,
                 "iss": app.config["JWT_ISSUER"],
                 "aud": app.config["JWT_AUDIENCE"],
             },

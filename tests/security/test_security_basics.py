@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 
 import jwt
 
+from app.users.models import TokenType
+
 
 def test_security_headers_present(client):
     response = client.get("/api/v1/health")
@@ -66,7 +68,7 @@ def test_jwt_alg_none_rejected(app, client, admin_user):
     payload = {
         "sub": admin_user.public_id,
         "jti": "none-alg-jti",
-        "type": "access",
+        "type": TokenType.ACCESS,
         "iat": int(datetime.now(UTC).timestamp()),
         "nbf": int(datetime.now(UTC).timestamp()),
         "exp": int(datetime.now(UTC).timestamp()) + 300,

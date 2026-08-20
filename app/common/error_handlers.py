@@ -38,5 +38,5 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(Exception)
     def handle_unexpected(error: Exception):
-        logging.getLogger("app").exception("unhandled_exception", exc_info=error)
+        logging.getLogger(__name__).exception("unhandled_exception", exc_info=error)
         return error_response("INTERNAL_SERVER_ERROR", "Unexpected server error.", 500)

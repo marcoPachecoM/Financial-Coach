@@ -3,8 +3,9 @@ from datetime import UTC, datetime
 import jwt
 from flask_jwt_extended import decode_token
 
+
 from app.extensions.database import db
-from app.users.models import RefreshToken
+from app.users.models import RefreshToken, TokenType
 
 
 def test_login_success(client, admin_user):
@@ -60,7 +61,9 @@ def test_me_unauthenticated(client):
 
 
 def test_refresh_rotation(client, refresh_token):
-    response = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    response = client.post(
+        "/api/v1/auth/refresh", headers={"Authorization": f"Bearer {refresh_token}"}
+    )
     assert response.status_code == 200
 
     old_payload = decode_token(refresh_token, allow_expired=True)
@@ -72,16 +75,22 @@ def test_refresh_rotation(client, refresh_token):
 
 
 def test_refresh_reuse_detected(client, refresh_token):
-    first = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    first = client.post(
+        "/api/v1/auth/refresh", headers={"Authorization": f"Bearer {refresh_token}"}
+    )
     assert first.status_code == 200
 
-    second = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    second = client.post(
+        "/api/v1/auth/refresh", headers={"Authorization": f"Bearer {refresh_token}"}
+    )
     assert second.status_code == 401
     assert second.get_json()["error"]["code"] == "REFRESH_TOKEN_REUSE"
 
 
 def test_logout_revokes_refresh_token(client, refresh_token):
-    response = client.post("/api/v1/auth/logout", json={"refresh_token": refresh_token})
+    response = client.post(
+        "/api/v1/auth/logout", headers={"Authorization": f"Bearer {refresh_token}"}
+    )
     assert response.status_code == 200
 
     payload = decode_token(refresh_token, allow_expired=True)
@@ -107,7 +116,7 @@ def test_role_forbidden_for_client(app, client, client_user):
             identity=client_user.public_id,
             additional_claims={
                 "role": client_user.role.value,
-                "type": "access",
+                "type": TokenType.ACCESS,
                 "iss": app.config["JWT_ISSUER"],
                 "aud": app.config["JWT_AUDIENCE"],
             },
@@ -120,7 +129,10 @@ def test_role_forbidden_for_client(app, client, client_user):
 
 
 def test_refresh_rejects_access_token(client, access_token):
-    response = client.post("/api/v1/auth/refresh", json={"refresh_token": access_token})
+    response = client.post(
+        "/api/v1/auth/refresh",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
     assert response.status_code == 401
 
 
@@ -150,7 +162,7 @@ def test_invalid_audience_rejected(app, client, admin_user):
     payload = {
         "sub": admin_user.public_id,
         "jti": "invalid-aud-jti",
-        "type": "access",
+        "type": TokenType.ACCESS,
         "iat": int(datetime.now(UTC).timestamp()),
         "nbf": int(datetime.now(UTC).timestamp()),
         "exp": int(datetime.now(UTC).timestamp()) + 300,
@@ -171,7 +183,7 @@ def test_invalid_issuer_rejected(app, client, admin_user):
     payload = {
         "sub": admin_user.public_id,
         "jti": "invalid-iss-jti",
-        "type": "access",
+        "type": TokenType.ACCESS,
         "iat": int(datetime.now(UTC).timestamp()),
         "nbf": int(datetime.now(UTC).timestamp()),
         "exp": int(datetime.now(UTC).timestamp()) + 300,

@@ -12,6 +12,7 @@ from app.config import ConfigError, get_config
 from app.config.settings import config_to_dict
 from app.extensions import Providers, db, jwt, limiter, migrate, provider_registry
 from app.transactions.ingestion.csv import CSVTransactionProvider
+from app.users.models import TokenType
 
 
 def _register_jwt_callbacks(app: Flask) -> None:
@@ -19,7 +20,7 @@ def _register_jwt_callbacks(app: Flask) -> None:
 
     @jwt.token_in_blocklist_loader
     def check_if_token_revoked(_jwt_header, jwt_payload):
-        if jwt_payload.get("type") != "refresh":
+        if jwt_payload.get("type") != TokenType.REFRESH:
             return False
         jti = str(jwt_payload.get("jti", ""))
         return auth_service.is_refresh_token_revoked(jti)
@@ -38,9 +39,29 @@ def _register_jwt_callbacks(app: Flask) -> None:
         return error_response("TOKEN_EXPIRED", "Authentication token expired.", 401)
 
     @jwt.revoked_token_loader
-    def revoked_token_callback(_jwt_header, _jwt_payload):
+    def revoked_token_callback(_jwt_header, jwt_payload):
+        token_type = jwt_payload.get("type")
+        if token_type == TokenType.REFRESH:
+            jti = str(jwt_payload.get("jti", ""))
+            if auth_service.is_refresh_token_reuse(jti):
+                log_security_event(
+                    "refresh_token_reuse",
+                    {"jti": jti},
+                )
+
+                return error_response(
+                    "REFRESH_TOKEN_REUSE",
+                    "Refresh token reuse detected.",
+                    401,
+                )
+
         log_security_event("jwt_revoked")
-        return error_response("TOKEN_REVOKED", "Authentication token revoked.", 401)
+
+        return error_response(
+            "TOKEN_REVOKED",
+            "Authentication token revoked.",
+            401,
+        )
 
     @jwt.token_verification_failed_loader
     def verification_failed_callback(_jwt_header, _jwt_payload):
@@ -50,12 +71,14 @@ def _register_jwt_callbacks(app: Flask) -> None:
     @jwt.token_verification_loader
     def custom_token_verification(_jwt_header, jwt_payload):
         required_claims = app.config["JWT_REQUIRED_CLAIMS"]
-        missing_claims = [claim for claim in required_claims if claim not in jwt_payload]
+        missing_claims = [
+            claim for claim in required_claims if claim not in jwt_payload
+        ]
         if missing_claims:
             return False
 
         token_type = jwt_payload.get("type")
-        if token_type not in {"access", "refresh"}:
+        if token_type not in {TokenType.ACCESS, TokenType.REFRESH}:
             return False
 
         return True
@@ -76,8 +99,13 @@ def create_app(env_name: str | None = None) -> Flask:
     config_class.validate()
     app.config.from_mapping(config_to_dict(config_class))
 
-    if app.config["CORS_SUPPORTS_CREDENTIALS"] and "*" in app.config["CORS_ALLOWED_ORIGINS"]:
-        raise ConfigError("Wildcard CORS origins are forbidden when credentials are enabled.")
+    if (
+        app.config["CORS_SUPPORTS_CREDENTIALS"]
+        and "*" in app.config["CORS_ALLOWED_ORIGINS"]
+    ):
+        raise ConfigError(
+            "Wildcard CORS origins are forbidden when credentials are enabled."
+        )
 
     db.init_app(app)
     migrate.init_app(app, db)

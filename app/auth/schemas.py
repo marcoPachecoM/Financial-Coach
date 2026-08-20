@@ -6,10 +6,6 @@ class LoginSchema(Schema):
     password = fields.Str(required=True, validate=validate.Length(min=1, max=1024))
 
 
-class RefreshSchema(Schema):
-    refresh_token = fields.Str(required=True, validate=validate.Length(min=20, max=4096))
-
-
 class UserOutputSchema(Schema):
     id = fields.UUID(attribute="public_id", dump_only=True)
     username = fields.Str(dump_only=True)

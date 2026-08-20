@@ -1,4 +1,4 @@
-import enum
+from enum import StrEnum
 import uuid
 from datetime import UTC, datetime
 
@@ -8,9 +8,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.extensions.database import Base
 
 
-class UserRole(str, enum.Enum):
+class UserRole(StrEnum):
     ADMIN = "ADMIN"
     CLIENT = "CLIENT"
+
+
+class TokenType(StrEnum):
+    ACCESS = "access"
+    REFRESH = "refresh"
 
 
 class User(Base):
@@ -24,8 +29,12 @@ class User(Base):
         nullable=False,
         index=True,
     )
-    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    username: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
+    email: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False, index=True
+    )
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
@@ -48,10 +57,16 @@ class RefreshToken(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     jti: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     is_revoked: Mapped[bool] = mapped_column(default=False, nullable=False)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     replaced_by_jti: Mapped[str | None] = mapped_column(String(64), nullable=True)
     reuse_detected_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

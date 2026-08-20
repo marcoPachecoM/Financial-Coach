@@ -4,7 +4,6 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 from app.auth.decorators import roles_required
 from app.auth.schemas import (
     LoginSchema,
-    RefreshSchema,
     UserOutputSchema,
     validate_no_unknown_fields,
 )
@@ -17,7 +16,6 @@ health_bp = Blueprint("health", __name__, url_prefix="/api/v1/health")
 
 _auth_service = AuthService()
 _login_schema = LoginSchema()
-_refresh_schema = RefreshSchema()
 _user_output_schema = UserOutputSchema()
 
 
@@ -28,7 +26,10 @@ def login():
     validate_no_unknown_fields(_login_schema, payload)
     data = _login_schema.load(payload)
 
-    user = _auth_service.authenticate(data["email"], data["password"])
+    if not isinstance(data, dict):
+        raise UnauthorizedError("Invalid credentials.", code="INVALID_CREDENTIALS")
+
+    user = _auth_service.authenticate(data.get("email", ""), data.get("password", ""))
     tokens = _auth_service.issue_tokens(user)
 
     response_payload = {
@@ -40,23 +41,17 @@ def login():
 
 @auth_bp.post("/refresh")
 @limiter.limit("10 per minute")
+@jwt_required(refresh=True)
 def refresh():
-    payload = request.get_json(silent=True) or {}
-    validate_no_unknown_fields(_refresh_schema, payload)
-    data = _refresh_schema.load(payload)
-    tokens = _auth_service.refresh_tokens(data["refresh_token"])
-
+    tokens = _auth_service.refresh_tokens(get_jwt())
     return jsonify(tokens), 200
 
 
 @auth_bp.post("/logout")
 @limiter.limit("20 per minute")
+@jwt_required(refresh=True)
 def logout():
-    payload = request.get_json(silent=True) or {}
-    validate_no_unknown_fields(_refresh_schema, payload)
-    data = _refresh_schema.load(payload)
-
-    _auth_service.revoke_refresh_token(data["refresh_token"])
+    _auth_service.revoke_refresh_token(get_jwt())
     return jsonify({"message": "Logged out."}), 200
 
 
