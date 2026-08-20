@@ -13,6 +13,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 
 
 class TransactionService:
+
     def __init__(
         self,
         connection_repository: ConnectionRepository | None = None,

@@ -6,13 +6,14 @@ from app.transactions.domain.models import Transaction
 
 
 class TransactionProvider(ABC):
+
     @abstractmethod
     def fetch_transactions(
         self,
-        connection: Connection,
+        connection,
         page: int = 1,
         size: int = 10,
-        super_category: str | None = None,
+        mcc: int | None = None,
         start_date: date | None = None,
         end_date: date | None = None,
     ) -> tuple[list[Transaction], int, bool]: ...

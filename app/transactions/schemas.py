@@ -75,3 +75,23 @@ def validate_no_unknown_fields(schema: Schema, payload: dict) -> None:
     unknown = set(payload.keys()) - set(schema.fields.keys())
     if unknown:
         raise ValidationError({"unknown_fields": sorted(unknown)})
+
+
+class CategorySummarySchema(Schema):
+    category = fields.Str(required=True)
+    amount = fields.Float(required=True)
+    percentage = fields.Float(required=True)
+    count = fields.Int(required=True)
+
+
+class SpendingTrendResponseSchema(Schema):
+    total_spent = fields.Float(required=True)
+    categories = fields.List(
+        fields.Nested(CategorySummarySchema),
+        required=True,
+    )
+
+
+class SpendingByCategoryQuerySchema(Schema):
+    start_date = fields.Date(required=False, allow_none=True)
+    end_date = fields.Date(required=False, allow_none=True)

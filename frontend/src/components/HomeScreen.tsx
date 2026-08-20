@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { Transaction } from '../types/transaction';
 import type { MetricSummary } from '../types/metrics';
 import type { Insight, ChatMessage } from '../types/copilot';
@@ -9,92 +9,132 @@ import { MetricCards } from './dashboard/MetricCards';
 import { CategoryFilters } from './dashboard/CategoryFilters';
 import { SpendingTrendChart } from './dashboard/SpendingTrendChart';
 import { SpendingByCategoryChart } from './dashboard/SpendingByCategoryChart';
+import { useSpendingCategoryData } from '../hooks/useSpendingCategoryData';
 import { TransactionsTable } from './dashboard/TransactionsTable';
 import { CopilotPanel } from './copilot/CopilotPanel';
 
-import { INITIAL_TRANSACTIONS } from '../data/mockTransactions';
 import { INITIAL_METRIC_SUMMARY } from '../data/mockMetrics';
 import { INITIAL_INSIGHTS, INITIAL_CHAT_MESSAGES } from '../data/mockInsights';
-import { getCategoryFromMCC } from '../utils/mccHelper';
+
 import {
   calculateDateRangeLimits,
+  formatLocalDateToISO,
   generateDatePresets,
   isDateWithinRange,
   type DatePresetId,
+  type DateRangeLimit,
 } from '../utils/dateHelper';
+import { useTransactions } from '../hooks/useTransactions';
 
 interface HomeScreenProps {
   initialTransactions?: Transaction[];
 }
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({
-  initialTransactions = INITIAL_TRANSACTIONS,
-}) => {
-  // State for Transactions
-  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
-
-  // Dynamic Date Limits and Presets
-  const dateLimits = useMemo(() => calculateDateRangeLimits(transactions), [transactions]);
-  const datePresets = useMemo(() => generateDatePresets(dateLimits), [dateLimits]);
-
-  // Selected Date Preset
+export const HomeScreen: React.FC<HomeScreenProps> = () => {
+  // 1. Preset & Filter States
   const [selectedPresetId, setSelectedPresetId] = useState<DatePresetId>('all_time');
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  // 2. CSV Upload & Copilot States
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [insights, setInsights] = useState<Insight[]>(INITIAL_INSIGHTS);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
+
+  // 3. Date Limits initialization
+  const [localDateLimits, setLocalDateLimits] = useState<DateRangeLimit>(() => {
+    const now = new Date();
+    const pastYear = new Date(new Date().setFullYear(now.getFullYear() - 1));
+    return {
+      minDate: pastYear,
+      maxDate: now,
+      minDateStr: pastYear.toISOString().split('T')[0],
+      maxDateStr: now.toISOString().split('T')[0],
+    };
+  });
+
+  const datePresets = useMemo(() => generateDatePresets(localDateLimits), [localDateLimits]);
 
   // Active Date Preset
   const activePreset = useMemo(() => {
     return datePresets.find((p) => p.id === selectedPresetId) || datePresets[0];
   }, [datePresets, selectedPresetId]);
 
-  // State for Category Filter
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  // Pass undefined when 'all_time' is selected so API fetches without date parameters
+  const startDateStr = useMemo(() => {
+    if (selectedPresetId === 'all_time') return undefined;
+    return activePreset?.startDate ? formatLocalDateToISO(activePreset.startDate) : undefined;
+  }, [activePreset, selectedPresetId]);
 
-  // Filter transactions within the selected date range
+  const endDateStr = useMemo(() => {
+    if (selectedPresetId === 'all_time') return undefined;
+    return activePreset?.endDate ? formatLocalDateToISO(activePreset.endDate) : undefined;
+  }, [activePreset, selectedPresetId]);
+
+  // 4. Transactions Hook (Calls endpoint without start_date/end_date on initial 'all_time' load)
+  const {
+    transactions,
+    setTransactions,
+    loading: isTransactionsLoading,
+    error: transactionsError,
+    refetch: refetchTransactions,
+  } = useTransactions({
+    connectionId: '1',
+    startDate: startDateStr,
+    endDate: endDateStr,
+  });
+
+  // Update date boundaries dynamically when initial transaction payload loads
+  useEffect(() => {
+    if (transactions.length > 0) {
+      setLocalDateLimits(calculateDateRangeLimits(transactions));
+    }
+  }, [transactions]);
+
+  // Fetch Category Summary from backend (Only includes dates if preset !== 'all_time')
+  const {
+    data: categorySummary,
+    loading: isCategoryLoading,
+    error: categoryError,
+  } = useSpendingCategoryData(
+    '1',
+    startDateStr,
+    endDateStr
+  );
+
+  // Client-side fallback filter
   const dateFilteredTransactions = useMemo(() => {
+    if (!activePreset || selectedPresetId === 'all_time') return transactions;
     return transactions.filter((tx) =>
       isDateWithinRange(tx.date, activePreset.startDate, activePreset.endDate)
     );
-  }, [transactions, activePreset]);
+  }, [transactions, activePreset, selectedPresetId]);
 
-  // State for CSV Upload Modal
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-
-  // State for Copilot
-  const [insights, setInsights] = useState<Insight[]>(INITIAL_INSIGHTS);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
-
-  // Dynamically compute metrics based on date-filtered transactions
+  // Metrics calculation
   const metrics: MetricSummary = useMemo(() => {
-    // Total spent (absolute value of negative transactions or positive expenses)
-    const totalSpent = dateFilteredTransactions
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
+    const totalSpent = dateFilteredTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
     const baseBalance = INITIAL_METRIC_SUMMARY.totalBalance;
-    // Adjust balance based on expenses
     const adjustedBalance = baseBalance - totalSpent + 400;
 
     return {
       ...INITIAL_METRIC_SUMMARY,
-      totalBalance: adjustedBalance > 0 ? adjustedBalance : 45230.50,
+      totalBalance: adjustedBalance > 0 ? adjustedBalance : 45230.5,
       activeAiTasksCount: insights.filter((i) => i.status === 'active').length,
     };
   }, [dateFilteredTransactions, insights]);
 
-  // Handle CSV Upload / Append
+  // CSV Upload handler
   const handleUploadTransactions = (newTransactions: Transaction[], replaceExisting: boolean) => {
     if (replaceExisting) {
       setTransactions(newTransactions);
     } else {
-      // Merge while avoiding duplicate IDs
       const existingIds = new Set(transactions.map((t) => t.id));
       const filteredNew = newTransactions.filter((t) => !existingIds.has(t.id));
       setTransactions([...filteredNew, ...transactions]);
     }
 
-    // Default to 'all_time' when new dataset is imported to show the full range
     setSelectedPresetId('all_time');
 
-    // Add Copilot notification message
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setChatMessages((prev) => [
@@ -108,7 +148,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     ]);
   };
 
-  // Handle Insight Actions
   const handleExecuteInsight = (id: string) => {
     setInsights((prev) =>
       prev.map((ins) => (ins.id === id ? { ...ins, status: 'executed' } : ins))
@@ -135,12 +174,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     );
   };
 
-  // Handle Copilot Chat Message
   const handleSendMessage = (text: string) => {
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // Add user message
     const userMsg: ChatMessage = {
       id: `msg-user-${Date.now()}`,
       sender: 'user',
@@ -150,7 +187,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
     setChatMessages((prev) => [...prev, userMsg]);
 
-    // Simulate smart AI response based on query
     setTimeout(() => {
       let replyText = "I've analyzed your portfolio. Your daily spending pace is optimal.";
       const lower = text.toLowerCase();
@@ -159,17 +195,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         const total = dateFilteredTransactions.reduce((acc, t) => acc + Math.abs(t.amount), 0);
         replyText = `In this period (${activePreset.sublabel}), you have ${dateFilteredTransactions.length} transactions totaling $${total.toFixed(2)} in recorded expenses.`;
       } else if (lower.includes('budget') || lower.includes('recommend')) {
-        replyText = "Based on your MCC data, limiting Dining Out (MCC 5812) to $50/week will keep your monthly savings rate securely above the 20% goal.";
+        replyText =
+          'Based on your MCC data, limiting Dining Out (MCC 5812) to $50/week will keep your monthly savings rate securely above the 20% goal.';
       } else if (lower.includes('subscription') || lower.includes('audit')) {
-        const subs = dateFilteredTransactions.filter((t) => ['4899', '5734'].includes(t.mcc));
+        const subs = dateFilteredTransactions.filter((t) => [4899, 5734].includes(t.mcc));
         replyText = `Found ${subs.length} active subscription transactions in this period.`;
       } else if (lower.includes('forecast') || lower.includes('month end')) {
-        replyText = "Projected month-end balance: $46,420 with an estimated 19.8% final savings rate.";
+        replyText = 'Projected month-end balance: $46,420 with an estimated 19.8% final savings rate.';
       } else if (lower.startsWith('search:')) {
         const query = text.replace(/^search:\s*/i, '');
-        const matches = dateFilteredTransactions.filter((t) =>
-          t.provider_name.toLowerCase().includes(query.toLowerCase()) ||
-          getCategoryFromMCC(t.mcc).category.toLowerCase().includes(query.toLowerCase())
+        const matches = dateFilteredTransactions.filter(
+          (t) =>
+            t.provider_name.toLowerCase().includes(query.toLowerCase()) ||
+            t.category.toLowerCase().includes(query.toLowerCase())
         );
         replyText = `Search found ${matches.length} matching transactions for "${query}".`;
       }
@@ -187,13 +225,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   return (
     <div className="bg-[#f7f9fb] text-slate-900 min-h-screen flex flex-col font-sans">
-      {/* Top Header */}
       <Header onOpenUpload={() => setIsUploadModalOpen(true)} />
 
-      {/* Main Content Area */}
       <main className="flex-1 w-full max-w-[1440px] mx-auto p-4 md:p-8">
         <div className="flex flex-col lg:flex-row gap-6 w-full max-w-full">
-          {/* Main Dashboard Canvas (Left / Center) */}
           <div className="flex-1 min-w-0 flex flex-col gap-6">
             {/* Header Greeting & Date Selector */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -207,7 +242,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 </p>
               </div>
 
-              {/* Date Presets and Filters */}
               <div className="flex items-center gap-2 relative">
                 <button
                   onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
@@ -240,10 +274,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           setSelectedPresetId(preset.id);
                           setIsDatePickerOpen(false);
                         }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${selectedPresetId === preset.id
-                          ? 'bg-emerald-50 text-emerald-900 font-semibold'
-                          : 'text-slate-700 hover:bg-slate-50'
-                          }`}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${
+                          selectedPresetId === preset.id
+                            ? 'bg-emerald-50 text-emerald-900 font-semibold'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
                       >
                         <div>
                           <p className="font-medium text-slate-900">{preset.label}</p>
@@ -261,10 +296,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               </div>
             </div>
 
-            {/* 1. Metric Summary Cards */}
             <MetricCards metrics={metrics} />
 
-            {/* 2. Category Filter Pills */}
             <div className="flex items-center justify-between gap-2 pt-1">
               <CategoryFilters
                 selectedCategory={selectedCategory}
@@ -272,20 +305,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               />
             </div>
 
-            {/* 3. Analytics: Spending Trend Chart */}
             <SpendingTrendChart
               transactions={dateFilteredTransactions}
               selectedCategory={selectedCategory}
             />
 
-            {/* 4. Analytics: Spending by Category Chart */}
             <SpendingByCategoryChart
-              transactions={dateFilteredTransactions}
+              categorySummary={categorySummary}
+              loading={isCategoryLoading}
               selectedCategory={selectedCategory}
-              onSelectCategory={setSelectedCategory}
+              onSelectCategory={(category) => setSelectedCategory(category)}
             />
-
-            {/* 5. Transactions Data Grid */}
             <TransactionsTable
               transactions={dateFilteredTransactions}
               selectedCategory={selectedCategory}
@@ -293,7 +323,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             />
           </div>
 
-          {/* Right Rail: Mush Copilot */}
           <CopilotPanel
             insights={insights}
             messages={chatMessages}
@@ -304,11 +333,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
       </main>
 
-      {/* CSV Dataset Upload Modal */}
       <UploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
-        //        onUploadTransactions={(newTx) => handleUploadTransactions(newTx, true)}
         onUploadTransactions={handleUploadTransactions}
       />
     </div>

@@ -1,3 +1,4 @@
+from datetime import date
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
@@ -21,7 +22,6 @@ _paginated_transaction_schema = PaginatedTransactionSchema()
 
 
 @transactions_bp.get("")
-@jwt_required()
 def get_transactions():
     payload = request.args.to_dict()
     validate_no_unknown_fields(_transaction_query_schema, payload)

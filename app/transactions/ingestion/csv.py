@@ -12,8 +12,8 @@ class CSVTransactionProvider(TransactionProvider):
         "id",
         "date",
         "amount",
-        "category",
-        "super_category",
+        "mcc",
+        "provider_name",
     ]
 
     def fetch_transactions(
@@ -21,7 +21,7 @@ class CSVTransactionProvider(TransactionProvider):
         connection,
         page=1,
         size=10,
-        super_category=None,
+        mcc=None,
         start_date=None,
         end_date=None,
     ) -> tuple[list[Transaction], int, bool]:
@@ -32,8 +32,8 @@ class CSVTransactionProvider(TransactionProvider):
 
         dataframe = clean_dataframe(dataframe, start_date, end_date)
 
-        if super_category:
-            dataframe = dataframe[dataframe["super_category"] == super_category]
+        if mcc is not None:
+            dataframe = dataframe[dataframe["mcc"] == mcc]
 
         total = len(dataframe)
 
@@ -42,7 +42,9 @@ class CSVTransactionProvider(TransactionProvider):
 
         paginated = dataframe.iloc[offset : offset + limit]
 
-        transactions = [self._to_transaction(row) for row in paginated.itertuples(index=False)]
+        transactions = [
+            self._to_transaction(row) for row in paginated.itertuples(index=False)
+        ]
 
         has_more = offset + limit < total
 
@@ -50,11 +52,11 @@ class CSVTransactionProvider(TransactionProvider):
 
     def _to_transaction(self, row) -> Transaction:
         return Transaction(
-            external_id=str(row.id),
+            id=str(row.id),
             date=row.date,
-            amount=row.amount,
-            category=str(row.category),
-            super_category=str(row.super_category),
+            amount=Decimal(str(row.amount)),
+            mcc=row.mcc,
+            provider_name=row.provider_name,
         )
 
     def get_summary(
@@ -101,13 +103,17 @@ class CSVTransactionProvider(TransactionProvider):
         total_amount = dataframe["amount"].sum()
 
         grouped = (
-            dataframe.groupby(group_by, dropna=False)["amount"].sum().sort_values(ascending=False)
+            dataframe.groupby(group_by, dropna=False)["amount"]
+            .sum()
+            .sort_values(ascending=False)
         )
 
         result = []
 
         for category_name, amount in grouped.items():
-            percentage: float = (amount / total_amount) * 100 if total_amount != 0 else 0
+            percentage: float = (
+                (amount / total_amount) * 100 if total_amount != 0 else 0
+            )
 
             result.append(
                 {
@@ -139,6 +145,14 @@ def clean_dataframe(
     )
 
     dataframe = dataframe.dropna(subset=["amount"])
+
+    dataframe["mcc"] = pd.to_numeric(
+        dataframe["mcc"],
+        errors="coerce",
+        downcast="integer",
+    )
+
+    dataframe = dataframe.dropna(subset=["mcc"])
 
     if start_date is not None:
         dataframe = dataframe[dataframe["date"].dt.date >= start_date]

@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import type { Transaction } from '../../types/transaction';
 import { CategoryBadge, StatusBadge } from '../common/Badge';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { getCategoryFromMCC } from '../../utils/mccHelper';
 
 interface TransactionsTableProps {
   transactions: Transaction[];
@@ -18,26 +17,34 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showAll, setShowAll] = useState(false);
 
-  // Filter transactions based on category & search query
+  // Filter transactions based on selected category & search query
   const filteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
-      // Category filter
+      const categoryName = tx.category;
+
+      // 1. Category Filter Dropdown
       if (selectedCategory !== 'all') {
-        const cat = getCategoryFromMCC(tx.mcc).category;
-        if (cat.toLowerCase() !== selectedCategory.toLowerCase()) {
+        if (categoryName.toLowerCase() !== selectedCategory.toLowerCase()) {
           return false;
         }
       }
 
-      // Search query filter (provider name, mcc, id, or amount)
+      // 2. Search Query Filter (Safe String Casting for numeric IDs & MCCs)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchesProvider = tx.provider_name.toLowerCase().includes(q);
-        const matchesMcc = tx.mcc.toLowerCase().includes(q);
-        const matchesId = tx.id.toLowerCase().includes(q);
-        const matchesAmount = tx.amount.toString().includes(q);
-        const matchesCategory = getCategoryFromMCC(tx.mcc).category.toLowerCase().includes(q);
-        return matchesProvider || matchesMcc || matchesId || matchesAmount || matchesCategory;
+        const provider = (tx.provider_name || '').toLowerCase();
+        const mccStr = String(tx.mcc);
+        const idStr = String(tx.id || '').toLowerCase();
+        const amountStr = String(tx.amount || '');
+        const catStr = categoryName.toLowerCase();
+
+        return (
+          provider.includes(q) ||
+          mccStr.includes(q) ||
+          idStr.includes(q) ||
+          amountStr.includes(q) ||
+          catStr.includes(q)
+        );
       }
 
       return true;
@@ -120,7 +127,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                     <p className="text-xs text-slate-400 mt-1">Try clearing your filters or upload a new dataset.</p>
                     <button
                       onClick={onOpenUpload}
-                      className="mt-3 text-xs text-emerald-600 hover:underline flex items-center gap-1 font-semibold"
+                      className="mt-3 text-xs text-emerald-600 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
                     >
                       <span className="material-symbols-outlined !text-[16px]">add_circle</span>
                       Upload new CSV
@@ -145,11 +152,11 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                     <td className="py-3.5 px-5">
                       <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200/60 flex items-center justify-center text-slate-700 font-semibold text-xs shrink-0 group-hover:bg-white group-hover:border-emerald-200 transition-colors">
-                          {tx.provider_name.charAt(0).toUpperCase()}
+                          {(tx.provider_name || 'U').charAt(0).toUpperCase()}
                         </div>
                         <div>
                           <p className="font-semibold text-slate-900 leading-tight">
-                            {tx.provider_name}
+                            {tx.provider_name || 'Unknown'}
                           </p>
                           <span className="text-[11px] font-mono text-slate-400">
                             ID: {tx.id}
@@ -160,7 +167,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
                     {/* Category & MCC */}
                     <td className="py-3.5 px-5 whitespace-nowrap">
-                      <CategoryBadge mcc={tx.mcc} />
+                      <CategoryBadge mcc={tx.mcc} category={tx.category} />
                     </td>
 
                     {/* Amount */}
@@ -176,7 +183,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
                     {/* Status */}
                     <td className="py-3.5 px-5 text-right whitespace-nowrap">
-                      <StatusBadge status={tx.status} />
+                      <StatusBadge status={tx.status || 'pending'} />
                     </td>
                   </tr>
                 );
@@ -192,7 +199,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           Showing {displayedTransactions.length} of {filteredTransactions.length} transactions
         </span>
         <span className="text-[11px] text-slate-400">
-          Auto-categorization active via MCC Mapping
+          Auto-categorization active via MCC Mapping & AI
         </span>
       </div>
     </section>

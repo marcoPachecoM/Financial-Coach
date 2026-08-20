@@ -40,6 +40,9 @@ class BaseConfig:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-secret-change-me")
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-only-jwt-secret-change-me")
 
+    OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
+    
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///app.db")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_EXPIRE_ON_COMMIT = False

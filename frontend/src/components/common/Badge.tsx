@@ -1,6 +1,6 @@
 import React from 'react';
 import type { TransactionStatus } from '../../types/transaction';
-import { getCategoryFromMCC } from '../../utils/mccHelper';
+import { getCategoryStyle } from '../../utils/categoryHelper';
 
 interface StatusBadgeProps {
   status?: TransactionStatus;
@@ -34,30 +34,31 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status = 'verified' })
 };
 
 interface CategoryBadgeProps {
-  mcc: string;
+  mcc: number;
+  category?: string;
   showMccCode?: boolean;
 }
 
-export const CategoryBadge: React.FC<CategoryBadgeProps> = ({ mcc, showMccCode = true }) => {
-  const info = getCategoryFromMCC(mcc);
+export const CategoryBadge: React.FC<CategoryBadgeProps> = ({ mcc, category, showMccCode = true }) => {
+  const style = getCategoryStyle(category);
 
   return (
     <div className="inline-flex items-center gap-1.5">
       <span
-        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${info.badgeBg}`}
-        title={`MCC ${mcc}: ${info.description}`}
+        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${style.badgeBg}`}
+        title={`MCC ${mcc}: ${style.description}`}
       >
-        <span className="material-symbols-outlined !text-[13px]">{info.icon}</span>
-        <span>{info.category}</span>
+        <span className="material-symbols-outlined !text-[13px]">{style.icon}</span>
+        <span>{category}</span>
       </span>
-      {showMccCode && mcc && mcc !== '0000' && (
+      {showMccCode && (
         <span
           className="text-[11px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200"
           title={`Merchant Category Code: ${mcc}`}
         >
           {mcc}
         </span>
-      )}
+     )}
     </div>
   );
 };
