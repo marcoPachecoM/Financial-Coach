@@ -6,8 +6,8 @@ from werkzeug.datastructures import FileStorage
 from app.common.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.connections.models import Connection
 from app.connections.repository import ConnectionRepository
-from app.extensions.providers import Providers, provider_registry
 from app.transactions.cleaner import TransactionCleaner
+from app.transactions.ingestion.registry import Providers, provider_registry
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 

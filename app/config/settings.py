@@ -72,6 +72,16 @@ class BaseConfig:
 
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+    AI_PROVIDER = os.getenv(
+        "AI_PROVIDER",
+        "ollama",
+    )
+
+    AI_MODEL = os.getenv(
+        "AI_MODEL",
+        "llama3",
+    )
+
     REFRESH_TOKEN_REUSE_BLOCK_SECONDS = _parse_int(
         os.getenv("REFRESH_TOKEN_REUSE_BLOCK_SECONDS"), 3600
     )
@@ -84,6 +94,11 @@ class BaseConfig:
 
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
+
+    OLLAMA_BASE_URL = os.getenv(
+        "OLLAMA_BASE_URL",
+        "http://localhost:11434",
+    )
 
 
 class TestingConfig(BaseConfig):
@@ -98,20 +113,30 @@ class TestingConfig(BaseConfig):
 class ProductionConfig(BaseConfig):
     DEBUG = False
 
+    OPENAI_API_KEY = os.getenv(
+        "OPENAI_API_KEY",
+    )
+
     @classmethod
     def validate(cls) -> None:
         _require_env("SECRET_KEY")
         _require_env("JWT_SECRET_KEY")
         _require_env("DATABASE_URL")
         _require_env("CORS_ALLOWED_ORIGINS")
+        _require_env("OPENAI_API_KEY")
 
         super().validate()
 
         insecure_defaults = {
             "dev-only-secret-change-me",
             "dev-only-jwt-secret-change-me",
+            "...",
         }
-        if cls.SECRET_KEY in insecure_defaults or cls.JWT_SECRET_KEY in insecure_defaults:
+        if (
+            cls.SECRET_KEY in insecure_defaults
+            or cls.JWT_SECRET_KEY in insecure_defaults
+            or cls.OPENAI_API_KEY in insecure_defaults
+        ):
             raise ConfigError("Insecure default secrets are not allowed in production.")
 
 

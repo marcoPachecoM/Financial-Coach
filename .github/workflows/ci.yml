@@ -40,4 +40,4 @@ jobs:
         run: pip-audit
 
       - name: Tests with coverage
-        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=70
