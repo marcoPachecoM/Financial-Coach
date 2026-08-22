@@ -1,113 +1,179 @@
-from app.analytics.service import AnalyticsService
-from app.categorization.rules import Categories
-from app.common.utils import json_to_toon
-from app.copilot.domain.models import AIMessage
-from app.copilot.providers.base import AIProvider
-from app.copilot.providers.registry import (
-    provider_registry as copilot_provider_registry,
-)
+import json
+
+from app.categorization.categories import VALID_CATEGORIES
+from app.copilot.domain.models import AIMessage, AIResponse
+from app.copilot.providers.registry import provider_registry
 
 
 class CopilotService:
-    def __init__(
-        self,
-        analytics_service: AnalyticsService | None = None,
-    ):
-        self.analytics_service = analytics_service or AnalyticsService()
+    def __init__(self) -> None:
+        self._provider = None
 
-    async def chat(
-        self,
-        user_id: str,
-        connection_id: int,
-        message: str,
-    ) -> dict:
-        context = self.analytics_service.build_copilot_context(
-            user_id=user_id,
-            connection_id=connection_id,
-        )
-
-        messages = [
-            AIMessage(
-                role="system",
-                content=self._build_system_prompt(),
-            ),
-            AIMessage(
-                role="user",
-                content=self._build_user_prompt(
-                    message,
-                    context,
-                ),
-            ),
-        ]
-
-        response = await self._get_ai_provider().chat(
-            messages,
-            temperature=0.2,
-        )
-
-        return {
-            "response": response.content,
-            "provider": response.provider,
-            "model": response.model,
-        }
-
-    def analyze(self, user_id: str) -> dict:
-        # Placeholder for future implementation of analysis functionality
-
-        return {
-            "message": "Analysis functionality is not yet implemented.",
-            "user_id": user_id,
-        }
+    @property
+    def provider(self):
+        if self._provider is None:
+            self._provider = provider_registry.get()
+        return self._provider
 
     async def classify_transaction(
         self,
         info: dict,
     ) -> dict:
-        messages = [
-            AIMessage(
-                role="system",
-                content=self._build_system_prompt(),
-            ),
-            AIMessage(
-                role="user",
-                content=self._build_category_prompt(info),
-            ),
-        ]
-        response = await self._get_ai_provider().chat(
-            messages,
-            temperature=0.2,
+        response = await self.provider.chat(
+            messages=[
+                AIMessage(role="system", content=self._classification_system_prompt()),
+                AIMessage(role="user", content=str(info)),
+            ],
         )
+
+        return self._parse_response(response)
+
+    async def classify_transactions(
+        self,
+        transactions: list[tuple[str, int | None]],
+        batch_size: int = 50,
+    ) -> list[dict]:
+        results: list[dict] = []
+
+        for index in range(0, len(transactions), batch_size):
+            batch = transactions[index : index + batch_size]
+
+            response = await self.provider.chat(
+                messages=[
+                    AIMessage(
+                        role="system",
+                        content=self._classification_system_prompt(batch=True),
+                    ),
+                    AIMessage(role="user", content=self._build_batch_prompt(batch)),
+                ],
+            )
+
+            results.extend(self._parse_batch_response(response))
+
+        return results
+
+    @staticmethod
+    def _classification_system_prompt(
+        batch: bool = False,
+    ) -> str:
+        categories = """
+Food & Dining
+Utilities
+Telecom
+Transport
+Automotive & Fuel
+Home & Hardware
+Shopping
+Healthcare
+Entertainment
+Personal & Business
+Government
+Insurance
+Other
+""".strip()
+
+        if batch:
+            return f"""
+You categorize financial merchants.
+
+Allowed categories:
+{categories}
+
+Return ONLY a JSON array.
+
+Each item must contain:
+- provider
+- mcc
+- category
+
+Do not explain your reasoning.
+Do not add any other fields.
+""".strip()
+
+        return f"""
+You categorize a financial transaction.
+
+Allowed categories:
+{categories}
+
+Return ONLY JSON with:
+- category
+
+Do not explain your reasoning.
+""".strip()
+
+    @staticmethod
+    def _build_batch_prompt(
+        transactions: list[tuple[str, int | None]],
+    ) -> str:
+        lines = []
+
+        for provider, mcc in transactions:
+            lines.append(f'{{"provider": "{provider}", "mcc": {mcc}}}')
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _parse_response(
+        response: AIResponse,
+    ) -> dict:
+        try:
+            data = json.loads(response.content)
+        except json.JSONDecodeError:
+            return {}
+
+        if not isinstance(data, dict):
+            return {}
+
+        category = data.get("category")
+
+        if category not in VALID_CATEGORIES:
+            return {}
 
         return {
-            "category": response.content,
-            "provider": response.provider,
-            "model": response.model,
+            "category": category,
         }
 
-    def _build_system_prompt(self) -> str:
-        return (
-            "You are a financial assistant that helps users understand their "
-            "financial data and provides insights based on their transactions."
-        )
+    @staticmethod
+    def _parse_batch_response(
+        response: AIResponse,
+    ) -> list[dict]:
+        try:
+            data = json.loads(response.content)
+        except json.JSONDecodeError:
+            return []
 
-    def _build_category_prompt(self, transaction_info: dict) -> str:
-        categories = [category.value for category in Categories]
-        return (
-            f"Transaction details:\n"
-            f"Date: {transaction_info.get('mcc')}\n"
-            f"Merchant/ Provider: {transaction_info.get('provider')}\n"
-            f"Available categories: {', '.join(categories)}\n"
-            "Please provide a category for this transaction. Only Provide the category name without any additional text or explanation or punctuation. e.g. if I request: Restaurant you only response: Food & Dining"
-        )
+        if not isinstance(data, list):
+            return []
 
-    def _build_user_prompt(self, user_message: str, context: dict) -> str:
-        context_toon = json_to_toon(context)
-        return (
-            f"User message: {user_message}\n"
-            f"Context:\n```\n{context_toon}\n```\n"
-            "Please provide insights and suggestions based on the user's message "
-            "and the provided context."
-        )
+        results: list[dict] = []
 
-    def _get_ai_provider(self) -> AIProvider:
-        return copilot_provider_registry.get()
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+
+            provider = item.get("provider")
+            mcc = item.get("mcc")
+            category = item.get("category")
+
+            if not isinstance(provider, str):
+                continue
+
+            if category not in VALID_CATEGORIES:
+                continue
+
+            if mcc is not None:
+                try:
+                    mcc = int(mcc)
+                except TypeError, ValueError:
+                    mcc = None
+
+            results.append(
+                {
+                    "provider": provider,
+                    "mcc": mcc,
+                    "category": category,
+                }
+            )
+
+        return results

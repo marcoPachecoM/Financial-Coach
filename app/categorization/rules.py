@@ -1,21 +1,6 @@
-from enum import StrEnum
+import re
 
-
-class Categories(StrEnum):
-    FOOD_DINING = "Food & Dining"
-    UTILITIES = "Utilities"
-    TELECOM = "Telecom"
-    TRANSPORT = "Transport"
-    AUTOMOTIVE_FUEL = "Automotive & Fuel"
-    HOME_HARDWARE = "Home & Hardware"
-    SHOPPING = "Shopping"
-    HEALTHCARE = "Healthcare"
-    ENTERTAINMENT = "Entertainment"
-    PERSONAL_BUSINESS = "Personal & Business"
-    GOVERNMENT = "Government"
-    INSURANCE = "Insurance"
-    OTHER = "Other"
-
+from app.categorization.categories import Categories
 
 MCC_MAP: dict[int, str] = {
     # Food & Dining
@@ -58,62 +43,72 @@ MCC_MAP: dict[int, str] = {
     6300: Categories.INSURANCE,  # Insurance Premiums
 }
 
-# Regex Pattern Rules
 REGEX_RULES: dict[str, list[str]] = {
     Categories.HEALTHCARE: [
-        r"pharmacy",
-        r"medical",
-        r"clinic",
-        r"walgreens",
-        r"cvs",
-        r"san pablo pharmacy",
+        r"\bpharmacy\b",
+        r"\bmedical\b",
+        r"\bclinic\b",
+        r"\bwalgreens\b",
+        r"\bcvs\b",
+        r"\bsan pablo pharmacy\b",
     ],
     Categories.FOOD_DINING: [
-        r"tesco",
-        r"starbucks",
-        r"restaurant",
-        r"diner",
-        r"mcdonald",
-        r"vips",
-        r"burger king",
-        r"dominos pizza",
-        r"chipotle",
-        r"el port[oó]n",
-        r"cheesecake factory",
-        r"kfc",
-        r"italiannis",
+        r"\btesco\b",
+        r"\bstarbucks\b",
+        r"\brestaurant\b",
+        r"\bdiner\b",
+        r"\bmcdonald",
+        r"\bvips\b",
+        r"\bburger king\b",
+        r"\bdomino'?s?\s+pizza\b",
+        r"\bchipotle\b",
+        r"\bel porton\b",
+        r"\bcheesecake factory\b",
+        r"\bkfc\b",
+        r"\bitaliannis\b",
     ],
     Categories.AUTOMOTIVE_FUEL: [
-        r"oxxo gas",
-        r"pemex",
-        r"g500",
-        r"bp\b",
-        r"gas station",
+        r"\boxxo gas\b",
+        r"\bpemex\b",
+        r"\bg500\b",
+        r"\bbp\b",
+        r"\bgas station\b",
     ],
     Categories.UTILITIES: [
-        r"city power & light",
-        r"metro water services",
-        r"national gas",
-        r"waste managment",
+        r"\bcity power\s*&\s*light\b",
+        r"\bmetro water services\b",
+        r"\bnational gas\b",
+        r"\bwaste management\b",
     ],
-    Categories.TELECOM: [r"t-mobile", r"verizon", r"at&t"],
-    Categories.ENTERTAINMENT: [r"netflix"],
+    Categories.TELECOM: [
+        r"\bt-mobile\b",
+        r"\bverizon\b",
+        r"\bat&t\b",
+    ],
+    Categories.ENTERTAINMENT: [
+        r"\bnetflix\b",
+    ],
     Categories.TRANSPORT: [
-        r"uber",
-        r"lyft",
-        r"transit",
-        r"primera plus",
-        r"vivaaerobus",
+        r"\buber\b",
+        r"\blyft\b",
+        r"\btransit\b",
+        r"\bprimera plus\b",
+        r"\bvivaaerobus\b",
     ],
     Categories.SHOPPING: [
-        r"convenience",
-        r"target",
-        r"walmart",
-        r"amazon",
-        r"ross",
-        r"sears",
-        r"suburbia",
-        r"nordstrom",
-        r"lidl",
+        r"\bconvenience\b",
+        r"\btarget\b",
+        r"\bwalmart\b",
+        r"\bamazon\b",
+        r"\bross\b",
+        r"\bsears\b",
+        r"\bsuburbia\b",
+        r"\bnordstrom\b",
+        r"\blidl\b",
     ],
+}
+
+COMPILED_REGEX_RULES: dict[str, list[re.Pattern[str]]] = {
+    category: [re.compile(pattern, re.IGNORECASE) for pattern in patterns]
+    for category, patterns in REGEX_RULES.items()
 }

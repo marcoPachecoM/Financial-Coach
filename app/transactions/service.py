@@ -18,9 +18,11 @@ class TransactionService:
         self,
         connection_repository: ConnectionRepository | None = None,
         cleaner: TransactionCleaner | None = None,
+        categorizer_service: CategorizerService | None = None,
     ) -> None:
         self.connection_repository = connection_repository or ConnectionRepository()
         self.cleaner = cleaner or TransactionCleaner()
+        self.categorizer_service = categorizer_service or CategorizerService()
 
     async def fetch_transactions(
         self,
@@ -64,7 +66,7 @@ class TransactionService:
                 "amount": t.amount,
                 "mcc": t.mcc,
                 "provider_name": t.provider_name,
-                "category": await CategorizerService.categorize(t.provider_name, t.mcc),
+                "category": await self.categorizer_service.categorize(t.provider_name, t.mcc),
                 "status": "verified",
             }
             for t in transactions

@@ -1,10 +1,12 @@
-import asyncio
 from datetime import date
 from decimal import Decimal
 
 import pandas as pd
 
+from app.categorization.categories import Categories
+from app.categorization.normalization import normalize_provider
 from app.categorization.service import CategorizerService
+from app.connections.models import Connection
 from app.transactions.domain.models import Transaction
 from app.transactions.ingestion.base import TransactionProvider
 
@@ -18,21 +20,39 @@ class CSVTransactionProvider(TransactionProvider):
         "provider_name",
     ]
 
-    def fetch_transactions(
+    def __init__(
         self,
-        connection,
-        page=1,
-        size=10,
-        mcc=None,
-        start_date=None,
-        end_date=None,
-    ) -> tuple[list[Transaction], int, bool]:
+        categorizer: CategorizerService | None = None,
+    ) -> None:
+        self._categorizer = categorizer or CategorizerService()
+
+    def _load_dataframe(
+        self,
+        connection: Connection,
+    ) -> pd.DataFrame:
         dataframe = pd.read_csv(
             connection.external_id,
             usecols=self.COLUMNS,
         )
 
-        dataframe = clean_dataframe(dataframe, start_date, end_date)
+        return clean_dataframe(dataframe)
+
+    def fetch_transactions(
+        self,
+        connection,
+        page: int = 1,
+        size: int = 10,
+        mcc: int | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> tuple[list[Transaction], int, bool]:
+        dataframe = self._load_dataframe(connection)
+
+        dataframe = filter_dataframe(
+            dataframe,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         if mcc is not None:
             dataframe = dataframe[dataframe["mcc"] == mcc]
@@ -40,13 +60,12 @@ class CSVTransactionProvider(TransactionProvider):
         total = len(dataframe)
 
         offset = (page - 1) * size
-        limit = size
 
-        paginated = dataframe.iloc[offset : offset + limit]
+        paginated = dataframe.iloc[offset : offset + size]
 
         transactions = [self._to_transaction(row) for row in paginated.itertuples(index=False)]
 
-        has_more = offset + limit < total
+        has_more = offset + size < total
 
         return transactions, total, has_more
 
@@ -55,19 +74,27 @@ class CSVTransactionProvider(TransactionProvider):
             id=str(row.id),
             date=row.date,
             amount=Decimal(str(row.amount)),
-            mcc=row.mcc,
-            provider_name=row.provider_name,
+            mcc=(
+                int(row.mcc)
+                if row.mcc is not None and pd.notna(row.mcc) and str(row.mcc).isdigit()
+                else 0
+            ),
+            provider_name=str(row.provider_name),
         )
 
     def get_summary(
         self,
         connection,
-        start_date=None,
-        end_date=None,
+        start_date: date | None = None,
+        end_date: date | None = None,
     ) -> dict:
-        dataframe = pd.read_csv(connection.external_id)
+        dataframe = self._load_dataframe(connection)
 
-        dataframe = clean_dataframe(dataframe, start_date, end_date)
+        dataframe = filter_dataframe(
+            dataframe,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         if dataframe.empty:
             return {
@@ -89,27 +116,41 @@ class CSVTransactionProvider(TransactionProvider):
     async def get_category_breakdown(
         self,
         connection,
-        group_by="category",
-        start_date=None,
-        end_date=None,
+        group_by: str = "category",
+        start_date: date | None = None,
+        end_date: date | None = None,
     ) -> list[dict]:
-        dataframe = pd.read_csv(connection.external_id)
-        dataframe = clean_dataframe(dataframe, start_date, end_date)
+        dataframe = self._load_dataframe(connection)
+
+        dataframe = filter_dataframe(
+            dataframe,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         if dataframe.empty:
             return []
 
-        dataframe["category"] = await asyncio.gather(
-            *(categorize_row(row) for _, row in dataframe.iterrows())
-        )
+        if group_by != "category":
+            raise ValueError("Category breakdown only supports group_by='category'")
+
+        categories = await self._categorize_dataframe(dataframe)
+
+        dataframe["category"] = categories
 
         grouped = (
-            dataframe.groupby(group_by, dropna=False)
+            dataframe.groupby(
+                "category",
+                dropna=False,
+            )
             .agg(
                 amount=("amount", "sum"),
                 count=("amount", "size"),
             )
-            .sort_values("amount", ascending=False)
+            .sort_values(
+                "amount",
+                ascending=False,
+            )
         )
 
         total_amount = dataframe["amount"].sum()
@@ -117,52 +158,85 @@ class CSVTransactionProvider(TransactionProvider):
         return [
             {
                 "category": category,
-                "amount": Decimal(str(amount)),
+                "amount": Decimal(str(row["amount"])),
                 "percentage": Decimal(
-                    str((amount / total_amount) * 100 if total_amount != 0 else 0)
+                    str((row["amount"] / total_amount) * 100 if total_amount != 0 else 0)
                 ),
-                "count": int(count),
+                "count": int(row["count"]),
             }
             for category, row in grouped.iterrows()
-            for amount, count in [(row["amount"], row["count"])]
         ]
 
+    async def _categorize_dataframe(
+        self,
+        dataframe: pd.DataFrame,
+    ) -> list[str]:
+        unique_transactions = dataframe[["provider_name", "mcc"]].drop_duplicates()
 
-async def categorize_row(row):
-    return await CategorizerService.categorize(
-        row["provider_name"],
-        row["mcc"],
-    )
+        pairs = [
+            (
+                normalize_provider(str(row.provider_name)),
+                (
+                    int(str(row.mcc))
+                    if row.mcc is not None and pd.notna(row.mcc) and str(row.mcc).isdigit()
+                    else None
+                ),
+            )
+            for row in unique_transactions.itertuples(index=False)
+        ]
+
+        categories = await self._categorizer.categorize_many(pairs)
+
+        return [
+            categories.get(
+                (
+                    normalize_provider(str(row.provider_name)),
+                    (
+                        int(str(row.mcc))
+                        if row.mcc is not None and pd.notna(row.mcc) and str(row.mcc).isdigit()
+                        else None
+                    ),
+                ),
+                Categories.ERROR,
+            )
+            for row in dataframe.itertuples(index=False)
+        ]
 
 
 def clean_dataframe(
     dataframe: pd.DataFrame,
-    start_date: date | None = None,
-    end_date: date | None = None,
 ) -> pd.DataFrame:
+    dataframe = dataframe.copy()
+
     dataframe["date"] = pd.to_datetime(
         dataframe["date"],
         errors="coerce",
     )
 
-    dataframe = dataframe.dropna(subset=["date"])
-
     dataframe["amount"] = pd.to_numeric(
         dataframe["amount"],
-        errors="coerce",
         downcast="float",
+        errors="coerce",
     )
-
-    dataframe = dataframe.dropna(subset=["amount"])
 
     dataframe["mcc"] = pd.to_numeric(
         dataframe["mcc"],
-        errors="coerce",
         downcast="integer",
+        errors="coerce",
     )
 
-    dataframe = dataframe.dropna(subset=["mcc"])
+    dataframe = dataframe.dropna(
+        subset=["date", "amount", "mcc"],
+    )
 
+    return dataframe
+
+
+def filter_dataframe(
+    dataframe: pd.DataFrame,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> pd.DataFrame:
     if start_date is not None:
         dataframe = dataframe[dataframe["date"].dt.date >= start_date]
 

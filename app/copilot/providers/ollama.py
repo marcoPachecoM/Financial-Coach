@@ -64,17 +64,13 @@ class OllamaProvider(AIProvider):
         except httpx.HTTPStatusError:
             data["message"] = {
                 "role": "assistant",
-                "content": "Error",
+                "content": "Error response from Ollama API",
             }
         except httpx.RequestError:
             data["message"] = {
                 "role": "assistant",
-                "content": "Error",
+                "content": "Error connecting to Ollama API",
             }
-
-        print(
-            f"OllamaProvider chat response: {data['message']['content'] if 'message' in data else data}"
-        )
 
         return AIResponse(
             content=data["message"]["content"],
