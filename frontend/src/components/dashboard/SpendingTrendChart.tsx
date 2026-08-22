@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Transaction } from '../../types/transaction';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { getCategoryFromMCC } from '../../utils/mccHelper';
+import { getCategoryStyle } from '../../utils/categoryHelper';
 
 interface SpendingTrendChartProps {
   transactions: Transaction[];
@@ -23,7 +23,7 @@ export const SpendingTrendChart: React.FC<SpendingTrendChartProps> = ({
     // Filter by category if selected
     const filtered = transactions.filter((tx) => {
       if (selectedCategory === 'all') return true;
-      const cat = getCategoryFromMCC(tx.mcc).category;
+      const cat = tx.category;
       return cat.toLowerCase() === selectedCategory.toLowerCase();
     });
 

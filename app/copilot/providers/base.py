@@ -11,7 +11,7 @@ class AIProvider(ABC):
         self._api_key = api_key
 
     @abstractmethod
-    def chat(
+    async def chat(
         self,
         messages: list[AIMessage],
         *,

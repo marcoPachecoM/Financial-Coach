@@ -9,7 +9,7 @@ class AnalyticsQuerySchema(Schema):
 
     group_by = fields.Str(
         required=False,
-        validate=validate.OneOf(["super_category", "category"]),
+        validate=validate.OneOf(["category", "mcc"]),
     )
 
     start_date = fields.Date(
@@ -56,8 +56,8 @@ class AnalyticsSummarySchema(Schema):
 
 
 class AnalyticsCategoryBreakdownSchema(Schema):
-    category_name = fields.String(required=True)
-    total_amount = fields.Decimal(
+    category = fields.String(required=True)
+    amount = fields.Decimal(
         required=True,
         places=2,
     )
@@ -65,3 +65,4 @@ class AnalyticsCategoryBreakdownSchema(Schema):
         required=True,
         places=2,
     )
+    count = fields.Integer(required=True)

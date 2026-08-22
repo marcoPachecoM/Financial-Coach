@@ -3,10 +3,11 @@ from datetime import datetime
 from decimal import Decimal
 
 
+# 1. Raw ingested transaction from CSV
 @dataclass
 class Transaction:
-    external_id: str
+    id: str
     date: datetime
+    provider_name: str
     amount: Decimal
-    category: str | None
-    super_category: str | None
+    mcc: int

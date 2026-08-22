@@ -41,11 +41,11 @@ class AnalyticsService:
             end_date=end_date,
         )
 
-    def get_category_breakdown(
+    async def get_category_breakdown(
         self,
         user_id,
         connection_id: int,
-        group_by: str = "super_category",
+        group_by: str = "category",
         start_date=None,
         end_date=None,
     ) -> list[dict]:
@@ -62,7 +62,7 @@ class AnalyticsService:
         if provider is None:
             raise NotFoundError(f"No provider registered for {connection.provider}.")
 
-        return provider.get_category_breakdown(
+        return await provider.get_category_breakdown(
             connection=connection,
             group_by=group_by,
             start_date=start_date,

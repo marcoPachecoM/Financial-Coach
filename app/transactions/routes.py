@@ -22,7 +22,7 @@ _paginated_transaction_schema = PaginatedTransactionSchema()
 
 @transactions_bp.get("")
 @jwt_required()
-def get_transactions():
+async def get_transactions():
     payload = request.args.to_dict()
     validate_no_unknown_fields(_transaction_query_schema, payload)
     params = _transaction_query_schema.load(payload)
@@ -30,7 +30,7 @@ def get_transactions():
     if not isinstance(params, dict):
         raise ValidationError("Invalid query parameters.")
 
-    result = _transaction_service.fetch_transactions(
+    result = await _transaction_service.fetch_transactions(
         user_id=get_jwt_identity(),
         **params,
     )

@@ -12,7 +12,11 @@ class ProviderRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, TransactionProvider] = {}
 
-    def register(self, provider_name, provider: TransactionProvider):
+    def register(
+        self,
+        provider_name: str,
+        provider: TransactionProvider,
+    ) -> None:
         self._providers[provider_name] = provider
 
     def get(self, provider_name: str) -> TransactionProvider | None:

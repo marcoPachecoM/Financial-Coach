@@ -131,10 +131,22 @@ def create_app(env_name: str | None = None) -> Flask:
     register_security_middleware(app)
     _register_jwt_callbacks(app)
     register_error_handlers(app)
+
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": app.config["CORS_ALLOWED_ORIGINS"]}},
+        supports_credentials=app.config["CORS_SUPPORTS_CREDENTIALS"],
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    )
+
     register_blueprints(app)
 
     @app.get("/api/v1/health")
     def healthcheck():
-        return {"status": "ok", "environment": app.config["ENV_NAME"]}, 200
+        return {
+            "status": "ok",
+            "environment": app.config["ENV_NAME"],
+        }, 200
 
     return app

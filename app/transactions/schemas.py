@@ -2,25 +2,29 @@ from marshmallow import Schema, ValidationError, fields, validate
 
 
 class TransactionSchema(Schema):
-    id = fields.UUID(dump_only=True)
+    id = fields.Str(dump_only=True)
+
+    user_id = fields.Str(dump_only=True)
+    connection_id = fields.Str(dump_only=True)
+
+    date = fields.DateTime(required=True)
+
+    provider_name = fields.Str(required=True)
 
     amount = fields.Decimal(required=True)
 
-    description = fields.Str(
-        required=False,
-        validate=validate.Length(min=1, max=255),
+    mcc = fields.Integer(
+        allow_none=True,
+        validate=validate.Range(min=0, max=9999),
     )
-
-    date = fields.DateTime(required=True)
 
     category = fields.Str(
         required=True,
         validate=validate.Length(min=1, max=100),
     )
 
-    super_category = fields.Str(
+    status = fields.Str(
         required=False,
-        validate=validate.Length(min=1, max=100),
     )
 
 
@@ -40,9 +44,9 @@ class TransactionQuerySchema(Schema):
         validate=validate.Range(min=1),
     )
 
-    super_category = fields.Str(
+    mcc = fields.Integer(
         allow_none=True,
-        validate=validate.Length(min=1, max=100),
+        validate=validate.Range(min=0, max=9999),
     )
 
     start_date = fields.Date(

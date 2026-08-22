@@ -1,4 +1,5 @@
 alembic==1.19.1
+anyio==4.14.2
 argon2-cffi==25.1.0
 argon2-cffi-bindings==25.1.0
 bandit==1.9.4
@@ -21,6 +22,9 @@ Flask-Limiter==3.13
 Flask-Migrate==4.1.0
 Flask-SQLAlchemy==3.1.1
 gunicorn==23.0.0
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
 idna==3.18
 iniconfig==2.3.0
 itsdangerous==2.2.0
