@@ -142,7 +142,7 @@ GitHub Actions workflow runs on push and pull_request:
 - mypy
 - bandit
 - pip-audit
-- pytest + coverage gate (>=80%)
+- pytest + coverage gate (>=60%)
 
 ## 14. Architecture
 

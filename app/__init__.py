@@ -10,8 +10,17 @@ from app.common.responses import error_response
 from app.common.security import register_security_middleware
 from app.config import ConfigError, get_config
 from app.config.settings import config_to_dict
-from app.extensions import Providers, db, jwt, limiter, migrate, provider_registry
+from app.copilot.providers.registry import (
+    provider_registry as copilot_provider_registry,
+)
+from app.extensions import db, jwt, limiter, migrate
 from app.transactions.ingestion.csv import CSVTransactionProvider
+from app.transactions.ingestion.registry import (
+    Providers as TransactionProviders,
+)
+from app.transactions.ingestion.registry import (
+    provider_registry as transaction_provider_registry,
+)
 from app.users.models import TokenType
 
 
@@ -104,7 +113,13 @@ def create_app(env_name: str | None = None) -> Flask:
     migrate.init_app(app, db)
     jwt.init_app(app)
     limiter.init_app(app)
-    provider_registry.register(Providers.CSV, CSVTransactionProvider())
+    transaction_provider_registry.register(TransactionProviders.CSV, CSVTransactionProvider())
+    copilot_provider_registry.register(
+        name=app.config["AI_PROVIDER"],
+        model=app.config["AI_MODEL"],
+        base_url=app.config.get("OLLAMA_BASE_URL"),
+        api_key=app.config.get("OPENAI_API_KEY"),
+    )
 
     CORS(
         app,
@@ -116,10 +131,22 @@ def create_app(env_name: str | None = None) -> Flask:
     register_security_middleware(app)
     _register_jwt_callbacks(app)
     register_error_handlers(app)
+
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": app.config["CORS_ALLOWED_ORIGINS"]}},
+        supports_credentials=app.config["CORS_SUPPORTS_CREDENTIALS"],
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    )
+
     register_blueprints(app)
 
     @app.get("/api/v1/health")
     def healthcheck():
-        return {"status": "ok", "environment": app.config["ENV_NAME"]}, 200
+        return {
+            "status": "ok",
+            "environment": app.config["ENV_NAME"],
+        }, 200
 
     return app

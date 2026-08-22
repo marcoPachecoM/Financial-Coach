@@ -3,11 +3,12 @@ from pathlib import Path
 
 from werkzeug.datastructures import FileStorage
 
+from app.categorization.service import CategorizerService
 from app.common.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.connections.models import Connection
 from app.connections.repository import ConnectionRepository
-from app.extensions.providers import Providers, provider_registry
 from app.transactions.cleaner import TransactionCleaner
+from app.transactions.ingestion.registry import Providers, provider_registry
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
@@ -17,17 +18,19 @@ class TransactionService:
         self,
         connection_repository: ConnectionRepository | None = None,
         cleaner: TransactionCleaner | None = None,
+        categorizer_service: CategorizerService | None = None,
     ) -> None:
         self.connection_repository = connection_repository or ConnectionRepository()
         self.cleaner = cleaner or TransactionCleaner()
+        self.categorizer_service = categorizer_service or CategorizerService()
 
-    def fetch_transactions(
+    async def fetch_transactions(
         self,
         user_id: str,
         connection_id: int,
         page: int = 1,
         size: int = 20,
-        super_category: str | None = None,
+        mcc: int | None = None,
         start_date=None,
         end_date=None,
     ) -> dict:
@@ -48,7 +51,7 @@ class TransactionService:
             connection=connection,
             page=page,
             size=size,
-            super_category=super_category,
+            mcc=mcc,
             start_date=start_date,
             end_date=end_date,
         )
@@ -56,11 +59,15 @@ class TransactionService:
         total_pages = (total + size - 1) // size if total else 0
         content = [
             {
-                "id": t.external_id,
+                "id": t.id,
+                "user_id": connection.user_id,
+                "connection_id": connection.id,
                 "date": t.date,
                 "amount": t.amount,
-                "category": t.category,
-                "super_category": t.super_category,
+                "mcc": t.mcc,
+                "provider_name": t.provider_name,
+                "category": await self.categorizer_service.categorize(t.provider_name, t.mcc),
+                "status": "verified",
             }
             for t in transactions
         ]

@@ -9,10 +9,30 @@ class TransactionProvider(ABC):
     @abstractmethod
     def fetch_transactions(
         self,
-        connection: Connection,
+        connection,
         page: int = 1,
         size: int = 10,
-        super_category: str | None = None,
+        mcc: int | None = None,
         start_date: date | None = None,
         end_date: date | None = None,
     ) -> tuple[list[Transaction], int, bool]: ...
+
+    @abstractmethod
+    def _to_transaction(self, row) -> Transaction: ...
+
+    @abstractmethod
+    def get_summary(
+        self,
+        connection: Connection,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> dict: ...
+
+    @abstractmethod
+    async def get_category_breakdown(
+        self,
+        connection,
+        group_by: str = "category",
+        start_date=None,
+        end_date=None,
+    ) -> list[dict]: ...

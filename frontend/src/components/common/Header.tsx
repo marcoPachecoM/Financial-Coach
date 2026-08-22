@@ -1,21 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 
 interface HeaderProps {
   onOpenUpload: () => void;
+  onLogout: () => void;
   activeProfileName?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenUpload,
-  activeProfileName = 'Alex',
+  onLogout,
+  activeProfileName = "Alex",
 }) => {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [currentProfile, setCurrentProfile] = useState(activeProfileName);
 
   const profiles = [
-    { name: 'Alex', type: 'Personal Account', desc: 'Primary checking & high-yield savings' },
-    { name: 'Alex & Partner', type: 'Joint Household', desc: 'Shared utilities and rent account' },
-    { name: 'Nexus Consulting LLC', type: 'Business Entity', desc: 'S-Corp corporate entity' },
+    {
+      name: "Alex",
+      type: "Personal Account",
+      desc: "Primary checking & high-yield savings",
+    },
+    {
+      name: "Alex & Partner",
+      type: "Joint Household",
+      desc: "Shared utilities and rent account",
+    },
+    {
+      name: "Nexus Consulting LLC",
+      type: "Business Entity",
+      desc: "S-Corp corporate entity",
+    },
   ];
 
   return (
@@ -50,10 +64,13 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-100 animate-pulse" />
             <span className="text-sm font-medium text-slate-800">
-              Active Profile: <strong className="font-semibold text-slate-900">{currentProfile}</strong>
+              Active Profile:{" "}
+              <strong className="font-semibold text-slate-900">
+                {currentProfile}
+              </strong>
             </span>
             <span className="material-symbols-outlined !text-[18px] text-slate-500 transition-transform duration-200">
-              {profileDropdownOpen ? 'expand_less' : 'expand_more'}
+              {profileDropdownOpen ? "expand_less" : "expand_more"}
             </span>
           </button>
 
@@ -78,8 +95,8 @@ export const Header: React.FC<HeaderProps> = ({
                     }}
                     className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all flex items-start justify-between ${
                       currentProfile === p.name
-                        ? 'bg-emerald-50 text-emerald-900 font-medium'
-                        : 'hover:bg-slate-50 text-slate-700'
+                        ? "bg-emerald-50 text-emerald-900 font-medium"
+                        : "hover:bg-slate-50 text-slate-700"
                     }`}
                   >
                     <div>
@@ -95,24 +112,37 @@ export const Header: React.FC<HeaderProps> = ({
                 ))}
               </div>
               <div className="mt-2 pt-2 border-t border-slate-100 px-2">
-                <span className="text-[11px] text-slate-400">Multi-Entity & Plaid Ready</span>
+                <span className="text-[11px] text-slate-400">
+                  Multi-Entity & Plaid Ready
+                </span>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Action CTA Button */}
+      {/* Action CTA Buttons */}
       <div className="flex items-center gap-3">
         <button
           onClick={onOpenUpload}
           className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 shadow-sm shadow-emerald-200 hover:shadow-md hover:shadow-emerald-200 cursor-pointer"
         >
-          <span className="material-symbols-outlined !text-[18px]">add_circle</span>
+          <span className="material-symbols-outlined !text-[18px]">
+            add_circle
+          </span>
           <span className="hidden sm:inline">Upload CSV Dataset</span>
           <span className="sm:hidden">Upload</span>
         </button>
+        <button
+          onClick={onLogout}
+          className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 shadow-sm shadow-emerald-200 hover:shadow-md hover:shadow-emerald-200 cursor-pointer"
+        >
+          <span className="material-symbols-outlined !text-[18px]">logout</span>
+          <span className="hidden sm:inline">Log out</span>
+          <span className="sm:hidden">log out</span>
+        </button>
       </div>
+      {/* Action CTA Button */}
     </header>
   );
 };

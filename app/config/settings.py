@@ -40,6 +40,9 @@ class BaseConfig:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-secret-change-me")
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-only-jwt-secret-change-me")
 
+    OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
+
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///app.db")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_EXPIRE_ON_COMMIT = False
@@ -72,6 +75,16 @@ class BaseConfig:
 
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+    AI_PROVIDER = os.getenv(
+        "AI_PROVIDER",
+        "ollama",
+    )
+
+    AI_MODEL = os.getenv(
+        "AI_MODEL",
+        "llama3",
+    )
+
     REFRESH_TOKEN_REUSE_BLOCK_SECONDS = _parse_int(
         os.getenv("REFRESH_TOKEN_REUSE_BLOCK_SECONDS"), 3600
     )
@@ -85,6 +98,11 @@ class BaseConfig:
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
 
+    OLLAMA_BASE_URL = os.getenv(
+        "OLLAMA_BASE_URL",
+        "http://localhost:11434",
+    )
+
 
 class TestingConfig(BaseConfig):
     TESTING = True
@@ -93,10 +111,18 @@ class TestingConfig(BaseConfig):
     RATELIMIT_ENABLED = False
     CORS_ALLOWED_ORIGINS = ["http://localhost:3000"]
     SQLALCHEMY_EXPIRE_ON_COMMIT = False
+    OLLAMA_BASE_URL = os.getenv(
+        "OLLAMA_BASE_URL",
+        "http://localhost:11434",
+    )
 
 
 class ProductionConfig(BaseConfig):
     DEBUG = False
+
+    OPENAI_API_KEY = os.getenv(
+        "OPENAI_API_KEY",
+    )
 
     @classmethod
     def validate(cls) -> None:
@@ -104,14 +130,20 @@ class ProductionConfig(BaseConfig):
         _require_env("JWT_SECRET_KEY")
         _require_env("DATABASE_URL")
         _require_env("CORS_ALLOWED_ORIGINS")
+        _require_env("OPENAI_API_KEY")
 
         super().validate()
 
         insecure_defaults = {
             "dev-only-secret-change-me",
             "dev-only-jwt-secret-change-me",
+            "...",
         }
-        if cls.SECRET_KEY in insecure_defaults or cls.JWT_SECRET_KEY in insecure_defaults:
+        if (
+            cls.SECRET_KEY in insecure_defaults
+            or cls.JWT_SECRET_KEY in insecure_defaults
+            or cls.OPENAI_API_KEY in insecure_defaults
+        ):
             raise ConfigError("Insecure default secrets are not allowed in production.")
 
 

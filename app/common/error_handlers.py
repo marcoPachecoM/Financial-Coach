@@ -19,7 +19,7 @@ def register_error_handlers(app: Flask) -> None:
     def handle_validation_error(error: MarshmallowValidationError):
         return error_response(
             "VALIDATION_ERROR",
-            "Invalid request payload.",
+            (error.messages if isinstance(error.messages, dict) else "Validation error."),
             400,
         )
 
@@ -38,5 +38,5 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(Exception)
     def handle_unexpected(error: Exception):
-        logging.getLogger(__name__).exception("unhandled_exception", exc_info=error)
+        logging.getLogger(__name__).exception(f"unhandled_exception {error}", exc_info=error)
         return error_response("INTERNAL_SERVER_ERROR", "Unexpected server error.", 500)

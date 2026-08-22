@@ -6,7 +6,7 @@ export interface CategoryFilterItem {
   icon: string;
 }
 
-export const CATEGORY_FILTERS: CategoryFilterItem[] = [
+const CATEGORY_FILTERS: CategoryFilterItem[] = [
   { id: 'all', label: 'All', icon: 'apps' },
   { id: 'Groceries', label: 'Groceries', icon: 'shopping_basket' },
   { id: 'Food & Dining', label: 'Food & Dining', icon: 'restaurant' },
