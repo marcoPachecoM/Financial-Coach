@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import type { CategorySummaryItem } from '../../types/transaction';
-import { formatCurrency } from '../../utils/formatters';
+import React, { useMemo, useState } from "react";
+import type { CategorySummaryItem } from "../../types/transaction";
+import { formatCurrency } from "../../utils/formatters";
 
 interface CategoryColorConfig {
   hex: string;
@@ -10,26 +10,91 @@ interface CategoryColorConfig {
 }
 
 const CATEGORY_COLOR_MAP: Record<string, CategoryColorConfig> = {
-  Shopping: { hex: '#ec4899', bg: 'bg-pink-500', text: 'text-pink-700', badgeBg: 'bg-pink-50 border-pink-200' },
-  Insurance: { hex: '#6366f1', bg: 'bg-indigo-500', text: 'text-indigo-700', badgeBg: 'bg-indigo-50 border-indigo-200' },
-  'Automotive & Fuel': { hex: '#ef4444', bg: 'bg-red-500', text: 'text-red-700', badgeBg: 'bg-red-50 border-red-200' },
-  'Food & Dining': { hex: '#f97316', bg: 'bg-orange-500', text: 'text-orange-700', badgeBg: 'bg-orange-50 border-orange-200' },
-  Healthcare: { hex: '#14b8a6', bg: 'bg-teal-500', text: 'text-teal-700', badgeBg: 'bg-teal-50 border-teal-200' },
-  Utilities: { hex: '#06b6d4', bg: 'bg-cyan-500', text: 'text-cyan-700', badgeBg: 'bg-cyan-50 border-cyan-200' },
-  Other: { hex: '#94a3b8', bg: 'bg-slate-400', text: 'text-slate-600', badgeBg: 'bg-slate-100 border-slate-200' },
-  Transport: { hex: '#f59e0b', bg: 'bg-amber-500', text: 'text-amber-700', badgeBg: 'bg-amber-50 border-amber-200' },
-  'Home & Hardware': { hex: '#a855f7', bg: 'bg-purple-500', text: 'text-purple-700', badgeBg: 'bg-purple-50 border-purple-200' },
-  Telecom: { hex: '#0ea5e9', bg: 'bg-sky-500', text: 'text-sky-700', badgeBg: 'bg-sky-50 border-sky-200' },
-  Entertainment: { hex: '#8b5cf6', bg: 'bg-purple-500', text: 'text-purple-700', badgeBg: 'bg-purple-50 border-purple-200' },
-  'Personal & Business': { hex: '#f43f5e', bg: 'bg-rose-500', text: 'text-rose-700', badgeBg: 'bg-rose-50 border-rose-200' },
-  Government: { hex: '#64748b', bg: 'bg-slate-500', text: 'text-slate-700', badgeBg: 'bg-slate-100 border-slate-200' },
+  Shopping: {
+    hex: "#ec4899",
+    bg: "bg-pink-500",
+    text: "text-pink-700",
+    badgeBg: "bg-pink-50 border-pink-200",
+  },
+  Insurance: {
+    hex: "#6366f1",
+    bg: "bg-indigo-500",
+    text: "text-indigo-700",
+    badgeBg: "bg-indigo-50 border-indigo-200",
+  },
+  "Automotive & Fuel": {
+    hex: "#ef4444",
+    bg: "bg-red-500",
+    text: "text-red-700",
+    badgeBg: "bg-red-50 border-red-200",
+  },
+  "Food & Dining": {
+    hex: "#f97316",
+    bg: "bg-orange-500",
+    text: "text-orange-700",
+    badgeBg: "bg-orange-50 border-orange-200",
+  },
+  Healthcare: {
+    hex: "#14b8a6",
+    bg: "bg-teal-500",
+    text: "text-teal-700",
+    badgeBg: "bg-teal-50 border-teal-200",
+  },
+  Utilities: {
+    hex: "#06b6d4",
+    bg: "bg-cyan-500",
+    text: "text-cyan-700",
+    badgeBg: "bg-cyan-50 border-cyan-200",
+  },
+  Other: {
+    hex: "#94a3b8",
+    bg: "bg-slate-400",
+    text: "text-slate-600",
+    badgeBg: "bg-slate-100 border-slate-200",
+  },
+  Transport: {
+    hex: "#f59e0b",
+    bg: "bg-amber-500",
+    text: "text-amber-700",
+    badgeBg: "bg-amber-50 border-amber-200",
+  },
+  "Home & Hardware": {
+    hex: "#a855f7",
+    bg: "bg-purple-500",
+    text: "text-purple-700",
+    badgeBg: "bg-purple-50 border-purple-200",
+  },
+  Telecom: {
+    hex: "#0ea5e9",
+    bg: "bg-sky-500",
+    text: "text-sky-700",
+    badgeBg: "bg-sky-50 border-sky-200",
+  },
+  Entertainment: {
+    hex: "#8b5cf6",
+    bg: "bg-purple-500",
+    text: "text-purple-700",
+    badgeBg: "bg-purple-50 border-purple-200",
+  },
+  "Personal & Business": {
+    hex: "#f43f5e",
+    bg: "bg-rose-500",
+    text: "text-rose-700",
+    badgeBg: "bg-rose-50 border-rose-200",
+  },
+  Government: {
+    hex: "#64748b",
+    bg: "bg-slate-500",
+    text: "text-slate-700",
+    badgeBg: "bg-slate-100 border-slate-200",
+  },
 };
 
 const DEFAULT_CATEGORY_COLOR: CategoryColorConfig = {
-  hex: '#64748b',
-  bg: 'bg-slate-500',
-  text: 'text-slate-700',
-  badgeBg: 'bg-slate-100 border-slate-200',
+  hex: "#64748b",
+  bg: "bg-slate-500",
+  text: "text-slate-700",
+  badgeBg: "bg-slate-100 border-slate-200",
 };
 
 interface CategoryChartItem {
@@ -48,10 +113,12 @@ export interface SpendingByCategoryChartProps {
   onSelectCategory?: (category: string) => void;
 }
 
-export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = ({
+export const SpendingByCategoryChart: React.FC<
+  SpendingByCategoryChartProps
+> = ({
   categorySummary = [],
   loading = false,
-  selectedCategory = 'all',
+  selectedCategory = "all",
   onSelectCategory,
 }) => {
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
@@ -62,7 +129,7 @@ export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = (
       total: Number(item.amount) || 0,
       count: Number(item.count) || 0,
       percentage: Number(item.percentage) || 0,
-      icon: 'payments',
+      icon: "payments",
       colorConfig: CATEGORY_COLOR_MAP[item.category] ?? DEFAULT_CATEGORY_COLOR,
     }));
   }, [categorySummary]);
@@ -99,12 +166,15 @@ export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = (
 
   const activeItem = useMemo(() => {
     if (hoveredCategory) {
-      return categoryList.find((item) => item.category === hoveredCategory) ?? null;
+      return (
+        categoryList.find((item) => item.category === hoveredCategory) ?? null
+      );
     }
-    if (selectedCategory !== 'all') {
+    if (selectedCategory !== "all") {
       return (
         categoryList.find(
-          (item) => item.category.toLowerCase() === selectedCategory.toLowerCase()
+          (item) =>
+            item.category.toLowerCase() === selectedCategory.toLowerCase(),
         ) ?? null
       );
     }
@@ -116,15 +186,21 @@ export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = (
       <section className="bg-white rounded-2xl p-6 border border-slate-200/80 card-shadow w-full">
         <div className="flex items-center justify-between pb-4 mb-6 border-b border-slate-100">
           <div>
-            <h3 className="text-lg font-bold text-slate-900">Spending by Category</h3>
-            <p className="text-xs text-slate-500 mt-0.5">See where your money went</p>
+            <h3 className="text-lg font-bold text-slate-900">
+              Spending by Category
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              See where your money went
+            </p>
           </div>
           <div className="animate-pulse">
             <div className="h-6 w-24 bg-slate-100 rounded" />
           </div>
         </div>
         <div className="h-56 flex items-center justify-center">
-          <span className="text-sm text-slate-400">Loading spending data...</span>
+          <span className="text-sm text-slate-400">
+            Loading spending data...
+          </span>
         </div>
       </section>
     );
@@ -136,17 +212,19 @@ export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = (
       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-6 border-b border-slate-100 gap-2">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-lg font-bold text-slate-900 font-sans">Spending by Category</h3>
+            <h3 className="text-lg font-bold text-slate-900 font-sans">
+              Spending by Category
+            </h3>
             <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono">
               Breakdown
             </span>
 
-            {selectedCategory !== 'all' && (
+            {selectedCategory !== "all" && (
               <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium inline-flex items-center gap-1 border border-emerald-200">
                 Filtered: {selectedCategory}
                 {onSelectCategory && (
                   <button
-                    onClick={() => onSelectCategory('all')}
+                    onClick={() => onSelectCategory("all")}
                     className="hover:text-emerald-900 font-bold ml-0.5 cursor-pointer"
                     title="Clear category filter"
                   >
@@ -156,7 +234,9 @@ export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = (
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">See where your money went</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            See where your money went
+          </p>
         </div>
 
         <div className="text-left sm:text-right">
@@ -198,12 +278,16 @@ export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = (
 
                 {donutSegments.map((segment) => {
                   const isSelected =
-                    selectedCategory.toLowerCase() === segment.category.toLowerCase();
+                    selectedCategory.toLowerCase() ===
+                    segment.category.toLowerCase();
                   const isHovered =
-                    hoveredCategory === segment.category || (!hoveredCategory && isSelected);
+                    hoveredCategory === segment.category ||
+                    (!hoveredCategory && isSelected);
                   const isDimmed =
                     (hoveredCategory && hoveredCategory !== segment.category) ||
-                    (!hoveredCategory && selectedCategory !== 'all' && !isSelected);
+                    (!hoveredCategory &&
+                      selectedCategory !== "all" &&
+                      !isSelected);
 
                   return (
                     <circle
@@ -221,13 +305,15 @@ export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = (
                       style={{
                         opacity: isDimmed ? 0.35 : 1,
                         filter: isHovered
-                          ? 'drop-shadow(0 2px 6px rgba(0,0,0,0.15))'
-                          : 'none',
+                          ? "drop-shadow(0 2px 6px rgba(0,0,0,0.15))"
+                          : "none",
                       }}
                       onMouseEnter={() => setHoveredCategory(segment.category)}
                       onMouseLeave={() => setHoveredCategory(null)}
                       onClick={() =>
-                        onSelectCategory?.(isSelected ? 'all' : segment.category)
+                        onSelectCategory?.(
+                          isSelected ? "all" : segment.category,
+                        )
                       }
                     />
                   );
@@ -266,7 +352,8 @@ export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = (
                       {formatCurrency(totalSpending)}
                     </span>
                     <span className="text-[11px] text-slate-500 font-mono mt-0.5">
-                      {categoryList.length} categories · {totalTransactionsCount} tx
+                      {categoryList.length} categories ·{" "}
+                      {totalTransactionsCount} tx
                     </span>
                   </div>
                 )}
@@ -284,12 +371,16 @@ export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = (
             <div className="flex flex-col gap-1.5 max-h-[290px] overflow-y-auto pr-1">
               {categoryList.map((item) => {
                 const isSelected =
-                  selectedCategory.toLowerCase() === item.category.toLowerCase();
+                  selectedCategory.toLowerCase() ===
+                  item.category.toLowerCase();
                 const isHovered =
-                  hoveredCategory === item.category || (!hoveredCategory && isSelected);
+                  hoveredCategory === item.category ||
+                  (!hoveredCategory && isSelected);
                 const isDimmed =
                   (hoveredCategory && hoveredCategory !== item.category) ||
-                  (!hoveredCategory && selectedCategory !== 'all' && !isSelected);
+                  (!hoveredCategory &&
+                    selectedCategory !== "all" &&
+                    !isSelected);
 
                 return (
                   <div
@@ -297,12 +388,12 @@ export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = (
                     onMouseEnter={() => setHoveredCategory(item.category)}
                     onMouseLeave={() => setHoveredCategory(null)}
                     onClick={() =>
-                      onSelectCategory?.(isSelected ? 'all' : item.category)
+                      onSelectCategory?.(isSelected ? "all" : item.category)
                     }
                     className={`p-2.5 rounded-xl border transition-all duration-150 cursor-pointer ${
                       isHovered
-                        ? 'bg-slate-50/90 border-slate-300 shadow-xs'
-                        : 'border-slate-100 hover:bg-slate-50/60'
+                        ? "bg-slate-50/90 border-slate-300 shadow-xs"
+                        : "border-slate-100 hover:bg-slate-50/60"
                     }`}
                     style={{ opacity: isDimmed ? 0.45 : 1 }}
                   >
@@ -322,7 +413,8 @@ export const SpendingByCategoryChart: React.FC<SpendingByCategoryChartProps> = (
                             {item.category}
                           </p>
                           <p className="text-[11px] text-slate-400 font-mono">
-                            {item.count} {item.count === 1 ? 'transaction' : 'transactions'}
+                            {item.count}{" "}
+                            {item.count === 1 ? "transaction" : "transactions"}
                           </p>
                         </div>
                       </div>

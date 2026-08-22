@@ -1,8 +1,10 @@
+import asyncio
 from datetime import date
 from decimal import Decimal
 
 import pandas as pd
 
+from app.categorization.service import CategorizerService
 from app.transactions.domain.models import Transaction
 from app.transactions.ingestion.base import TransactionProvider
 
@@ -42,9 +44,7 @@ class CSVTransactionProvider(TransactionProvider):
 
         paginated = dataframe.iloc[offset : offset + limit]
 
-        transactions = [
-            self._to_transaction(row) for row in paginated.itertuples(index=False)
-        ]
+        transactions = [self._to_transaction(row) for row in paginated.itertuples(index=False)]
 
         has_more = offset + limit < total
 
@@ -86,44 +86,53 @@ class CSVTransactionProvider(TransactionProvider):
             "largest_transaction": Decimal(str(amounts.max())),
         }
 
-    def get_category_breakdown(
+    async def get_category_breakdown(
         self,
         connection,
-        group_by: str = "super_category",
+        group_by="category",
         start_date=None,
         end_date=None,
     ) -> list[dict]:
         dataframe = pd.read_csv(connection.external_id)
-
         dataframe = clean_dataframe(dataframe, start_date, end_date)
 
         if dataframe.empty:
             return []
 
-        total_amount = dataframe["amount"].sum()
-
-        grouped = (
-            dataframe.groupby(group_by, dropna=False)["amount"]
-            .sum()
-            .sort_values(ascending=False)
+        dataframe["category"] = await asyncio.gather(
+            *(categorize_row(row) for _, row in dataframe.iterrows())
         )
 
-        result = []
-
-        for category_name, amount in grouped.items():
-            percentage: float = (
-                (amount / total_amount) * 100 if total_amount != 0 else 0
+        grouped = (
+            dataframe.groupby(group_by, dropna=False)
+            .agg(
+                amount=("amount", "sum"),
+                count=("amount", "size"),
             )
+            .sort_values("amount", ascending=False)
+        )
 
-            result.append(
-                {
-                    "category_name": str(category_name),
-                    "total_amount": Decimal(str(amount)),
-                    "percentage": Decimal(str(percentage)),
-                }
-            )
+        total_amount = dataframe["amount"].sum()
 
-        return result
+        return [
+            {
+                "category": category,
+                "amount": Decimal(str(amount)),
+                "percentage": Decimal(
+                    str((amount / total_amount) * 100 if total_amount != 0 else 0)
+                ),
+                "count": int(count),
+            }
+            for category, row in grouped.iterrows()
+            for amount, count in [(row["amount"], row["count"])]
+        ]
+
+
+async def categorize_row(row):
+    return await CategorizerService.categorize(
+        row["provider_name"],
+        row["mcc"],
+    )
 
 
 def clean_dataframe(

@@ -1,79 +1,119 @@
-from typing import Dict, List
+from enum import StrEnum
 
 
-MCC_MAP: Dict[int, str] = {
+class Categories(StrEnum):
+    FOOD_DINING = "Food & Dining"
+    UTILITIES = "Utilities"
+    TELECOM = "Telecom"
+    TRANSPORT = "Transport"
+    AUTOMOTIVE_FUEL = "Automotive & Fuel"
+    HOME_HARDWARE = "Home & Hardware"
+    SHOPPING = "Shopping"
+    HEALTHCARE = "Healthcare"
+    ENTERTAINMENT = "Entertainment"
+    PERSONAL_BUSINESS = "Personal & Business"
+    GOVERNMENT = "Government"
+    INSURANCE = "Insurance"
+    OTHER = "Other"
+
+
+MCC_MAP: dict[int, str] = {
     # Food & Dining
-    5812: "Food & Dining",       # Restaurants
-    5411: "Food & Dining",       # Supermarkets / Grocery
-    5499: "Food & Dining",       # Misc Food Stores / Specialty Markets
-    5814: "Food & Dining",       # Fast Food Restaurants
-    5815: "Entertainment",       # Digital Goods / Media
-    
+    5812: Categories.FOOD_DINING,  # Restaurants
+    5411: Categories.FOOD_DINING,  # Supermarkets / Grocery
+    5499: Categories.FOOD_DINING,  # Misc Food Stores / Specialty Markets
+    5814: Categories.FOOD_DINING,  # Fast Food Restaurants
+    5815: Categories.ENTERTAINMENT,  # Digital Goods / Media
     # Utilities & Telecom
-    4900: "Utilities",           # Electric, Gas, Water
-    4814: "Telecom",             # Telecommunications
-    4899: "Telecom",             # Cable & Internet
-    
+    4900: Categories.UTILITIES,  # Electric, Gas, Water
+    4814: Categories.TELECOM,  # Telecommunications
+    4899: Categories.TELECOM,  # Cable & Internet
     # Transportation & Automotive
-    4121: "Transport",           # Taxis / Rideshare
-    5541: "Automotive & Fuel",   # Service Stations
-    3722: "Transport",           # Bus Lines
-    4511: "Transport",           # Airlines
-    4722: "Transport",           # Travel Agencies
-    7538: "Automotive & Fuel",   # Auto Repair
-    
+    4121: Categories.TRANSPORT,  # Taxis / Rideshare
+    5541: Categories.AUTOMOTIVE_FUEL,  # Service Stations
+    3722: Categories.TRANSPORT,  # Bus Lines
+    4511: Categories.TRANSPORT,  # Airlines
+    4722: Categories.TRANSPORT,  # Travel Agencies
+    7538: Categories.AUTOMOTIVE_FUEL,  # Auto Repair
     # Shopping & Retail
-    5300: "Shopping",            # Wholesale Clubs / General Merchandise
-    5311: "Shopping",            # Department Stores
-    5310: "Shopping",            # Discount Stores
-    5211: "Home & Hardware",     # Building Materials
-    5251: "Home & Hardware",     # Hardware Stores
-    5261: "Home & Hardware",     # Lawn & Garden
-    5719: "Shopping",            # Home Furnishings
-    5942: "Shopping",            # Book Stores
-    5651: "Shopping",            # Clothing Stores
-    5661: "Shopping",            # Shoe Stores
-    
+    5300: Categories.SHOPPING,  # Wholesale Clubs / General Merchandise
+    5311: Categories.SHOPPING,  # Department Stores
+    5310: Categories.SHOPPING,  # Discount Stores
+    5211: Categories.HOME_HARDWARE,  # Building Materials
+    5251: Categories.HOME_HARDWARE,  # Hardware Stores
+    5261: Categories.HOME_HARDWARE,  # Lawn & Garden
+    5719: Categories.SHOPPING,  # Home Furnishings
+    5942: Categories.SHOPPING,  # Book Stores
+    5651: Categories.SHOPPING,  # Clothing Stores
+    5661: Categories.SHOPPING,  # Shoe Stores
     # Healthcare & Wellness
-    5912: "Healthcare",          # Pharmacies
-    8041: "Healthcare",          # Chiropractors
-    8062: "Healthcare",          # Hospitals
-    8021: "Healthcare",          # Dentists
-    
+    5912: Categories.HEALTHCARE,  # Pharmacies
+    8041: Categories.HEALTHCARE,  # Chiropractors
+    8062: Categories.HEALTHCARE,  # Hospitals
+    8021: Categories.HEALTHCARE,  # Dentists
     # Entertainment & Services
-    7832: "Entertainment",       # Theaters
-    7349: "Personal & Business", # Maintenance
-    9402: "Government",          # Postal Services
-    6300: "Insurance",           # Insurance Premiums
+    7832: Categories.ENTERTAINMENT,  # Theaters
+    7349: Categories.PERSONAL_BUSINESS,  # Maintenance
+    9402: Categories.GOVERNMENT,  # Postal Services
+    6300: Categories.INSURANCE,  # Insurance Premiums
 }
 
 # Regex Pattern Rules
-REGEX_RULES: Dict[str, List[str]] = {
-    "Healthcare": [
-        r"pharmacy", r"medical", r"clinic", r"walgreens", r"cvs", r"san pablo pharmacy"
+REGEX_RULES: dict[str, list[str]] = {
+    Categories.HEALTHCARE: [
+        r"pharmacy",
+        r"medical",
+        r"clinic",
+        r"walgreens",
+        r"cvs",
+        r"san pablo pharmacy",
     ],
-    "Food & Dining": [
-        r"tesco", r"starbucks", r"restaurant", r"diner", r"mcdonald", 
-        r"vips", r"burger king", r"dominos pizza", r"chipotle", 
-        r"el port[oó]n", r"cheesecake factory", r"kfc", r"italiannis"
+    Categories.FOOD_DINING: [
+        r"tesco",
+        r"starbucks",
+        r"restaurant",
+        r"diner",
+        r"mcdonald",
+        r"vips",
+        r"burger king",
+        r"dominos pizza",
+        r"chipotle",
+        r"el port[oó]n",
+        r"cheesecake factory",
+        r"kfc",
+        r"italiannis",
     ],
-    "Automotive & Fuel": [
-        r"oxxo gas", r"pemex", r"g500", r"bp\b", r"gas station"
+    Categories.AUTOMOTIVE_FUEL: [
+        r"oxxo gas",
+        r"pemex",
+        r"g500",
+        r"bp\b",
+        r"gas station",
     ],
-    "Utilities": [
-        r"city power & light", r"metro water services", r"national gas", r"waste managment"
+    Categories.UTILITIES: [
+        r"city power & light",
+        r"metro water services",
+        r"national gas",
+        r"waste managment",
     ],
-    "Telecom": [
-        r"t-mobile", r"verizon", r"at&t"
+    Categories.TELECOM: [r"t-mobile", r"verizon", r"at&t"],
+    Categories.ENTERTAINMENT: [r"netflix"],
+    Categories.TRANSPORT: [
+        r"uber",
+        r"lyft",
+        r"transit",
+        r"primera plus",
+        r"vivaaerobus",
     ],
-    "Entertainment": [
-        r"netflix"
+    Categories.SHOPPING: [
+        r"convenience",
+        r"target",
+        r"walmart",
+        r"amazon",
+        r"ross",
+        r"sears",
+        r"suburbia",
+        r"nordstrom",
+        r"lidl",
     ],
-    "Transport": [
-        r"uber", r"lyft", r"transit", r"primera plus", r"vivaaerobus"
-    ],
-    "Shopping": [
-        r"convenience", r"target", r"walmart", r"amazon", r"ross", 
-        r"sears", r"suburbia", r"nordstrom", r"lidl"
-    ]
 }

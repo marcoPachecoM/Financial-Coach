@@ -42,7 +42,7 @@ class BaseConfig:
 
     OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
-    
+
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///app.db")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_EXPIRE_ON_COMMIT = False
@@ -67,8 +67,12 @@ class BaseConfig:
     RATELIMIT_STORAGE_URI = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
     RATELIMIT_DEFAULT = os.getenv("RATE_LIMIT_DEFAULT", "100 per hour")
 
-    CORS_ALLOWED_ORIGINS = _parse_csv(os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"))
-    CORS_SUPPORTS_CREDENTIALS = _parse_bool(os.getenv("CORS_SUPPORTS_CREDENTIALS"), True)
+    CORS_ALLOWED_ORIGINS = _parse_csv(
+        os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+    )
+    CORS_SUPPORTS_CREDENTIALS = _parse_bool(
+        os.getenv("CORS_SUPPORTS_CREDENTIALS"), True
+    )
 
     MAX_CONTENT_LENGTH = _parse_int(os.getenv("MAX_CONTENT_LENGTH"), 1024 * 1024)
     JSON_SORT_KEYS = False
@@ -111,6 +115,10 @@ class TestingConfig(BaseConfig):
     RATELIMIT_ENABLED = False
     CORS_ALLOWED_ORIGINS = ["http://localhost:3000"]
     SQLALCHEMY_EXPIRE_ON_COMMIT = False
+    OLLAMA_BASE_URL = os.getenv(
+        "OLLAMA_BASE_URL",
+        "http://localhost:11434",
+    )
 
 
 class ProductionConfig(BaseConfig):

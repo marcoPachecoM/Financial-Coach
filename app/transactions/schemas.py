@@ -2,25 +2,29 @@ from marshmallow import Schema, ValidationError, fields, validate
 
 
 class TransactionSchema(Schema):
-    id = fields.UUID(dump_only=True)
+    id = fields.Str(dump_only=True)
+
+    user_id = fields.Str(dump_only=True)
+    connection_id = fields.Str(dump_only=True)
+
+    date = fields.DateTime(required=True)
+
+    provider_name = fields.Str(required=True)
 
     amount = fields.Decimal(required=True)
 
-    description = fields.Str(
-        required=False,
-        validate=validate.Length(min=1, max=255),
+    mcc = fields.Integer(
+        allow_none=True,
+        validate=validate.Range(min=0, max=9999),
     )
-
-    date = fields.DateTime(required=True)
 
     category = fields.Str(
         required=True,
         validate=validate.Length(min=1, max=100),
     )
 
-    super_category = fields.Str(
+    status = fields.Str(
         required=False,
-        validate=validate.Length(min=1, max=100),
     )
 
 
@@ -40,9 +44,9 @@ class TransactionQuerySchema(Schema):
         validate=validate.Range(min=1),
     )
 
-    super_category = fields.Str(
+    mcc = fields.Integer(
         allow_none=True,
-        validate=validate.Length(min=1, max=100),
+        validate=validate.Range(min=0, max=9999),
     )
 
     start_date = fields.Date(
@@ -75,23 +79,3 @@ def validate_no_unknown_fields(schema: Schema, payload: dict) -> None:
     unknown = set(payload.keys()) - set(schema.fields.keys())
     if unknown:
         raise ValidationError({"unknown_fields": sorted(unknown)})
-
-
-class CategorySummarySchema(Schema):
-    category = fields.Str(required=True)
-    amount = fields.Float(required=True)
-    percentage = fields.Float(required=True)
-    count = fields.Int(required=True)
-
-
-class SpendingTrendResponseSchema(Schema):
-    total_spent = fields.Float(required=True)
-    categories = fields.List(
-        fields.Nested(CategorySummarySchema),
-        required=True,
-    )
-
-
-class SpendingByCategoryQuerySchema(Schema):
-    start_date = fields.Date(required=False, allow_none=True)
-    end_date = fields.Date(required=False, allow_none=True)

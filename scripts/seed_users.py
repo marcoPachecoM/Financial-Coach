@@ -7,7 +7,7 @@ from app import create_app
 from app.common.passwords import PasswordService
 from app.connections.models import Connection
 from app.extensions.database import db
-from app.extensions.providers import Providers
+from app.transactions.ingestion.registry import Providers
 from app.users.models import User, UserRole
 from app.users.repository import UserRepository
 

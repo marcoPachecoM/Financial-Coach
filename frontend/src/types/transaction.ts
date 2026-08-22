@@ -1,4 +1,4 @@
-export type TransactionStatus = 'verified' | 'ai_approved' | 'pending';
+export type TransactionStatus = "verified" | "ai_approved" | "pending";
 
 export interface Transaction {
   id: string;
@@ -12,15 +12,29 @@ export interface Transaction {
   status?: TransactionStatus;
 }
 
-export interface TransactionsApiResponse {
-  status: string;
-  transactions: Transaction[];
+export interface TransactionQueryParams {
+  connection_id?: string;
+  start_date?: string;
+  end_date?: string;
+  mcc?: number;
+  page?: number;
+  size?: number;
 }
 
 export interface CategoryStyle {
   icon: string;
   badgeBg: string;
   description: string;
+}
+
+export interface CategoryQueryParams {
+  connection_id: number;
+
+  group_by?: string;
+
+  start_date?: string;
+
+  end_date?: string;
 }
 
 export interface CategorySummaryItem {

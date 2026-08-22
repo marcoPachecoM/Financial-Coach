@@ -6,7 +6,6 @@ from app.transactions.domain.models import Transaction
 
 
 class TransactionProvider(ABC):
-
     @abstractmethod
     def fetch_transactions(
         self,
@@ -30,10 +29,10 @@ class TransactionProvider(ABC):
     ) -> dict: ...
 
     @abstractmethod
-    def get_category_breakdown(
+    async def get_category_breakdown(
         self,
         connection,
-        group_by: str = "super_category",
+        group_by: str = "category",
         start_date=None,
         end_date=None,
     ) -> list[dict]: ...

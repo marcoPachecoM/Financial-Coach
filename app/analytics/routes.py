@@ -47,7 +47,7 @@ def get_summary():
 
 @analytics_bp.get("/by-category")
 @jwt_required()
-def get_category_breakdown():
+async def get_category_breakdown():
     payload = request.args.to_dict()
 
     validate_no_unknown_fields(
@@ -60,7 +60,7 @@ def get_category_breakdown():
     if not isinstance(params, dict):
         raise ValidationError("Invalid query parameters.")
 
-    result = _analytics_service.get_category_breakdown(
+    result = await _analytics_service.get_category_breakdown(
         user_id=get_jwt_identity(),
         **params,
     )

@@ -1,20 +1,20 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import type { Transaction } from '../types/transaction';
-import type { MetricSummary } from '../types/metrics';
-import type { Insight, ChatMessage } from '../types/copilot';
+import React, { useState, useMemo, useEffect } from "react";
+import type { Transaction } from "../types/transaction";
+import type { MetricSummary } from "../types/metrics";
+import type { Insight, ChatMessage } from "../types/copilot";
 
-import { Header } from './common/Header';
-import { UploadModal } from './common/UploadModal';
-import { MetricCards } from './dashboard/MetricCards';
-import { CategoryFilters } from './dashboard/CategoryFilters';
-import { SpendingTrendChart } from './dashboard/SpendingTrendChart';
-import { SpendingByCategoryChart } from './dashboard/SpendingByCategoryChart';
-import { useSpendingCategoryData } from '../hooks/useSpendingCategoryData';
-import { TransactionsTable } from './dashboard/TransactionsTable';
-import { CopilotPanel } from './copilot/CopilotPanel';
+import { Header } from "./common/Header";
+import { UploadModal } from "./common/UploadModal";
+import { MetricCards } from "./dashboard/MetricCards";
+import { CategoryFilters } from "./dashboard/CategoryFilters";
+import { SpendingTrendChart } from "./dashboard/SpendingTrendChart";
+import { SpendingByCategoryChart } from "./dashboard/SpendingByCategoryChart";
+import { useSpendingCategoryData } from "../hooks/useSpendingCategoryData";
+import { TransactionsTable } from "./dashboard/TransactionsTable";
+import { CopilotPanel } from "./copilot/CopilotPanel";
 
-import { INITIAL_METRIC_SUMMARY } from '../data/mockMetrics';
-import { INITIAL_INSIGHTS, INITIAL_CHAT_MESSAGES } from '../data/mockInsights';
+import { INITIAL_METRIC_SUMMARY } from "../data/mockMetrics";
+import { INITIAL_INSIGHTS, INITIAL_CHAT_MESSAGES } from "../data/mockInsights";
 
 import {
   calculateDateRangeLimits,
@@ -23,23 +23,29 @@ import {
   isDateWithinRange,
   type DatePresetId,
   type DateRangeLimit,
-} from '../utils/dateHelper';
-import { useTransactions } from '../hooks/useTransactions';
+} from "../utils/dateHelper";
+import { useTransactions } from "../hooks/useTransactions";
+import { useAuth } from "../contexts/AuthContext";
 
 interface HomeScreenProps {
   initialTransactions?: Transaction[];
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = () => {
+  const { logout } = useAuth();
+
   // 1. Preset & Filter States
-  const [selectedPresetId, setSelectedPresetId] = useState<DatePresetId>('all_time');
+  const [selectedPresetId, setSelectedPresetId] =
+    useState<DatePresetId>("all_time");
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
   // 2. CSV Upload & Copilot States
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [insights, setInsights] = useState<Insight[]>(INITIAL_INSIGHTS);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(
+    INITIAL_CHAT_MESSAGES,
+  );
 
   // 3. Date Limits initialization
   const [localDateLimits, setLocalDateLimits] = useState<DateRangeLimit>(() => {
@@ -48,12 +54,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     return {
       minDate: pastYear,
       maxDate: now,
-      minDateStr: pastYear.toISOString().split('T')[0],
-      maxDateStr: now.toISOString().split('T')[0],
+      minDateStr: pastYear.toISOString().split("T")[0],
+      maxDateStr: now.toISOString().split("T")[0],
     };
   });
 
-  const datePresets = useMemo(() => generateDatePresets(localDateLimits), [localDateLimits]);
+  const datePresets = useMemo(
+    () => generateDatePresets(localDateLimits),
+    [localDateLimits],
+  );
 
   // Active Date Preset
   const activePreset = useMemo(() => {
@@ -62,13 +71,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
 
   // Pass undefined when 'all_time' is selected so API fetches without date parameters
   const startDateStr = useMemo(() => {
-    if (selectedPresetId === 'all_time') return undefined;
-    return activePreset?.startDate ? formatLocalDateToISO(activePreset.startDate) : undefined;
+    if (selectedPresetId === "all_time") return undefined;
+    return activePreset?.startDate
+      ? formatLocalDateToISO(activePreset.startDate)
+      : undefined;
   }, [activePreset, selectedPresetId]);
 
   const endDateStr = useMemo(() => {
-    if (selectedPresetId === 'all_time') return undefined;
-    return activePreset?.endDate ? formatLocalDateToISO(activePreset.endDate) : undefined;
+    if (selectedPresetId === "all_time") return undefined;
+    return activePreset?.endDate
+      ? formatLocalDateToISO(activePreset.endDate)
+      : undefined;
   }, [activePreset, selectedPresetId]);
 
   // 4. Transactions Hook (Calls endpoint without start_date/end_date on initial 'all_time' load)
@@ -79,7 +92,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     error: transactionsError,
     refetch: refetchTransactions,
   } = useTransactions({
-    connectionId: '1',
+    connectionId: "1",
     startDate: startDateStr,
     endDate: endDateStr,
   });
@@ -96,35 +109,37 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     data: categorySummary,
     loading: isCategoryLoading,
     error: categoryError,
-  } = useSpendingCategoryData(
-    '1',
-    startDateStr,
-    endDateStr
-  );
+  } = useSpendingCategoryData("1", startDateStr, endDateStr);
 
   // Client-side fallback filter
   const dateFilteredTransactions = useMemo(() => {
-    if (!activePreset || selectedPresetId === 'all_time') return transactions;
+    if (!activePreset || selectedPresetId === "all_time") return transactions;
     return transactions.filter((tx) =>
-      isDateWithinRange(tx.date, activePreset.startDate, activePreset.endDate)
+      isDateWithinRange(tx.date, activePreset.startDate, activePreset.endDate),
     );
   }, [transactions, activePreset, selectedPresetId]);
 
   // Metrics calculation
   const metrics: MetricSummary = useMemo(() => {
-    const totalSpent = dateFilteredTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    const totalSpent = dateFilteredTransactions.reduce(
+      (sum, t) => sum + Math.abs(t.amount),
+      0,
+    );
     const baseBalance = INITIAL_METRIC_SUMMARY.totalBalance;
     const adjustedBalance = baseBalance - totalSpent + 400;
 
     return {
       ...INITIAL_METRIC_SUMMARY,
       totalBalance: adjustedBalance > 0 ? adjustedBalance : 45230.5,
-      activeAiTasksCount: insights.filter((i) => i.status === 'active').length,
+      activeAiTasksCount: insights.filter((i) => i.status === "active").length,
     };
   }, [dateFilteredTransactions, insights]);
 
   // CSV Upload handler
-  const handleUploadTransactions = (newTransactions: Transaction[], replaceExisting: boolean) => {
+  const handleUploadTransactions = (
+    newTransactions: Transaction[],
+    replaceExisting: boolean,
+  ) => {
     if (replaceExisting) {
       setTransactions(newTransactions);
     } else {
@@ -133,15 +148,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
       setTransactions([...filteredNew, ...transactions]);
     }
 
-    setSelectedPresetId('all_time');
+    setSelectedPresetId("all_time");
 
     const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeStr = now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
     setChatMessages((prev) => [
       ...prev,
       {
         id: `msg-${Date.now()}`,
-        sender: 'assistant',
+        sender: "assistant",
         text: `Successfully imported ${newTransactions.length} transaction(s). Date boundaries and MCC categorization updated automatically.`,
         timestamp: timeStr,
       },
@@ -150,18 +168,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
 
   const handleExecuteInsight = (id: string) => {
     setInsights((prev) =>
-      prev.map((ins) => (ins.id === id ? { ...ins, status: 'executed' } : ins))
+      prev.map((ins) => (ins.id === id ? { ...ins, status: "executed" } : ins)),
     );
 
     const targetInsight = insights.find((i) => i.id === id);
     const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeStr = now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
     setChatMessages((prev) => [
       ...prev,
       {
         id: `msg-${Date.now()}`,
-        sender: 'assistant',
+        sender: "assistant",
         text: `Autonomous rule executed: "${targetInsight?.title}". Funds adjusted in your high-yield reserve.`,
         timestamp: timeStr,
       },
@@ -170,17 +191,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
 
   const handleDismissInsight = (id: string) => {
     setInsights((prev) =>
-      prev.map((ins) => (ins.id === id ? { ...ins, status: 'dismissed' } : ins))
+      prev.map((ins) =>
+        ins.id === id ? { ...ins, status: "dismissed" } : ins,
+      ),
     );
   };
 
   const handleSendMessage = (text: string) => {
     const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeStr = now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
     const userMsg: ChatMessage = {
       id: `msg-user-${Date.now()}`,
-      sender: 'user',
+      sender: "user",
       text,
       timestamp: timeStr,
     };
@@ -188,35 +214,49 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     setChatMessages((prev) => [...prev, userMsg]);
 
     setTimeout(() => {
-      let replyText = "I've analyzed your portfolio. Your daily spending pace is optimal.";
+      let replyText =
+        "I've analyzed your portfolio. Your daily spending pace is optimal.";
       const lower = text.toLowerCase();
 
-      if (lower.includes('analyze') || lower.includes('expenses') || lower.includes('spend')) {
-        const total = dateFilteredTransactions.reduce((acc, t) => acc + Math.abs(t.amount), 0);
+      if (
+        lower.includes("analyze") ||
+        lower.includes("expenses") ||
+        lower.includes("spend")
+      ) {
+        const total = dateFilteredTransactions.reduce(
+          (acc, t) => acc + Math.abs(t.amount),
+          0,
+        );
         replyText = `In this period (${activePreset.sublabel}), you have ${dateFilteredTransactions.length} transactions totaling $${total.toFixed(2)} in recorded expenses.`;
-      } else if (lower.includes('budget') || lower.includes('recommend')) {
+      } else if (lower.includes("budget") || lower.includes("recommend")) {
         replyText =
-          'Based on your MCC data, limiting Dining Out (MCC 5812) to $50/week will keep your monthly savings rate securely above the 20% goal.';
-      } else if (lower.includes('subscription') || lower.includes('audit')) {
-        const subs = dateFilteredTransactions.filter((t) => [4899, 5734].includes(t.mcc));
+          "Based on your MCC data, limiting Dining Out (MCC 5812) to $50/week will keep your monthly savings rate securely above the 20% goal.";
+      } else if (lower.includes("subscription") || lower.includes("audit")) {
+        const subs = dateFilteredTransactions.filter((t) =>
+          [4899, 5734].includes(t.mcc || 0),
+        );
         replyText = `Found ${subs.length} active subscription transactions in this period.`;
-      } else if (lower.includes('forecast') || lower.includes('month end')) {
-        replyText = 'Projected month-end balance: $46,420 with an estimated 19.8% final savings rate.';
-      } else if (lower.startsWith('search:')) {
-        const query = text.replace(/^search:\s*/i, '');
+      } else if (lower.includes("forecast") || lower.includes("month end")) {
+        replyText =
+          "Projected month-end balance: $46,420 with an estimated 19.8% final savings rate.";
+      } else if (lower.startsWith("search:")) {
+        const query = text.replace(/^search:\s*/i, "");
         const matches = dateFilteredTransactions.filter(
           (t) =>
             t.provider_name.toLowerCase().includes(query.toLowerCase()) ||
-            t.category.toLowerCase().includes(query.toLowerCase())
+            t.category.toLowerCase().includes(query.toLowerCase()),
         );
         replyText = `Search found ${matches.length} matching transactions for "${query}".`;
       }
 
       const aiReply: ChatMessage = {
         id: `msg-ai-${Date.now()}`,
-        sender: 'assistant',
+        sender: "assistant",
         text: replyText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
       };
 
       setChatMessages((prev) => [...prev, aiReply]);
@@ -225,7 +265,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
 
   return (
     <div className="bg-[#f7f9fb] text-slate-900 min-h-screen flex flex-col font-sans">
-      <Header onOpenUpload={() => setIsUploadModalOpen(true)} />
+      <Header
+        onOpenUpload={() => setIsUploadModalOpen(true)}
+        onLogout={logout}
+      />
 
       <main className="flex-1 w-full max-w-[1440px] mx-auto p-4 md:p-8">
         <div className="flex flex-col lg:flex-row gap-6 w-full max-w-full">
@@ -237,8 +280,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
                   Good morning, Alex! <span className="animate-bounce">👋</span>
                 </h2>
                 <p className="text-sm text-slate-500 mt-0.5">
-                  Here's your financial overview for{' '}
-                  <span className="font-semibold text-slate-700">{activePreset.sublabel}</span>
+                  Here's your financial overview for{" "}
+                  <span className="font-semibold text-slate-700">
+                    {activePreset.sublabel}
+                  </span>
                 </p>
               </div>
 
@@ -276,13 +321,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
                         }}
                         className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${
                           selectedPresetId === preset.id
-                            ? 'bg-emerald-50 text-emerald-900 font-semibold'
-                            : 'text-slate-700 hover:bg-slate-50'
+                            ? "bg-emerald-50 text-emerald-900 font-semibold"
+                            : "text-slate-700 hover:bg-slate-50"
                         }`}
                       >
                         <div>
-                          <p className="font-medium text-slate-900">{preset.label}</p>
-                          <p className="text-[11px] text-slate-500 font-mono">{preset.sublabel}</p>
+                          <p className="font-medium text-slate-900">
+                            {preset.label}
+                          </p>
+                          <p className="text-[11px] text-slate-500 font-mono">
+                            {preset.sublabel}
+                          </p>
                         </div>
                         {selectedPresetId === preset.id && (
                           <span className="material-symbols-outlined !text-[16px] text-emerald-600">
