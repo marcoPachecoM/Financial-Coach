@@ -44,7 +44,8 @@ class User(Base):
         nullable=False,
     )
 
-    refresh_tokens: Mapped[list[RefreshToken]] = relationship(back_populates="user")
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(back_populates="user")
+    # refresh_tokens: Mapped[list[RefreshToken]] = relationship(back_populates="user")
 
 
 class RefreshToken(Base):

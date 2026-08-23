@@ -222,5 +222,5 @@ class CategorizerService:
 
         try:
             return int(mcc)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return None
