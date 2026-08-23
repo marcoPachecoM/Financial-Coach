@@ -119,21 +119,87 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     );
   }, [transactions, activePreset, selectedPresetId]);
 
-  // Metrics calculation
+  // Metrics calculation (dynamically reactive to dateFilteredTransactions & active preset)
   const metrics: MetricSummary = useMemo(() => {
     const totalSpent = dateFilteredTransactions.reduce(
       (sum, t) => sum + Math.abs(t.amount),
       0,
     );
+
     const baseBalance = INITIAL_METRIC_SUMMARY.totalBalance;
     const adjustedBalance = baseBalance - totalSpent + 400;
+    const currentBalance = adjustedBalance > 0 ? adjustedBalance : 45230.5;
+
+    // Calculate effective days in selected range
+    let effectiveDays = 1;
+    if (
+      selectedPresetId !== "all_time" &&
+      activePreset?.startDate &&
+      activePreset?.endDate
+    ) {
+      const start = new Date(activePreset.startDate).getTime();
+      const end = new Date(activePreset.endDate).getTime();
+      effectiveDays = Math.max(
+        1,
+        Math.ceil(Math.abs(end - start) / (1000 * 60 * 60 * 24)) + 1,
+      );
+    } else if (dateFilteredTransactions.length > 0) {
+      const timestamps = dateFilteredTransactions
+        .map((t) => new Date(t.date).getTime())
+        .filter((t) => !isNaN(t));
+      if (timestamps.length > 0) {
+        const minTime = Math.min(...timestamps);
+        const maxTime = Math.max(...timestamps);
+        effectiveDays = Math.max(
+          1,
+          Math.ceil((maxTime - minTime) / (1000 * 60 * 60 * 24)) + 1,
+        );
+      }
+    }
+
+    const avgDailySpend =
+      dateFilteredTransactions.length > 0 ? totalSpent / effectiveDays : 0;
+    const transactionsPerDay =
+      dateFilteredTransactions.length > 0
+        ? dateFilteredTransactions.length / effectiveDays
+        : 0;
+
+    // Calculate Top Category by spending
+    const categoryTotals = new Map<string, number>();
+    dateFilteredTransactions.forEach((tx) => {
+      const cat = tx.category?.trim() || "Uncategorized";
+      const spend = Math.abs(tx.amount);
+      categoryTotals.set(cat, (categoryTotals.get(cat) || 0) + spend);
+    });
+
+    let topCategoryName = "N/A";
+    let topCategoryAmount = 0;
+    let topCategoryPercentage = 0;
+
+    if (categoryTotals.size > 0 && totalSpent > 0) {
+      let maxAmount = 0;
+      categoryTotals.forEach((amount, cat) => {
+        if (amount > maxAmount) {
+          maxAmount = amount;
+          topCategoryName = cat;
+        }
+      });
+      topCategoryAmount = maxAmount;
+      topCategoryPercentage = (maxAmount / totalSpent) * 100;
+    }
 
     return {
-      ...INITIAL_METRIC_SUMMARY,
-      totalBalance: adjustedBalance > 0 ? adjustedBalance : 45230.5,
-      activeAiTasksCount: insights.filter((i) => i.status === "active").length,
+      totalBalance: currentBalance,
+      balanceChangePercentage: INITIAL_METRIC_SUMMARY.balanceChangePercentage,
+      avgDailySpend,
+      transactionsPerDay,
+      totalTransactionsCount: dateFilteredTransactions.length,
+      daysInRange: effectiveDays,
+      topCategoryName,
+      topCategoryAmount,
+      topCategoryPercentage,
     };
-  }, [dateFilteredTransactions, insights]);
+  }, [dateFilteredTransactions, activePreset, selectedPresetId]);
 
   // CSV Upload handler
   const handleUploadTransactions = (
