@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { Transaction } from '../../types/transaction';
-import { CategoryBadge, StatusBadge } from '../common/Badge';
+import { CategoryBadge } from '../common/Badge';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
 interface TransactionsTableProps {
@@ -9,13 +9,20 @@ interface TransactionsTableProps {
   onOpenUpload: () => void;
 }
 
+const ITEMS_PER_PAGE = 6;
+
 export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   transactions,
   selectedCategory,
   onOpenUpload,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [showAll, setShowAll] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset pagination to page 1 whenever category or search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategory, searchQuery]);
 
   // Filter transactions based on selected category & search query
   const filteredTransactions = useMemo(() => {
@@ -51,9 +58,20 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     });
   }, [transactions, selectedCategory, searchQuery]);
 
-  const displayedTransactions = showAll
-    ? filteredTransactions
-    : filteredTransactions.slice(0, 6);
+  const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE));
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const displayedTransactions = filteredTransactions.slice(
+    startIndex,
+    startIndex + ITEMS_PER_PAGE,
+  );
+
+  const handlePrevPage = () => {
+    setCurrentPage((prev) => Math.max(prev - 1, 1));
+  };
+
+  const handleNextPage = () => {
+    setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+  };
 
   return (
     <section className="bg-white rounded-2xl border border-slate-200/80 card-shadow overflow-hidden">
@@ -93,13 +111,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               </button>
             )}
           </div>
-
-          <button
-            onClick={() => setShowAll(!showAll)}
-            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors whitespace-nowrap cursor-pointer"
-          >
-            {showAll ? 'Show Less' : 'View All'}
-          </button>
         </div>
       </div>
 
@@ -112,13 +123,12 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               <th className="py-3 px-5">Provider / Merchant</th>
               <th className="py-3 px-5">Category & MCC</th>
               <th className="py-3 px-5 text-right">Amount</th>
-              <th className="py-3 px-5 text-right">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-sm">
             {displayedTransactions.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-12 text-center text-slate-400">
+                <td colSpan={4} className="py-12 text-center text-slate-400">
                   <div className="flex flex-col items-center justify-center">
                     <span className="material-symbols-outlined !text-[36px] text-slate-300 mb-2">
                       receipt_long
@@ -180,11 +190,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         {formatCurrency(tx.amount)}
                       </span>
                     </td>
-
-                    {/* Status */}
-                    <td className="py-3.5 px-5 text-right whitespace-nowrap">
-                      <StatusBadge status={tx.status || 'pending'} />
-                    </td>
                   </tr>
                 );
               })
@@ -193,14 +198,47 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         </table>
       </div>
 
-      {/* Table Footer */}
-      <div className="px-6 py-3 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-mono">
-        <span>
-          Showing {displayedTransactions.length} of {filteredTransactions.length} transactions
+      {/* Table Footer with Pagination Controls */}
+      <div className="px-5 md:px-6 py-3.5 bg-slate-50/60 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+        <span className="font-mono text-slate-500">
+          Showing {filteredTransactions.length > 0 ? startIndex + 1 : 0} -{' '}
+          {Math.min(startIndex + ITEMS_PER_PAGE, filteredTransactions.length)} of{' '}
+          {filteredTransactions.length} transactions
         </span>
-        <span className="text-[11px] text-slate-400">
-          Auto-categorization active via MCC Mapping & AI
-        </span>
+
+        {/* Pagination Navigation */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handlePrevPage}
+            disabled={currentPage === 1}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+              currentPage === 1
+                ? 'border-slate-200 text-slate-300 bg-slate-50 cursor-not-allowed'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-2xs cursor-pointer active:scale-95'
+            }`}
+          >
+            <span className="material-symbols-outlined !text-[16px]">chevron_left</span>
+            <span>Previous</span>
+          </button>
+
+          <div className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-700 shadow-2xs">
+            Page <span className="font-semibold text-emerald-600">{currentPage}</span> of{' '}
+            <span className="font-semibold">{totalPages}</span>
+          </div>
+
+          <button
+            onClick={handleNextPage}
+            disabled={currentPage === totalPages || filteredTransactions.length === 0}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+              currentPage === totalPages || filteredTransactions.length === 0
+                ? 'border-slate-200 text-slate-300 bg-slate-50 cursor-not-allowed'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-2xs cursor-pointer active:scale-95'
+            }`}
+          >
+            <span>Next</span>
+            <span className="material-symbols-outlined !text-[16px]">chevron_right</span>
+          </button>
+        </div>
       </div>
     </section>
   );
