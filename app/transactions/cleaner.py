@@ -9,18 +9,8 @@ class TransactionCleaner:
     REQUIRED_COLUMNS = {
         "date",
         "amount",
-        "category",
-    }
-
-    CATEGORY_MAP = {
-        "Eating Places and Restaurants": "Food & Dining",
-        "Grocery Stores": "Food & Dining",
-        "Transportation": "Transportation",
-        "Gas Stations": "Transportation",
-        "Entertainment": "Entertainment",
-        "Shopping": "Shopping",
-        "Utilities": "Bills & Utilities",
-        "Rent": "Housing",
+        "mcc",
+        "provider_name",
     }
 
     def clean(self, file_bytes: bytes) -> pd.DataFrame:
@@ -31,8 +21,7 @@ class TransactionCleaner:
         dataframe = self._clean_dates(dataframe)
         dataframe = self._clean_amounts(dataframe)
         dataframe = self._clean_strings(dataframe)
-        dataframe = self._normalize_currency(dataframe)
-        dataframe = self._add_super_category(dataframe)
+        dataframe = self._clean_mcc(dataframe)
 
         self._validate_result(dataframe)
 
@@ -45,7 +34,9 @@ class TransactionCleaner:
         missing = self.REQUIRED_COLUMNS - set(dataframe.columns)
 
         if missing:
-            raise ValidationError(f"CSV is missing required columns: {', '.join(missing)}.")
+            raise ValidationError(
+                f"CSV is missing required columns: {', '.join(missing)}."
+            )
 
     def _clean_dates(
         self,
@@ -83,38 +74,33 @@ class TransactionCleaner:
 
         return dataframe
 
+    def _clean_mcc(
+        self,
+        dataframe: pd.DataFrame,
+    ) -> pd.DataFrame:
+        dataframe["mcc"] = pd.to_numeric(
+            dataframe["mcc"],
+            downcast="integer",
+            errors="coerce",
+        )
+
+        if dataframe["mcc"].isna().any():
+            raise ValidationError("CSV contains invalid MCC codes.")
+
+        return dataframe
+
     def _clean_strings(
         self,
         dataframe: pd.DataFrame,
     ) -> pd.DataFrame:
         columns = [
-            "description",
-            "category",
+            "provider_name",
         ]
 
         for column in columns:
             if column in dataframe.columns:
                 dataframe[column] = dataframe[column].astype(str).str.strip()
 
-        return dataframe
-
-    def _normalize_currency(
-        self,
-        dataframe: pd.DataFrame,
-    ) -> pd.DataFrame:
-        if "currency" in dataframe.columns:
-            dataframe["currency"] = dataframe["currency"].str.upper()
-
-        return dataframe
-
-    def _add_super_category(
-        self,
-        dataframe: pd.DataFrame,
-    ) -> pd.DataFrame:
-        if "super_category" not in dataframe.columns:
-            dataframe["super_category"] = (
-                dataframe["category"].map(self.CATEGORY_MAP).fillna("Other")
-            )
         return dataframe
 
     def _validate_result(

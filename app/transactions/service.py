@@ -66,7 +66,9 @@ class TransactionService:
                 "amount": t.amount,
                 "mcc": t.mcc,
                 "provider_name": t.provider_name,
-                "category": await self.categorizer_service.categorize(t.provider_name, t.mcc),
+                "category": await self.categorizer_service.categorize(
+                    t.provider_name, t.mcc
+                ),
                 "status": "verified",
             }
             for t in transactions
@@ -94,16 +96,16 @@ class TransactionService:
 
         dataframe = self.cleaner.clean(file.read())
 
-        mocks_dir = ROOT_DIR / "mocks"
+        uploads_dir = ROOT_DIR / "uploads"
 
-        mocks_dir.mkdir(
+        uploads_dir.mkdir(
             parents=True,
             exist_ok=True,
         )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        output_path = mocks_dir / f"{user_id}_{timestamp}_clean_transactions.csv"
+        output_path = uploads_dir / f"{user_id}_{timestamp}_clean_transactions.csv"
 
         dataframe.to_csv(
             output_path,
