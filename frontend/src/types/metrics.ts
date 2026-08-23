@@ -1,8 +1,12 @@
 export interface MetricSummary {
   totalBalance: number;
   balanceChangePercentage: number;
-  monthlySavingsRate: number;
-  savingsTargetRate: number;
-  activeAiTasksCount: number;
-  activeAiTasksDescription: string;
+  avgDailySpend: number;
+  transactionsPerDay: number;
+  totalTransactionsCount: number;
+  daysInRange: number;
+  topCategoryName: string;
+  topCategoryAmount: number;
+  topCategoryPercentage: number;
 }
+
