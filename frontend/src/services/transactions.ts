@@ -10,3 +10,25 @@ export const getTransactions = async (
   });
   return res.data;
 };
+
+export interface UploadCsvResponse {
+  records_processed: number;
+  connection_id: number;
+  message: string;
+}
+
+export const uploadTransactionsCsv = async (
+  file: File | Blob,
+  filename = "transactions.csv",
+): Promise<UploadCsvResponse> => {
+  const formData = new FormData();
+  formData.append("file", file, filename);
+
+  const res = await api.post<UploadCsvResponse>("/transactions/upload-csv", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return res.data;
+};
+

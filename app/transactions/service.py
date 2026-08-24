@@ -112,7 +112,7 @@ class TransactionService:
             index=False,
         )
 
-        self.connection_repository.create(
+        created_connection = self.connection_repository.create(
             Connection(
                 user_id=user_id,
                 provider=Providers.CSV,
@@ -123,5 +123,6 @@ class TransactionService:
 
         return {
             "records_processed": len(dataframe),
+            "connection_id": created_connection.id,
             "message": "Transactions imported successfully.",
         }

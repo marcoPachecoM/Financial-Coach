@@ -16,15 +16,9 @@ import { CopilotPanel } from "./copilot/CopilotPanel";
 import { INITIAL_METRIC_SUMMARY } from "../data/mockMetrics";
 import { INITIAL_INSIGHTS, INITIAL_CHAT_MESSAGES } from "../data/mockInsights";
 
-import {
-  calculateDateRangeLimits,
-  formatLocalDateToISO,
-  generateDatePresets,
-  isDateWithinRange,
-  type DatePresetId,
-  type DateRangeLimit,
-} from "../utils/dateHelper";
+import { calculateDateRangeLimits, formatLocalDateToISO, generateDatePresets, isDateWithinRange, type DatePresetId, type DateRangeLimit } from "../utils/dateHelper";
 import { useTransactions } from "../hooks/useTransactions";
+import { useConnections } from "../hooks/useConnections";
 import { useAuth } from "../contexts/AuthContext";
 
 interface HomeScreenProps {
@@ -32,22 +26,44 @@ interface HomeScreenProps {
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = () => {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
 
-  // 1. Preset & Filter States
+  // 1. Database Connections Hook
+  const {
+    connections,
+    loading: isConnectionsLoading,
+    refetch: refetchConnections,
+  } = useConnections();
+
+  const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null);
+
+  // Auto-select first connection once loaded if none is active
+  useEffect(() => {
+    if (connections.length > 0 && selectedConnectionId === null) {
+      setSelectedConnectionId(connections[0].id);
+    }
+  }, [connections, selectedConnectionId]);
+
+  const activeConnectionIdStr = useMemo(() => {
+    if (selectedConnectionId !== null) return String(selectedConnectionId);
+    if (connections.length > 0) return String(connections[0].id);
+    return "1";
+  }, [selectedConnectionId, connections]);
+
+  // 2. Preset & Filter States
   const [selectedPresetId, setSelectedPresetId] =
     useState<DatePresetId>("all_time");
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
-  // 2. CSV Upload & Copilot States
+  // 3. CSV Upload & Copilot States
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [insights, setInsights] = useState<Insight[]>(INITIAL_INSIGHTS);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(
     INITIAL_CHAT_MESSAGES,
   );
 
-  // 3. Date Limits initialization
+  // 4. Date Limits initialization
   const [localDateLimits, setLocalDateLimits] = useState<DateRangeLimit>(() => {
     const now = new Date();
     const pastYear = new Date(new Date().setFullYear(now.getFullYear() - 1));
@@ -84,7 +100,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
       : undefined;
   }, [activePreset, selectedPresetId]);
 
-  // 4. Transactions Hook (Calls endpoint without start_date/end_date on initial 'all_time' load)
+  // 5. Transactions Hook (Driven dynamically by active selectedConnectionId)
   const {
     transactions,
     setTransactions,
@@ -92,7 +108,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     error: transactionsError,
     refetch: refetchTransactions,
   } = useTransactions({
-    connectionId: "1",
+    connectionId: activeConnectionIdStr,
     startDate: startDateStr,
     endDate: endDateStr,
   });
@@ -109,7 +125,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     data: categorySummary,
     loading: isCategoryLoading,
     error: categoryError,
-  } = useSpendingCategoryData("1", startDateStr, endDateStr);
+  } = useSpendingCategoryData(activeConnectionIdStr, startDateStr, endDateStr);
 
   // Client-side fallback filter
   const dateFilteredTransactions = useMemo(() => {
@@ -202,11 +218,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   }, [dateFilteredTransactions, activePreset, selectedPresetId]);
 
   // CSV Upload handler
-  const handleUploadTransactions = (
+  const handleUploadTransactions = async (
     newTransactions: Transaction[],
     replaceExisting: boolean,
+    newConnectionId?: number | null,
   ) => {
-    if (replaceExisting) {
+    if (newConnectionId) {
+      await refetchConnections();
+      setSelectedConnectionId(newConnectionId);
+    } else if (replaceExisting) {
       setTransactions(newTransactions);
     } else {
       const existingIds = new Set(transactions.map((t) => t.id));
@@ -215,6 +235,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     }
 
     setSelectedPresetId("all_time");
+    setSelectedCategory("all");
+    void refetchTransactions();
 
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], {
@@ -226,7 +248,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
       {
         id: `msg-${Date.now()}`,
         sender: "assistant",
-        text: `Successfully imported ${newTransactions.length} transaction(s). Date boundaries and MCC categorization updated automatically.`,
+        text: `Successfully imported ${newTransactions.length} transaction(s). Loaded from database connection.`,
         timestamp: timeStr,
       },
     ]);
@@ -329,9 +351,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     }, 600);
   };
 
+  const activeConnection =
+    connections.find((c) => c.id === selectedConnectionId) ||
+    connections[0] ||
+    null;
+
+  const greetingName = user?.username
+    ? user.username.charAt(0).toUpperCase() + user.username.slice(1)
+    : "Alex";
+
   return (
     <div className="bg-[#f7f9fb] text-slate-900 min-h-screen flex flex-col font-sans">
       <Header
+        connections={connections}
+        activeConnectionId={selectedConnectionId ?? (connections[0]?.id ?? null)}
+        onSelectConnection={(connectionId) => {
+          setSelectedConnectionId(connectionId);
+          setSelectedPresetId("all_time");
+          setSelectedCategory("all");
+        }}
+        loadingConnections={isConnectionsLoading}
         onOpenUpload={() => setIsUploadModalOpen(true)}
         onLogout={logout}
       />
@@ -343,12 +382,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                  Good morning, Alex! <span className="animate-bounce">👋</span>
+                  Good morning, {greetingName}! <span className="animate-bounce">👋</span>
                 </h2>
                 <p className="text-sm text-slate-500 mt-0.5">
                   Here's your financial overview for{" "}
-                  <span className="font-semibold text-slate-700">
-                    {activePreset.sublabel}
+                  <strong className="text-slate-700 font-semibold">
+                    {activeConnection ? activeConnection.name : "Active Dataset"}
+                  </strong>{" "}
+                  <span className="text-slate-400 font-mono text-xs">
+                    ({activePreset.sublabel})
                   </span>
                 </p>
               </div>
@@ -385,11 +427,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
                           setSelectedPresetId(preset.id);
                           setIsDatePickerOpen(false);
                         }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${
-                          selectedPresetId === preset.id
-                            ? "bg-emerald-50 text-emerald-900 font-semibold"
-                            : "text-slate-700 hover:bg-slate-50"
-                        }`}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${selectedPresetId === preset.id
+                          ? "bg-emerald-50 text-emerald-900 font-semibold"
+                          : "text-slate-700 hover:bg-slate-50"
+                          }`}
                       >
                         <div>
                           <p className="font-medium text-slate-900">
