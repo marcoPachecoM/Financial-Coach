@@ -161,16 +161,16 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="material-symbols-outlined !text-[18px]">
             add_circle
           </span>
-          <span className="hidden sm:inline">Upload CSV Dataset</span>
-          <span className="sm:hidden">Upload</span>
+          <span className="hidden sm:inline">Add Connection (Dataset)</span>
+          <span className="sm:hidden">Add Connection</span>
         </button>
         <button
           onClick={onLogout}
-          className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 shadow-sm shadow-emerald-200 hover:shadow-md hover:shadow-emerald-200 cursor-pointer"
+          className="bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 px-3.5 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
         >
-          <span className="material-symbols-outlined !text-[18px]">logout</span>
+          <span className="material-symbols-outlined !text-[18px] text-slate-500">logout</span>
           <span className="hidden sm:inline">Log out</span>
-          <span className="sm:hidden">log out</span>
+          <span className="sm:hidden">Log out</span>
         </button>
       </div>
     </header>
