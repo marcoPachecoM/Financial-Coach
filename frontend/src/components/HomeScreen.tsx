@@ -104,7 +104,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   const {
     transactions,
     setTransactions,
-    refetch: refetchTransactions,
   } = useTransactions({
     connectionId: activeConnectionIdStr,
     startDate: startDateStr,
@@ -233,7 +232,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
 
     setSelectedPresetId("all_time");
     setSelectedCategory("all");
-    void refetchTransactions();
 
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], {
