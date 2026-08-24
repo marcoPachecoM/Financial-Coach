@@ -11,9 +11,13 @@ class ConnectionRepository:
         return db.session.scalar(stmt)
 
     @staticmethod
-    def get_by_user_id(user_id: int):
-        stmt = select(Connection).where(Connection.user_id == user_id)
-        return db.session.scalars(stmt).all()
+    def get_by_user_id(user_id: str) -> list[Connection]:
+        stmt = (
+            select(Connection)
+            .where(Connection.user_id == str(user_id))
+            .order_by(Connection.id.asc())
+        )
+        return list(db.session.scalars(stmt).all())
 
     @staticmethod
     def create(connection: Connection) -> Connection:

@@ -1,6 +1,7 @@
 import React from 'react';
 import type { MetricSummary } from '../../types/metrics';
 import { formatCurrency } from '../../utils/formatters';
+import { getCategoryStyle } from '../../utils/categoryHelper';
 
 interface MetricCardsProps {
   metrics: MetricSummary;
@@ -8,10 +9,7 @@ interface MetricCardsProps {
 
 export const MetricCards: React.FC<MetricCardsProps> = ({ metrics }) => {
   const isPositiveBalanceChange = metrics.balanceChangePercentage >= 0;
-  const progressPercentage = Math.min(
-    100,
-    Math.max(0, (metrics.monthlySavingsRate / metrics.savingsTargetRate) * 100)
-  );
+  const categoryStyle = getCategoryStyle(metrics.topCategoryName);
 
   return (
     <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -23,9 +21,11 @@ export const MetricCards: React.FC<MetricCardsProps> = ({ metrics }) => {
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 font-mono">
               Total Balance
             </p>
-            <span className="material-symbols-outlined text-slate-400 !text-[20px]">
-              account_balance_wallet
-            </span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <span className="material-symbols-outlined !text-[20px]">
+                account_balance_wallet
+              </span>
+            </div>
           </div>
           <h3 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight font-sans mb-3">
             {formatCurrency(metrics.totalBalance)}
@@ -49,60 +49,77 @@ export const MetricCards: React.FC<MetricCardsProps> = ({ metrics }) => {
         </div>
       </div>
 
-      {/* 2. Monthly Savings Rate */}
+      {/* 2. Avg. Daily Spend */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200/80 card-shadow card-shadow-hover relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-24 h-24 bg-teal-50 rounded-bl-full -mr-6 -mt-6 transition-transform group-hover:scale-110 pointer-events-none" />
+        <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-bl-full -mr-6 -mt-6 transition-transform group-hover:scale-110 pointer-events-none" />
         <div className="relative z-10">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 font-mono">
-              Monthly Savings Rate
+              Avg. Daily Spend
             </p>
-            <span className="material-symbols-outlined text-slate-400 !text-[20px]">
-              savings
-            </span>
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+              <span className="material-symbols-outlined !text-[20px]">
+                payments
+              </span>
+            </div>
           </div>
-          <div className="flex items-baseline justify-between mb-3">
+          <div className="flex items-baseline gap-1 mb-3">
             <h3 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight font-sans">
-              {metrics.monthlySavingsRate.toFixed(1)}%
+              {formatCurrency(metrics.avgDailySpend)}
             </h3>
-            <span className="text-xs font-semibold text-slate-500 font-mono">
-              Target: {metrics.savingsTargetRate.toFixed(1)}%
+            <span className="text-xs font-semibold text-slate-400 font-mono">/ day</span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 font-mono">
+              <span className="material-symbols-outlined !text-[14px]">receipt_long</span>
+              {metrics.transactionsPerDay.toFixed(1)} tx/day
             </span>
-          </div>
-          {/* Progress Bar */}
-          <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden p-0.5 border border-slate-200/60">
-            <div
-              className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-500 shadow-xs"
-              style={{ width: `${progressPercentage}%` }}
-            />
-          </div>
-          <div className="flex justify-between items-center mt-2 text-[11px] text-slate-400">
-            <span>On track</span>
-            <span>{(metrics.savingsTargetRate - metrics.monthlySavingsRate).toFixed(1)}% to goal</span>
+            <span className="text-xs text-slate-500 font-medium">
+              {metrics.totalTransactionsCount} {metrics.totalTransactionsCount === 1 ? 'record' : 'records'} ({metrics.daysInRange}d)
+            </span>
           </div>
         </div>
       </div>
 
-      {/* 3. Active AI Tasks */}
+      {/* 3. Top Category */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200/80 card-shadow card-shadow-hover relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-24 h-24 bg-purple-50 rounded-bl-full -mr-6 -mt-6 transition-transform group-hover:scale-110 pointer-events-none" />
+        <div className="absolute top-0 right-0 w-24 h-24 bg-amber-50 rounded-bl-full -mr-6 -mt-6 transition-transform group-hover:scale-110 pointer-events-none" />
         <div className="relative z-10">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 font-mono">
-              Active AI Tasks
+              Top Category
             </p>
-            <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center">
-              <span className="material-symbols-outlined !text-[18px]">smart_toy</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+              <span className="material-symbols-outlined !text-[20px]">
+                {categoryStyle.icon || 'pie_chart'}
+              </span>
             </div>
           </div>
-          <h3 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight font-sans mb-2">
-            {metrics.activeAiTasksCount}
+          <h3
+            className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight font-sans mb-3 truncate"
+            title={metrics.topCategoryName}
+          >
+            {metrics.topCategoryName}
           </h3>
-          <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
-            {metrics.activeAiTasksDescription}
-          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {metrics.topCategoryAmount > 0 ? (
+              <>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200 font-mono">
+                  {metrics.topCategoryPercentage.toFixed(1)}% of total
+                </span>
+                <span className="text-xs text-slate-500 font-medium">
+                  {formatCurrency(metrics.topCategoryAmount)} spent
+                </span>
+              </>
+            ) : (
+              <span className="text-xs text-slate-400 font-medium">
+                No spending in period
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </section>
   );
 };
+

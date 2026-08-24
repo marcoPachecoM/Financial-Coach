@@ -165,7 +165,7 @@ Do not explain your reasoning.
             if mcc is not None:
                 try:
                     mcc = int(mcc)
-                except TypeError, ValueError:
+                except (TypeError, ValueError):
                     mcc = None
 
             results.append(

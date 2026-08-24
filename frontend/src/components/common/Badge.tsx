@@ -40,7 +40,7 @@ interface CategoryBadgeProps {
 }
 
 export const CategoryBadge: React.FC<CategoryBadgeProps> = ({ mcc, category, showMccCode = true }) => {
-  const style = getCategoryStyle(category);
+  const style = getCategoryStyle(category ?? '');
 
   return (
     <div className="inline-flex items-center gap-1.5">

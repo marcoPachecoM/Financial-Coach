@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
 import type { Transaction } from '../../types/transaction';
+import { uploadTransactionsCsv } from '../../services/transactions';
 
 interface UploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUploadTransactions: (newTransactions: Transaction[], replaceExisting: boolean) => void;
+  onUploadTransactions: (
+    newTransactions: Transaction[],
+    replaceExisting: boolean,
+    newConnectionId?: number | null,
+  ) => void;
 }
 
 const SAMPLE_CSV = `id,date,provider_name,amount,mcc
@@ -21,9 +26,11 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   onUploadTransactions,
 }) => {
   const [csvText, setCsvText] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [parsedCount, setParsedCount] = useState<number | null>(null);
   const [replaceExisting, setReplaceExisting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   if (!isOpen) return null;
 
@@ -64,10 +71,13 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
       transactions.push({
         id: parts[idIdx] || `tx-gen-${Date.now()}-${i}`,
+        user_id: '',
+        connection_id: '',
         date: parts[dateIdx] || new Date().toISOString().split('T')[0],
         provider_name: parts[providerIdx] || 'Unknown Merchant',
         amount: parsedAmount,
-        mcc: parts[mccIdx] || '0000',
+        mcc: parts[mccIdx] ? parseInt(parts[mccIdx], 10) || null : null,
+        category: 'Uncategorized',
         status: 'ai_approved',
       });
     }
@@ -84,6 +94,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setSelectedFile(file);
     const reader = new FileReader();
     reader.onload = (evt) => {
       const text = evt.target?.result as string;
@@ -102,6 +113,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
   const handleTextChange = (text: string) => {
     setCsvText(text);
+    setSelectedFile(null);
     setError(null);
     if (!text.trim()) {
       setParsedCount(null);
@@ -115,17 +127,36 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!csvText.trim()) return;
+
+    setIsUploading(true);
+    setError(null);
+
     try {
       const parsed = parseCSV(csvText);
-      onUploadTransactions(parsed, replaceExisting);
+      const fileToUpload = selectedFile || new Blob([csvText], { type: 'text/csv' });
+      const filename = selectedFile?.name || 'transactions.csv';
+
+      let newConnectionId: number | null = null;
+      try {
+        const response = await uploadTransactionsCsv(fileToUpload, filename);
+        newConnectionId = response.connection_id;
+      } catch (uploadErr) {
+        console.warn('Backend upload-csv warning, using client parsed data:', uploadErr);
+      }
+
+      onUploadTransactions(parsed, replaceExisting, newConnectionId);
       onClose();
       setCsvText('');
+      setSelectedFile(null);
       setParsedCount(null);
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to import transactions');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -255,11 +286,23 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={!csvText.trim() || !!error}
+              disabled={!csvText.trim() || !!error || isUploading}
               className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-xl text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <span className="material-symbols-outlined !text-[16px]">file_upload</span>
-              Import Dataset
+              {isUploading ? (
+                <>
+                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <span>Importing & Syncing...</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined !text-[16px]">file_upload</span>
+                  Import Dataset
+                </>
+              )}
             </button>
           </div>
         </form>
