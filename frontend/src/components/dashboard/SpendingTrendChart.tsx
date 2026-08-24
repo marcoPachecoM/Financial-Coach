@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { Transaction } from '../../types/transaction';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { getCategoryStyle } from '../../utils/categoryHelper';
 
 interface SpendingTrendChartProps {
   transactions: Transaction[];

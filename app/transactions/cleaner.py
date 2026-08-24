@@ -22,9 +22,20 @@ class TransactionCleaner:
         dataframe = self._clean_amounts(dataframe)
         dataframe = self._clean_strings(dataframe)
         dataframe = self._clean_mcc(dataframe)
+        dataframe = self._clean_id(dataframe)
 
         self._validate_result(dataframe)
 
+        return dataframe
+
+    def _clean_id(
+        self,
+        dataframe: pd.DataFrame,
+    ) -> pd.DataFrame:
+        if "id" in dataframe.columns:
+            dataframe["id"] = dataframe["id"].fillna("").astype(str)
+        else:
+            dataframe.insert(0, "id", [str(i + 1) for i in range(len(dataframe))])
         return dataframe
 
     def _validate_columns(

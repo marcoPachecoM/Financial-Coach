@@ -30,10 +30,13 @@ class CSVTransactionProvider(TransactionProvider):
         self,
         connection: Connection,
     ) -> pd.DataFrame:
-        dataframe = pd.read_csv(
-            connection.external_id,
-            usecols=self.COLUMNS,
-        )
+        dataframe = pd.read_csv(connection.external_id)
+
+        if "id" not in dataframe.columns:
+            dataframe.insert(0, "id", [str(i + 1) for i in range(len(dataframe))])
+
+        available_cols = [col for col in self.COLUMNS if col in dataframe.columns]
+        dataframe = dataframe[available_cols]
 
         return clean_dataframe(dataframe)
 

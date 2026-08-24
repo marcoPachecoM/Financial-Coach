@@ -71,10 +71,13 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
       transactions.push({
         id: parts[idIdx] || `tx-gen-${Date.now()}-${i}`,
+        user_id: '',
+        connection_id: '',
         date: parts[dateIdx] || new Date().toISOString().split('T')[0],
         provider_name: parts[providerIdx] || 'Unknown Merchant',
         amount: parsedAmount,
-        mcc: parts[mccIdx] || '0000',
+        mcc: parts[mccIdx] ? parseInt(parts[mccIdx], 10) || null : null,
+        category: 'Uncategorized',
         status: 'ai_approved',
       });
     }

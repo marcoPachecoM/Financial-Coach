@@ -2,10 +2,11 @@ from datetime import datetime
 from pathlib import Path
 
 from werkzeug.datastructures import FileStorage
+from werkzeug.utils import secure_filename
 
 from app.categorization.service import CategorizerService
 from app.common.exceptions import ForbiddenError, NotFoundError, ValidationError
-from app.connections.models import Connection
+from app.connections.models import Connection, Status
 from app.connections.repository import ConnectionRepository
 from app.transactions.cleaner import TransactionCleaner
 from app.transactions.ingestion.registry import Providers, provider_registry
@@ -96,16 +97,33 @@ class TransactionService:
 
         dataframe = self.cleaner.clean(file.read())
 
-        uploads_dir = ROOT_DIR / "uploads"
-
-        uploads_dir.mkdir(
+        mocks_dir = ROOT_DIR / "mocks"
+        mocks_dir.mkdir(
             parents=True,
             exist_ok=True,
         )
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        stem = Path(file.filename).stem
+        safe_stem = secure_filename(stem) or "uploaded_dataset"
 
-        output_path = uploads_dir / f"{user_id}_{timestamp}_clean_transactions.csv"
+        output_path = mocks_dir / f"{safe_stem}.csv"
+        if output_path.exists():
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = mocks_dir / f"{safe_stem}_{timestamp}.csv"
+
+        base_name = safe_stem
+        if base_name.endswith("_clean_transactions"):
+            base_name = base_name[:-len("_clean_transactions")]
+        elif base_name.endswith("_transactions"):
+            base_name = base_name[:-len("_transactions")]
+
+        if not base_name.strip():
+            base_name = "Dataset"
+
+        if not base_name.lower().endswith("connection"):
+            connection_name = f"{base_name} Connection"
+        else:
+            connection_name = base_name
 
         dataframe.to_csv(
             output_path,
@@ -116,13 +134,26 @@ class TransactionService:
             Connection(
                 user_id=user_id,
                 provider=Providers.CSV,
-                external_id=str(output_path),
-                name=f"CSV Upload - {timestamp}",
+                external_id=str(output_path.resolve()),
+                name=connection_name,
+                status=Status.ACTIVE,
             )
         )
 
         return {
             "records_processed": len(dataframe),
             "connection_id": created_connection.id,
+            "connection": {
+                "id": created_connection.id,
+                "user_id": created_connection.user_id,
+                "provider": created_connection.provider,
+                "name": created_connection.name,
+                "external_id": created_connection.external_id,
+                "status": (
+                    created_connection.status.value
+                    if hasattr(created_connection.status, "value")
+                    else str(created_connection.status)
+                ),
+            },
             "message": "Transactions imported successfully.",
         }

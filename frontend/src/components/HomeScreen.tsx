@@ -26,7 +26,7 @@ interface HomeScreenProps {
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = () => {
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
 
   // 1. Database Connections Hook
   const {
@@ -104,8 +104,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   const {
     transactions,
     setTransactions,
-    loading: isTransactionsLoading,
-    error: transactionsError,
     refetch: refetchTransactions,
   } = useTransactions({
     connectionId: activeConnectionIdStr,
@@ -124,7 +122,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   const {
     data: categorySummary,
     loading: isCategoryLoading,
-    error: categoryError,
   } = useSpendingCategoryData(activeConnectionIdStr, startDateStr, endDateStr);
 
   // Client-side fallback filter
@@ -356,9 +353,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     connections[0] ||
     null;
 
-  const greetingName = user?.username
-    ? user.username.charAt(0).toUpperCase() + user.username.slice(1)
-    : "Alex";
+  const greetingName = "Alex";
 
   return (
     <div className="bg-[#f7f9fb] text-slate-900 min-h-screen flex flex-col font-sans">

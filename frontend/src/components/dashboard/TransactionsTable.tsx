@@ -177,7 +177,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
                     {/* Category & MCC */}
                     <td className="py-3.5 px-5 whitespace-nowrap">
-                      <CategoryBadge mcc={tx.mcc} category={tx.category} />
+                      <CategoryBadge mcc={tx.mcc ?? 0} category={tx.category} />
                     </td>
 
                     {/* Amount */}
