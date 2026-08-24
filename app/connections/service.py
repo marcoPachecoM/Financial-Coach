@@ -14,4 +14,3 @@ class ConnectionService:
 
     def get_user_connections(self, user_id: str) -> list[Connection]:
         return self.connection_repository.get_by_user_id(user_id)
-

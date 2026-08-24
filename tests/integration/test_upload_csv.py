@@ -14,7 +14,10 @@ def test_upload_csv_creates_file_and_connection(client, access_token, app, tmp_p
 
     with patch("app.transactions.service.ROOT_DIR", tmp_path):
         data = {
-            "file": (io.BytesIO(csv_content.encode("utf-8")), "custom_dataset_clean_transactions.csv"),
+            "file": (
+                io.BytesIO(csv_content.encode("utf-8")),
+                "custom_dataset_clean_transactions.csv",
+            ),
         }
 
         response = client.post(

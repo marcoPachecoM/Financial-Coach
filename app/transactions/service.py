@@ -67,9 +67,7 @@ class TransactionService:
                 "amount": t.amount,
                 "mcc": t.mcc,
                 "provider_name": t.provider_name,
-                "category": await self.categorizer_service.categorize(
-                    t.provider_name, t.mcc
-                ),
+                "category": await self.categorizer_service.categorize(t.provider_name, t.mcc),
                 "status": "verified",
             }
             for t in transactions
@@ -113,9 +111,9 @@ class TransactionService:
 
         base_name = safe_stem
         if base_name.endswith("_clean_transactions"):
-            base_name = base_name[:-len("_clean_transactions")]
+            base_name = base_name[: -len("_clean_transactions")]
         elif base_name.endswith("_transactions"):
-            base_name = base_name[:-len("_transactions")]
+            base_name = base_name[: -len("_transactions")]
 
         if not base_name.strip():
             base_name = "Dataset"

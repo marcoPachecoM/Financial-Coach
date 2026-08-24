@@ -12,5 +12,3 @@ limiter = Limiter(
 @limiter.request_filter
 def exempt_options():
     return request.method == "OPTIONS"
-
-

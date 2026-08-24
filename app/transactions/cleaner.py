@@ -45,9 +45,7 @@ class TransactionCleaner:
         missing = self.REQUIRED_COLUMNS - set(dataframe.columns)
 
         if missing:
-            raise ValidationError(
-                f"CSV is missing required columns: {', '.join(missing)}."
-            )
+            raise ValidationError(f"CSV is missing required columns: {', '.join(missing)}.")
 
     def _clean_dates(
         self,
