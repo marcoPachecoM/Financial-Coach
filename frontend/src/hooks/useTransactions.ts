@@ -7,16 +7,19 @@ interface UseTransactionsOptions {
   connectionId?: string;
   startDate?: string;
   endDate?: string;
+  size?: number;
 }
 
 export const useTransactions = (options: UseTransactionsOptions = {}) => {
-  const { connectionId, startDate, endDate } = options;
+  const { connectionId, startDate, endDate, size = 1000 } = options;
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchTransactions = useCallback(async () => {
+    if (!connectionId) return;
+
     try {
       setLoading(true);
       setError(null);
@@ -26,7 +29,7 @@ export const useTransactions = (options: UseTransactionsOptions = {}) => {
         start_date: startDate,
         end_date: endDate,
         page: 1,
-        size: 10,
+        size,
       });
 
       setTransactions(response.content ?? []);
@@ -39,7 +42,7 @@ export const useTransactions = (options: UseTransactionsOptions = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [connectionId, startDate, endDate]);
+  }, [connectionId, startDate, endDate, size]);
 
   useEffect(() => {
     void fetchTransactions();

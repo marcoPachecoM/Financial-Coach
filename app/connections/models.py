@@ -31,13 +31,13 @@ class Connection(Base):
     )
 
     name: Mapped[str] = mapped_column(
-        String(64),
+        String(128),
         nullable=False,
         index=True,
     )
 
     external_id: Mapped[str] = mapped_column(
-        String(64),
+        String(512),
         nullable=False,
         index=True,
     )

@@ -30,10 +30,13 @@ class CSVTransactionProvider(TransactionProvider):
         self,
         connection: Connection,
     ) -> pd.DataFrame:
-        dataframe = pd.read_csv(
-            connection.external_id,
-            usecols=self.COLUMNS,
-        )
+        dataframe = pd.read_csv(connection.external_id)
+
+        if "id" not in dataframe.columns:
+            dataframe.insert(0, "id", [str(i + 1) for i in range(len(dataframe))])
+
+        available_cols = [col for col in self.COLUMNS if col in dataframe.columns]
+        dataframe = dataframe[available_cols]
 
         return clean_dataframe(dataframe)
 
@@ -70,15 +73,16 @@ class CSVTransactionProvider(TransactionProvider):
         return transactions, total, has_more
 
     def _to_transaction(self, row) -> Transaction:
+        try:
+            mcc_val = int(float(row.mcc)) if row.mcc is not None and pd.notna(row.mcc) else 0
+        except (ValueError, TypeError):
+            mcc_val = 0
+
         return Transaction(
             id=str(row.id),
             date=row.date,
             amount=Decimal(str(row.amount)),
-            mcc=(
-                int(row.mcc)
-                if row.mcc is not None and pd.notna(row.mcc) and str(row.mcc).isdigit()
-                else 0
-            ),
+            mcc=mcc_val,
             provider_name=str(row.provider_name),
         )
 
