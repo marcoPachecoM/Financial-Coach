@@ -200,10 +200,12 @@ class CategorizerService:
             if not provider_name:
                 continue
 
+            category_str = category.value if hasattr(category, "value") else str(category)
+
             categories.append(
                 CategoriesCache(
                     provider_name=provider_name,
-                    category=category.value,
+                    category=category_str,
                     source=source,
                 )
             )

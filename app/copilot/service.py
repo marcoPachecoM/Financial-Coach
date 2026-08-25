@@ -4,6 +4,18 @@ from app.categorization.categories import VALID_CATEGORIES
 from app.copilot.domain.models import AIMessage, AIResponse
 from app.copilot.providers.registry import provider_registry
 
+BATCH_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "provider": {"type": "string"},
+            "mcc": {"type": ["integer", "null"]},
+            "category": {"type": "string"},
+        },
+        "required": ["provider", "category"],
+    },
+}
 
 class CopilotService:
     def __init__(self) -> None:
@@ -46,6 +58,7 @@ class CopilotService:
                     ),
                     AIMessage(role="user", content=self._build_batch_prompt(batch)),
                 ],
+                response_format=BATCH_SCHEMA,  
             )
 
             results.extend(self._parse_batch_response(response))
@@ -79,15 +92,14 @@ You categorize financial merchants.
 Allowed categories:
 {categories}
 
-Return ONLY a JSON array.
-
-Each item must contain:
-- provider
-- mcc
-- category
+Respond strictly in raw JSON format.
+Example array format:
+[
+  {{"provider": "STARBUCKS", "mcc": 5814, "category": "Food & Dining"}}
+]
 
 Do not explain your reasoning.
-Do not add any other fields.
+Do not wrap response in conversational text.
 """.strip()
 
         return f"""
@@ -96,10 +108,8 @@ You categorize a financial transaction.
 Allowed categories:
 {categories}
 
-Return ONLY JSON with:
-- category
-
-Do not explain your reasoning.
+Respond strictly in raw JSON format:
+{{"category": "Utilities"}}
 """.strip()
 
     @staticmethod
@@ -134,46 +144,39 @@ Do not explain your reasoning.
             "category": category,
         }
 
-    @staticmethod
-    def _parse_batch_response(
-        response: AIResponse,
-    ) -> list[dict]:
+    # Removed @staticmethod so Python automatically binds 'self'
+    def _parse_batch_response(self, response: AIResponse) -> list[dict]:
+        raw_content = response.content
+        
         try:
-            data = json.loads(response.content)
-        except json.JSONDecodeError:
+            data = json.loads(raw_content)
+            # Handle cases where the model wraps the array in a dict key like {"items": [...]}
+            if isinstance(data, dict):
+                for key in ["transactions", "items", "data", "results"]:
+                    if key in data and isinstance(data[key], list):
+                        data = data[key]
+                        break
+            
+            if not isinstance(data, list):
+                print(f"Warning: Expected list, got {type(data)}")
+                return []
+
+            # Validate category names
+            validated_results = []
+            for item in data:
+                raw_cat = item.get("category", "")
+                clean_cat = raw_cat.strip()
+                
+                if clean_cat not in VALID_CATEGORIES:
+                    print(f" Category Rejected: '{raw_cat}' is not in VALID_CATEGORIES!")
+                    item["category"] = "Other"  # Fallback
+                else:
+                    item["category"] = clean_cat
+                    
+                validated_results.append(item)
+
+            return validated_results
+
+        except json.JSONDecodeError as exc:
+            print(f" JSON Decode Error: {exc}")
             return []
-
-        if not isinstance(data, list):
-            return []
-
-        results: list[dict] = []
-
-        for item in data:
-            if not isinstance(item, dict):
-                continue
-
-            provider = item.get("provider")
-            mcc = item.get("mcc")
-            category = item.get("category")
-
-            if not isinstance(provider, str):
-                continue
-
-            if category not in VALID_CATEGORIES:
-                continue
-
-            if mcc is not None:
-                try:
-                    mcc = int(mcc)
-                except (TypeError, ValueError):
-                    mcc = None
-
-            results.append(
-                {
-                    "provider": provider,
-                    "mcc": mcc,
-                    "category": category,
-                }
-            )
-
-        return results
