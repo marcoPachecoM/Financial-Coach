@@ -1,7 +1,7 @@
-from typing import Any
-import httpx
-import json
 import re
+from typing import Any
+
+import httpx
 
 from app.copilot.domain.models import AIMessage, AIResponse
 from app.copilot.providers.base import AIProvider
@@ -89,7 +89,7 @@ class OllamaProvider(AIProvider):
             model=self._model,
             provider=self._name,
         )
-    
+
     @staticmethod
     def _clean_json_output(text: str) -> str:
         """Strips markdown code blocks to ensure valid JSON string output."""

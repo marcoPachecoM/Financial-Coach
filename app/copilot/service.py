@@ -17,6 +17,7 @@ BATCH_SCHEMA = {
     },
 }
 
+
 class CopilotService:
     def __init__(self) -> None:
         self._provider = None
@@ -58,7 +59,7 @@ class CopilotService:
                     ),
                     AIMessage(role="user", content=self._build_batch_prompt(batch)),
                 ],
-                response_format=BATCH_SCHEMA,  
+                response_format=BATCH_SCHEMA,
             )
 
             results.extend(self._parse_batch_response(response))
@@ -147,7 +148,7 @@ Respond strictly in raw JSON format:
     # Removed @staticmethod so Python automatically binds 'self'
     def _parse_batch_response(self, response: AIResponse) -> list[dict]:
         raw_content = response.content
-        
+
         try:
             data = json.loads(raw_content)
             # Handle cases where the model wraps the array in a dict key like {"items": [...]}
@@ -156,7 +157,7 @@ Respond strictly in raw JSON format:
                     if key in data and isinstance(data[key], list):
                         data = data[key]
                         break
-            
+
             if not isinstance(data, list):
                 print(f"Warning: Expected list, got {type(data)}")
                 return []
@@ -166,13 +167,13 @@ Respond strictly in raw JSON format:
             for item in data:
                 raw_cat = item.get("category", "")
                 clean_cat = raw_cat.strip()
-                
+
                 if clean_cat not in VALID_CATEGORIES:
                     print(f" Category Rejected: '{raw_cat}' is not in VALID_CATEGORIES!")
                     item["category"] = "Other"  # Fallback
                 else:
                     item["category"] = clean_cat
-                    
+
                 validated_results.append(item)
 
             return validated_results
