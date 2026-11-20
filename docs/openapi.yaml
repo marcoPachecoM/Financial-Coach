@@ -1,0 +1,818 @@
+openapi: 3.1.0
+
+info:
+  title: Financial Coach API
+  version: 1.0.0
+  description: |
+    Contract of the current Flask backend, documented as-is (verified against
+    the running API). It is the reference for the Spring Boot migration.
+
+    Conventions observed in the current implementation:
+    - JSON field names are snake_case.
+    - Monetary values are serialized as **strings** (Python `Decimal`), e.g. `"147.06"`.
+    - Datetimes have no timezone offset, e.g. `"2026-01-02T13:35:00"`.
+    - Every error uses the `ErrorResponse` envelope.
+    - Unknown fields in a body or query string are rejected with `VALIDATION_ERROR`.
+
+    Items marked with `x-known-issues` are inconsistencies or bugs in the current
+    backend. Decide on each one before (or during) the migration.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Connections
+  - name: Transactions
+  - name: Analytics
+  - name: Copilot
+
+security:
+  - accessToken: []
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [Health]
+      summary: Application health check
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, environment]
+                properties:
+                  status: { type: string, example: ok }
+                  environment: { type: string, example: development }
+
+  /api/v1/health/public:
+    get:
+      tags: [Health]
+      summary: Public health check
+      operationId: getHealthPublic
+      security: []
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /api/v1/health/protected:
+    get:
+      tags: [Health]
+      summary: Authenticated health check
+      operationId: getHealthProtected
+      responses:
+        "200":
+          description: OK, returns the caller's role.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, role]
+                properties:
+                  status: { type: string, example: ok }
+                  role: { $ref: "#/components/schemas/UserRole" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/health/admin:
+    get:
+      tags: [Health]
+      summary: Admin-only health check
+      operationId: getHealthAdmin
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, scope]
+                properties:
+                  status: { type: string, example: ok }
+                  scope: { type: string, example: admin }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is not ADMIN (code `ROLE_FORBIDDEN`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              example:
+                error: { code: ROLE_FORBIDDEN, message: Insufficient role permissions. }
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      description: Rate limited to 5 requests per minute.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Credentials are valid.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401":
+          description: Invalid credentials (code `INVALID_CREDENTIALS`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the refresh token
+      description: |
+        Send the **refresh** token as `Authorization: Bearer <refresh_token>`.
+        Returns a new token pair and revokes the old refresh token. Reusing a
+        revoked refresh token is detected and rejected (`REFRESH_TOKEN_REUSE`).
+        Rate limited to 10 requests per minute.
+      operationId: refreshTokens
+      security:
+        - refreshToken: []
+      responses:
+        "200":
+          description: New token pair.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+        "401":
+          description: |
+            Token missing, invalid, of the wrong type (`INVALID_TOKEN`), unknown
+            (`INVALID_REFRESH_TOKEN`) or reused (`REFRESH_TOKEN_REUSE`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              example:
+                error: { code: REFRESH_TOKEN_REUSE, message: Refresh token reuse detected. }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the refresh token
+      description: |
+        Send the **refresh** token as `Authorization: Bearer <refresh_token>`.
+        Rate limited to 20 requests per minute.
+      operationId: logout
+      security:
+        - refreshToken: []
+      responses:
+        "200":
+          description: Refresh token revoked.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageResponse" }
+              example: { message: Logged out. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: The authenticated user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/connections:
+    get:
+      tags: [Connections]
+      summary: List the caller's data connections
+      operationId: listConnections
+      responses:
+        "200":
+          description: Connections owned by the caller.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Connection" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/transactions:
+    get:
+      tags: [Transactions]
+      summary: List transactions of a connection (paginated)
+      description: Each transaction is categorized on the fly.
+      operationId: listTransactions
+      parameters:
+        - $ref: "#/components/parameters/ConnectionId"
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, default: 10 }
+          x-known-issues:
+            - No maximum; a client can request any page size.
+        - name: mcc
+          in: query
+          description: Filter by Merchant Category Code.
+          schema: { type: integer, minimum: 0, maximum: 9999 }
+        - $ref: "#/components/parameters/StartDate"
+        - $ref: "#/components/parameters/EndDate"
+      x-known-issues:
+        - Unlike analytics, start_date > end_date is not validated here.
+      responses:
+        "200":
+          description: One page of transactions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionPage" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/ConnectionForbidden" }
+        "404": { $ref: "#/components/responses/ConnectionNotFound" }
+    post:
+      tags: [Transactions]
+      summary: Create a single transaction (manual entry)
+      description: |
+        Used by the frontend form. Other channels (CSV import, a future
+        WhatsApp integration) convert their input into this same shape and
+        reuse the same creation logic.
+
+        If `category` is omitted, the transaction is categorized automatically.
+      operationId: createTransaction
+      x-status: planned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransactionCreateRequest" }
+      responses:
+        "201":
+          description: Transaction created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/ConnectionForbidden" }
+        "404": { $ref: "#/components/responses/ConnectionNotFound" }
+
+  /api/v1/transactions/upload-csv:
+    post:
+      tags: [Transactions]
+      summary: Import transactions from a CSV file
+      description: |
+        Cleans the CSV, stores it and creates a new `csv` connection for the
+        caller. Maximum request size is `MAX_CONTENT_LENGTH` (1 MiB by default).
+
+        The file must have a header row with these columns, in this order:
+        `Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes`.
+        Each data row is described by the `CsvTransactionRow` schema.
+      operationId: uploadTransactionsCsv
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: CSV file (`.csv`). Rows follow `CsvTransactionRow`.
+                  x-csv-row-schema:
+                    $ref: "#/components/schemas/CsvTransactionRow"
+            encoding:
+              file:
+                contentType: text/csv
+      responses:
+        "201":
+          description: Transactions imported and connection created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CsvUploadResponse" }
+        "400":
+          description: Missing file, wrong extension or invalid CSV content.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              example:
+                error: { code: VALIDATION_ERROR, message: file is required. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413":
+          description: File larger than MAX_CONTENT_LENGTH (code `HTTP_ERROR`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/analytics/summary:
+    get:
+      tags: [Analytics]
+      summary: Spending summary for a connection
+      operationId: getAnalyticsSummary
+      parameters:
+        - $ref: "#/components/parameters/ConnectionId"
+        - $ref: "#/components/parameters/GroupBy"
+        - $ref: "#/components/parameters/StartDate"
+        - $ref: "#/components/parameters/EndDate"
+      responses:
+        "200":
+          description: Aggregated figures.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnalyticsSummary" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/ConnectionForbidden" }
+        "404": { $ref: "#/components/responses/ConnectionNotFound" }
+
+  /api/v1/analytics/by-category:
+    get:
+      tags: [Analytics]
+      summary: Spending breakdown by category
+      operationId: getAnalyticsByCategory
+      parameters:
+        - $ref: "#/components/parameters/ConnectionId"
+        - $ref: "#/components/parameters/GroupBy"
+        - $ref: "#/components/parameters/StartDate"
+        - $ref: "#/components/parameters/EndDate"
+      responses:
+        "200":
+          description: One entry per category, sorted by amount (descending).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CategoryBreakdown" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/ConnectionForbidden" }
+        "404": { $ref: "#/components/responses/ConnectionNotFound" }
+
+  /api/v1/copilot/chat:
+    post:
+      tags: [Copilot]
+      summary: Ask the AI copilot about a connection's spending
+      description: Requires the Ollama provider (OLLAMA_BASE_URL) to be reachable.
+      operationId: copilotChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChatRequest" }
+      responses:
+        "200":
+          description: The model's answer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/copilot/analyze:
+    post:
+      tags: [Copilot]
+      summary: AI analysis of the caller's spending (NOT IMPLEMENTED)
+      operationId: copilotAnalyze
+      deprecated: true
+      x-known-issues:
+        - |
+          Broken: the route calls `CopilotService.analyze()`, which does not
+          exist, so it always returns 500 INTERNAL_SERVER_ERROR. No response
+          shape is defined. Define it (or drop the endpoint) during the migration.
+      responses:
+        "500":
+          description: Always fails in the current backend.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              example:
+                error: { code: INTERNAL_SERVER_ERROR, message: Unexpected server error. }
+
+components:
+  securitySchemes:
+    accessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Access token from /auth/login or /auth/refresh (HS256, 15 min by default).
+        Claims: sub (user public id), role, type=access, iss, aud, jti, iat, nbf, exp.
+    refreshToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Refresh token (type=refresh, 14 days by default). Only for /auth/refresh and /auth/logout.
+
+  parameters:
+    ConnectionId:
+      name: connection_id
+      in: query
+      required: true
+      schema: { type: integer, minimum: 1 }
+    StartDate:
+      name: start_date
+      in: query
+      schema: { type: string, format: date, example: "2025-01-01" }
+    EndDate:
+      name: end_date
+      in: query
+      description: Must be on or after start_date.
+      schema: { type: string, format: date, example: "2025-12-31" }
+    GroupBy:
+      name: group_by
+      in: query
+      schema: { type: string, enum: [category, mcc] }
+      x-known-issues:
+        - |
+          Broken: the query schema accepts it, but the service methods have no
+          group_by argument, so sending it returns 500 INTERNAL_SERVER_ERROR.
+          Implement it or remove it during the migration.
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid access token (`UNAUTHORIZED`, `INVALID_TOKEN`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          example:
+            error: { code: UNAUTHORIZED, message: Authentication is required. }
+    ValidationError:
+      description: |
+        Invalid body or query (`VALIDATION_ERROR`). `message` is either a string
+        or a map of field name to list of errors; unknown fields are reported
+        under `unknown_fields`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          examples:
+            fieldErrors:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message:
+                    connection_id: [Missing data for required field.]
+            unknownFields:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message:
+                    unknown_fields: [foo]
+    RateLimited:
+      description: Too many requests (`RATE_LIMIT_EXCEEDED`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ConnectionForbidden:
+      description: The connection belongs to another user (`FORBIDDEN`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ConnectionNotFound:
+      description: Connection or its provider not found (`NOT_FOUND`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          example:
+            error: { code: NOT_FOUND, message: Connection with ID 999 not found. }
+
+  schemas:
+    Money:
+      type: string
+      pattern: '^-?\d+(\.\d+)?$'
+      description: Decimal amount serialized as a string.
+      example: "147.06"
+
+    UserRole:
+      type: string
+      enum: [ADMIN, CLIENT]
+
+    Category:
+      type: string
+      enum:
+        - Utilities
+        - Others
+        - Household
+        - Entertainment
+        - Services
+        - Electronics
+        - Food
+        - Education
+        - Pet
+        - Employer
+        - Travel
+        - Health
+        - Snacks
+        - Drink
+        - Shopping
+        - Personal
+        - House
+        - Bebida
+        - Other
+        - Higiene personal
+        - Gift
+        - Car
+        - Aseo personal
+        - Currencies
+        - Home
+        - Salary
+    ConnectionStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE, SYNCING, ERROR]
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code.
+              examples:
+                - VALIDATION_ERROR
+                - UNAUTHORIZED
+                - INVALID_TOKEN
+                - INVALID_CREDENTIALS
+                - INVALID_REFRESH_TOKEN
+                - REFRESH_TOKEN_REUSE
+                - FORBIDDEN
+                - ROLE_FORBIDDEN
+                - NOT_FOUND
+                - CONFLICT
+                - RATE_LIMIT_EXCEEDED
+                - HTTP_ERROR
+                - INTERNAL_SERVER_ERROR
+            message:
+              oneOf:
+                - type: string
+                - type: object
+                  additionalProperties:
+                    type: array
+                    items: { type: string }
+
+    StatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, example: ok }
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 255, example: client1@example.local }
+        password: { type: string, minLength: 1, maxLength: 1024, example: ClientPass123! }
+
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+
+    User:
+      type: object
+      required: [id, username, email, role, is_active]
+      properties:
+        id: { type: string, format: uuid, description: Public user id (JWT `sub`). }
+        username: { type: string, example: client1 }
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/UserRole" }
+        is_active: { type: boolean }
+
+    Connection:
+      type: object
+      required: [id, user_id, provider, name, external_id, status]
+      properties:
+        id: { type: integer, example: 1 }
+        user_id: { type: string, format: uuid }
+        provider: { type: string, enum: [csv] }
+        name: { type: string, example: client1 Connection }
+        external_id:
+          type: string
+          description: Provider-specific id. For `csv`, the absolute path of the stored file.
+          x-known-issues:
+            - Leaks an absolute server filesystem path to the client.
+        status: { $ref: "#/components/schemas/ConnectionStatus" }
+
+    Transaction:
+      type: object
+      required: [id, user_id, connection_id, date, provider_name, amount, category]
+      properties:
+        id: { type: string, example: "74820509" }
+        user_id: { type: string, format: uuid }
+        connection_id:
+          type: string
+          example: "1"
+          x-known-issues:
+            - Serialized as a string here but as an integer in Connection.id and in every request.
+        date:
+          type: string
+          format: date-time
+          description: Local datetime without timezone offset.
+          example: "2026-01-02T13:35:00"
+        provider_name: { type: string, description: Merchant name., example: Hosp Star }
+        amount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          x-known-issues:
+            - Not normalized to 2 decimal places (e.g. "100.0"), unlike analytics amounts.
+        mcc:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 9999
+          description: Merchant Category Code.
+        category: { $ref: "#/components/schemas/Category" }
+        status:
+          type: string
+          example: verified
+          x-known-issues:
+            - Always "verified" (hardcoded).
+
+    TransactionPage:
+      type: object
+      required: [content, page, size, total_elements, total_pages, has_more]
+      properties:
+        content:
+          type: array
+          items: { $ref: "#/components/schemas/Transaction" }
+        page: { type: integer, example: 1 }
+        size:
+          type: integer
+          description: Number of items in this page (not the requested size).
+          example: 2
+        total_elements: { type: integer, example: 763 }
+        total_pages: { type: integer, example: 382 }
+        has_more: { type: boolean }
+
+    TransactionType:
+      type: string
+      enum: [EXPENSE, INCOME, TRANSFER]
+      x-todo:
+        - Confirm the list of types.
+
+    TransactionCreateRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        Input for creating one transaction. Field-by-field equivalent of a
+        `CsvTransactionRow`, in snake_case, with `connection_id` instead of the
+        free-text `Account`.
+      required: [type, date, name, amount, connection_id]
+      properties:
+        type: { $ref: "#/components/schemas/TransactionType" }
+        date:
+          type: string
+          format: date
+          example: "2026-01-02"
+        time:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: Time of day (HH:mm, 24h). Optional.
+          example: "13:35"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Merchant or payee name.
+          example: La tiendita de la esquina
+        amount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Positive amount; the direction comes from `type`.
+          example: "100.00"
+        category_group:
+          type: string
+          maxLength: 100
+          example: Food
+        category:
+          type: string
+          maxLength: 100
+          description: Omit to let the backend categorize the transaction.
+          example: Groceries
+        connection_id:
+          type: integer
+          minimum: 1
+          description: Account the transaction belongs to (replaces the CSV `Account` column).
+        notes:
+          type: string
+          maxLength: 1000
+
+    CsvTransactionRow:
+      type: object
+      description: |
+        One data row of the uploaded CSV (input format, not an API response).
+        Property names are the exact CSV header names.
+      x-todo:
+        - Confirm the allowed values of Type.
+        - Confirm the Date and Time formats used by the source app.
+        - Confirm whether Amount is signed (negative = expense) or always positive.
+        - Decide how Category Group / Category map to the internal Category enum.
+      required: [Type, Date, Name, Amount]
+      properties:
+        Type:
+          type: string
+          description: Transaction type.
+          examples: [Expense, Income, Transfer]
+        Date:
+          type: string
+          format: date
+          example: "2026-01-02"
+        Time:
+          type: [string, "null"]
+          description: Time of day; empty when unknown.
+          example: "13:35"
+        Name:
+          type: string
+          description: Merchant or payee name.
+          example: La tiendita de la esquina
+        Amount:
+          type: string
+          description: Decimal amount as written in the file.
+          example: "100.00"
+        Category Group:
+          type: [string, "null"]
+          example: Food
+        Category:
+          type: [string, "null"]
+          example: Groceries
+        Account:
+          type: [string, "null"]
+          description: Source account name.
+          example: Debit card
+        Notes:
+          type: [string, "null"]
+
+    CsvUploadResponse:
+      type: object
+      required: [records_processed, connection_id, connection, message]
+      properties:
+        records_processed: { type: integer, example: 763 }
+        connection_id: { type: integer, example: 2 }
+        connection: { $ref: "#/components/schemas/Connection" }
+        message: { type: string, example: Transactions imported successfully. }
+
+    AnalyticsSummary:
+      type: object
+      required: [total_spent, average_transaction, largest_transaction, transaction_count]
+      properties:
+        total_spent: { $ref: "#/components/schemas/Money" }
+        average_transaction: { $ref: "#/components/schemas/Money" }
+        largest_transaction: { $ref: "#/components/schemas/Money" }
+        transaction_count: { type: integer, example: 763 }
+
+    CategoryBreakdown:
+      type: object
+      required: [category, amount, percentage, count]
+      properties:
+        category: { $ref: "#/components/schemas/Category" }
+        amount: { $ref: "#/components/schemas/Money" }
+        percentage:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Share of total spending, 0-100 with 2 decimals.
+          example: "22.62"
+        count: { type: integer, example: 154 }
+
+    ChatRequest:
+      type: object
+      additionalProperties: false
+      required: [message, connection_id]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 1000 }
+        connection_id: { type: integer, minimum: 1 }
+
+    ChatResponse:
+      type: object
+      required: [response, provider, model]
+      properties:
+        response: { type: string }
+        provider: { type: string, example: ollama }
+        model: { type: string, example: "expense_llama3.2:latest" }
