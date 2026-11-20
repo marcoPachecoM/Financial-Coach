@@ -4,18 +4,30 @@ info:
   title: Financial Coach API
   version: 1.0.0
   description: |
-    Contract of the current Flask backend, documented as-is (verified against
-    the running API). It is the reference for the Spring Boot migration.
+    Target contract for the Financial Coach backend (Spring Boot migration).
+    It started as a documentation of the current Flask API and now includes
+    planned changes. Operations marked `x-status: planned` do not exist in the
+    Flask backend yet.
 
-    Conventions observed in the current implementation:
+    Conventions:
     - JSON field names are snake_case.
-    - Monetary values are serialized as **strings** (Python `Decimal`), e.g. `"147.06"`.
-    - Datetimes have no timezone offset, e.g. `"2026-01-02T13:35:00"`.
-    - Every error uses the `ErrorResponse` envelope.
+    - IDs of users, accounts and transactions are UUIDs.
+    - Monetary values are serialized as **strings** with up to 2 decimals, e.g. `"147.06"`.
+    - Transaction amounts are signed by type: EXPENSE is positive, INCOME is
+      negative (spending perspective). Aggregates (analytics, budgets) are
+      always reported as positive values with explicit names.
+    - When a transaction happened is a local date-time with no timezone:
+      `datetime` (`"2026-01-02T13:35:00"`). Date filters are calendar dates
+      (`"2026-01-02"`) and months are `YYYY-MM`.
+    - System timestamps (`created_at`, `updated_at`) are UTC instants in
+      ISO 8601 with `Z`, e.g. `"2026-01-02T19:35:12Z"`.
+    - Transactions are soft-deleted: DELETE marks them as deleted and they
+      disappear from every read endpoint, analytics and budgets.
+    - Resources owned by another user respond 404 (never 403), so their
+      existence is not revealed.
+    - Errors use RFC 9457 Problem Details (`application/problem+json`), with
+      a machine-readable `code` and, for validation errors, an `errors` list.
     - Unknown fields in a body or query string are rejected with `VALIDATION_ERROR`.
-
-    Items marked with `x-known-issues` are inconsistencies or bugs in the current
-    backend. Decide on each one before (or during) the migration.
 
 servers:
   - url: http://localhost:8000
@@ -24,7 +36,7 @@ servers:
 tags:
   - name: Health
   - name: Auth
-  - name: Connections
+  - name: Accounts
   - name: Transactions
   - name: Analytics
   - name: Copilot
@@ -103,10 +115,14 @@ paths:
         "403":
           description: Caller is not ADMIN (code `ROLE_FORBIDDEN`).
           content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
               example:
-                error: { code: ROLE_FORBIDDEN, message: Insufficient role permissions. }
+                type: about:blank
+                title: Forbidden
+                status: 403
+                detail: Insufficient role permissions.
+                code: ROLE_FORBIDDEN
 
   /api/v1/auth/login:
     post:
@@ -130,8 +146,8 @@ paths:
         "401":
           description: Invalid credentials (code `INVALID_CREDENTIALS`).
           content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
   /api/v1/auth/refresh:
@@ -157,10 +173,14 @@ paths:
             Token missing, invalid, of the wrong type (`INVALID_TOKEN`), unknown
             (`INVALID_REFRESH_TOKEN`) or reused (`REFRESH_TOKEN_REUSE`).
           content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
               example:
-                error: { code: REFRESH_TOKEN_REUSE, message: Refresh token reuse detected. }
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                detail: Refresh token reuse detected.
+                code: REFRESH_TOKEN_REUSE
         "429": { $ref: "#/components/responses/RateLimited" }
 
   /api/v1/auth/logout:
@@ -200,45 +220,127 @@ paths:
                   user: { $ref: "#/components/schemas/User" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
-  /api/v1/connections:
+  /api/v1/accounts:
     get:
-      tags: [Connections]
-      summary: List the caller's data connections
-      operationId: listConnections
+      tags: [Accounts]
+      summary: List the caller's accounts
+      description: Replaces the former `GET /connections`.
+      operationId: listAccounts
       responses:
         "200":
-          description: Connections owned by the caller.
+          description: Accounts owned by the caller, sorted by name.
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/Connection" }
+                items: { $ref: "#/components/schemas/Account" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Accounts]
+      summary: Create an account
+      operationId: createAccount
+      x-status: planned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccountCreateRequest" }
+      responses:
+        "201":
+          description: Account created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/AccountNameConflict" }
+
+  /api/v1/accounts/{account_id}:
+    parameters:
+      - $ref: "#/components/parameters/AccountIdPath"
+    get:
+      tags: [Accounts]
+      summary: Get one account
+      operationId: getAccount
+      x-status: planned
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+    patch:
+      tags: [Accounts]
+      summary: Edit an account (name, monthly budget)
+      description: Only the fields sent are changed.
+      operationId: updateAccount
+      x-status: planned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccountUpdateRequest" }
+      responses:
+        "200":
+          description: Updated account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+        "409": { $ref: "#/components/responses/AccountNameConflict" }
+
+  /api/v1/accounts/{account_id}/budget:
+    parameters:
+      - $ref: "#/components/parameters/AccountIdPath"
+    get:
+      tags: [Accounts]
+      summary: Monthly budget usage of an account
+      description: |
+        `spent` is the sum of EXPENSE transactions in the month. Income does not
+        offset spending. If the account has no budget, `budget`, `remaining`
+        and `percentage_used` are `null` and `status` is `NO_BUDGET`.
+      operationId: getAccountBudget
+      x-status: planned
+      parameters:
+        - name: month
+          in: query
+          description: Calendar month. Defaults to the current month.
+          schema:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+            example: "2026-01"
+      responses:
+        "200":
+          description: Budget usage for the month.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BudgetUsage" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
 
   /api/v1/transactions:
     get:
       tags: [Transactions]
-      summary: List transactions of a connection (paginated)
-      description: Each transaction is categorized on the fly.
+      summary: List transactions of an account (paginated)
+      description: |
+        Soft-deleted transactions are never returned. Sorted by `datetime`,
+        newest first. `start_date` / `end_date` filter on the date part of `datetime`.
       operationId: listTransactions
       parameters:
-        - $ref: "#/components/parameters/ConnectionId"
+        - $ref: "#/components/parameters/AccountId"
         - name: page
           in: query
           schema: { type: integer, minimum: 1, default: 1 }
         - name: size
           in: query
-          schema: { type: integer, minimum: 1, default: 10 }
-          x-known-issues:
-            - No maximum; a client can request any page size.
-        - name: mcc
-          in: query
-          description: Filter by Merchant Category Code.
-          schema: { type: integer, minimum: 0, maximum: 9999 }
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
         - $ref: "#/components/parameters/StartDate"
         - $ref: "#/components/parameters/EndDate"
-      x-known-issues:
-        - Unlike analytics, start_date > end_date is not validated here.
       responses:
         "200":
           description: One page of transactions.
@@ -247,8 +349,7 @@ paths:
               schema: { $ref: "#/components/schemas/TransactionPage" }
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/ConnectionForbidden" }
-        "404": { $ref: "#/components/responses/ConnectionNotFound" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
     post:
       tags: [Transactions]
       summary: Create a single transaction (manual entry)
@@ -273,21 +374,90 @@ paths:
               schema: { $ref: "#/components/schemas/Transaction" }
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/ConnectionForbidden" }
-        "404": { $ref: "#/components/responses/ConnectionNotFound" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+
+  /api/v1/transactions/{transaction_id}:
+    parameters:
+      - $ref: "#/components/parameters/TransactionIdPath"
+    get:
+      tags: [Transactions]
+      summary: Get one transaction
+      operationId: getTransaction
+      x-status: planned
+      responses:
+        "200":
+          description: The transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/TransactionNotFound" }
+    patch:
+      tags: [Transactions]
+      summary: Edit a transaction
+      description: |
+        Only the fields sent are changed. The amount sign rule is checked
+        against the resulting `type` and `amount` (e.g. changing `type` to
+        INCOME while keeping a positive amount is rejected). Moving it to
+        another account is allowed if that account belongs to the caller.
+      operationId: updateTransaction
+      x-status: planned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransactionUpdateRequest" }
+      responses:
+        "200":
+          description: Updated transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Transaction not found, or the target `account_id` is not one of the caller's accounts.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+    delete:
+      tags: [Transactions]
+      summary: Delete a transaction (soft delete)
+      description: |
+        Marks the transaction as deleted (sets `deleted_at` internally). The row
+        is kept in the database but excluded from listings, analytics and
+        budgets. Deleting an already deleted transaction returns 404.
+      operationId: deleteTransaction
+      x-status: planned
+      responses:
+        "204":
+          description: Transaction deleted. No body.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/TransactionNotFound" }
 
   /api/v1/transactions/upload-csv:
     post:
       tags: [Transactions]
       summary: Import transactions from a CSV file
       description: |
-        Cleans the CSV, stores it and creates a new `csv` connection for the
-        caller. Maximum request size is `MAX_CONTENT_LENGTH` (1 MiB by default).
-
         The file must have a header row with these columns, in this order:
         `Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes`.
         Each data row is described by the `CsvTransactionRow` schema.
+        Maximum request size is 1 MiB.
+
+        Import rules:
+        - **All or nothing.** Every row is validated first. If any row is
+          invalid, nothing is imported and the response lists all row errors
+          (`CSV_INVALID_ROWS`).
+        - **Accounts.** Each row goes to the caller's account whose name
+          matches the `Account` column (case-insensitive). Missing accounts
+          are created. An empty `Account` is a row error.
+        - **Duplicates.** Each row gets a fingerprint of
+          (account, datetime, name, amount, occurrence within the file).
+          Rows whose fingerprint already exists are skipped and counted in
+          `records_duplicated`, so uploading the same file twice is safe.
       operationId: uploadTransactionsCsv
+      x-status: planned
       requestBody:
         required: true
         content:
@@ -307,32 +477,41 @@ paths:
                 contentType: text/csv
       responses:
         "201":
-          description: Transactions imported and connection created.
+          description: File processed. New rows imported, duplicates skipped.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CsvUploadResponse" }
         "400":
-          description: Missing file, wrong extension or invalid CSV content.
+          description: |
+            Missing file or wrong extension (`VALIDATION_ERROR`), or one or more
+            invalid rows (`CSV_INVALID_ROWS`, with `row` set in each error).
           content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
               example:
-                error: { code: VALIDATION_ERROR, message: file is required. }
+                type: about:blank
+                title: Bad Request
+                status: 400
+                detail: 2 rows have errors. Nothing was imported.
+                code: CSV_INVALID_ROWS
+                errors:
+                  - { row: 14, field: Amount, message: INCOME amounts must be negative. }
+                  - { row: 27, field: Account, message: Account is required. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "413":
-          description: File larger than MAX_CONTENT_LENGTH (code `HTTP_ERROR`).
+          description: File larger than 1 MiB (`PAYLOAD_TOO_LARGE`).
           content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
 
   /api/v1/analytics/summary:
     get:
       tags: [Analytics]
-      summary: Spending summary for a connection
+      summary: Income and expense summary for an account
+      description: All figures are positive. Soft-deleted transactions are excluded.
       operationId: getAnalyticsSummary
       parameters:
-        - $ref: "#/components/parameters/ConnectionId"
-        - $ref: "#/components/parameters/GroupBy"
+        - $ref: "#/components/parameters/AccountId"
         - $ref: "#/components/parameters/StartDate"
         - $ref: "#/components/parameters/EndDate"
       responses:
@@ -343,17 +522,22 @@ paths:
               schema: { $ref: "#/components/schemas/AnalyticsSummary" }
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/ConnectionForbidden" }
-        "404": { $ref: "#/components/responses/ConnectionNotFound" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
 
   /api/v1/analytics/by-category:
     get:
       tags: [Analytics]
-      summary: Spending breakdown by category
+      summary: Breakdown by category
+      description: Amounts are positive. By default only expenses are included.
       operationId: getAnalyticsByCategory
       parameters:
-        - $ref: "#/components/parameters/ConnectionId"
-        - $ref: "#/components/parameters/GroupBy"
+        - $ref: "#/components/parameters/AccountId"
+        - name: type
+          in: query
+          description: Which transactions to break down.
+          schema:
+            allOf: [{ $ref: "#/components/schemas/TransactionType" }]
+            default: EXPENSE
         - $ref: "#/components/parameters/StartDate"
         - $ref: "#/components/parameters/EndDate"
       responses:
@@ -366,13 +550,12 @@ paths:
                 items: { $ref: "#/components/schemas/CategoryBreakdown" }
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/ConnectionForbidden" }
-        "404": { $ref: "#/components/responses/ConnectionNotFound" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
 
   /api/v1/copilot/chat:
     post:
       tags: [Copilot]
-      summary: Ask the AI copilot about a connection's spending
+      summary: Ask the AI copilot about an account's finances
       description: Requires the Ollama provider (OLLAMA_BASE_URL) to be reachable.
       operationId: copilotChat
       requestBody:
@@ -388,26 +571,18 @@ paths:
               schema: { $ref: "#/components/schemas/ChatResponse" }
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-
-  /api/v1/copilot/analyze:
-    post:
-      tags: [Copilot]
-      summary: AI analysis of the caller's spending (NOT IMPLEMENTED)
-      operationId: copilotAnalyze
-      deprecated: true
-      x-known-issues:
-        - |
-          Broken: the route calls `CopilotService.analyze()`, which does not
-          exist, so it always returns 500 INTERNAL_SERVER_ERROR. No response
-          shape is defined. Define it (or drop the endpoint) during the migration.
-      responses:
-        "500":
-          description: Always fails in the current backend.
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+        "503":
+          description: The AI provider is unreachable or timed out (`AI_UNAVAILABLE`).
           content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
               example:
-                error: { code: INTERNAL_SERVER_ERROR, message: Unexpected server error. }
+                type: about:blank
+                title: Service Unavailable
+                status: 503
+                detail: The AI assistant is not available right now. Try again later.
+                code: AI_UNAVAILABLE
 
 components:
   securitySchemes:
@@ -425,11 +600,21 @@ components:
       description: Refresh token (type=refresh, 14 days by default). Only for /auth/refresh and /auth/logout.
 
   parameters:
-    ConnectionId:
-      name: connection_id
+    AccountId:
+      name: account_id
       in: query
       required: true
-      schema: { type: integer, minimum: 1 }
+      schema: { type: string, format: uuid }
+    AccountIdPath:
+      name: account_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TransactionIdPath:
+      name: transaction_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     StartDate:
       name: start_date
       in: query
@@ -437,71 +622,114 @@ components:
     EndDate:
       name: end_date
       in: query
-      description: Must be on or after start_date.
+      description: Must be on or after start_date, otherwise `VALIDATION_ERROR`.
       schema: { type: string, format: date, example: "2025-12-31" }
-    GroupBy:
-      name: group_by
-      in: query
-      schema: { type: string, enum: [category, mcc] }
-      x-known-issues:
-        - |
-          Broken: the query schema accepts it, but the service methods have no
-          group_by argument, so sending it returns 500 INTERNAL_SERVER_ERROR.
-          Implement it or remove it during the migration.
 
   responses:
     Unauthorized:
       description: Missing or invalid access token (`UNAUTHORIZED`, `INVALID_TOKEN`).
       content:
-        application/json:
-          schema: { $ref: "#/components/schemas/ErrorResponse" }
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
           example:
-            error: { code: UNAUTHORIZED, message: Authentication is required. }
+            type: about:blank
+            title: Unauthorized
+            status: 401
+            detail: Authentication is required.
+            code: UNAUTHORIZED
     ValidationError:
-      description: |
-        Invalid body or query (`VALIDATION_ERROR`). `message` is either a string
-        or a map of field name to list of errors; unknown fields are reported
-        under `unknown_fields`.
+      description: Invalid body or query (`VALIDATION_ERROR`). Each problem is listed in `errors`.
       content:
-        application/json:
-          schema: { $ref: "#/components/schemas/ErrorResponse" }
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
           examples:
             fieldErrors:
               value:
-                error:
-                  code: VALIDATION_ERROR
-                  message:
-                    connection_id: [Missing data for required field.]
+                type: about:blank
+                title: Bad Request
+                status: 400
+                detail: 2 fields are invalid.
+                code: VALIDATION_ERROR
+                errors:
+                  - { field: account_id, message: Missing data for required field. }
+                  - { field: amount, message: INCOME amounts must be negative. }
             unknownFields:
               value:
-                error:
-                  code: VALIDATION_ERROR
-                  message:
-                    unknown_fields: [foo]
+                type: about:blank
+                title: Bad Request
+                status: 400
+                detail: Unknown fields.
+                code: VALIDATION_ERROR
+                errors:
+                  - { field: foo, message: Unknown field. }
     RateLimited:
       description: Too many requests (`RATE_LIMIT_EXCEEDED`).
       content:
-        application/json:
-          schema: { $ref: "#/components/schemas/ErrorResponse" }
-    ConnectionForbidden:
-      description: The connection belongs to another user (`FORBIDDEN`).
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    AccountNotFound:
+      description: Account does not exist or belongs to another user (`NOT_FOUND`).
       content:
-        application/json:
-          schema: { $ref: "#/components/schemas/ErrorResponse" }
-    ConnectionNotFound:
-      description: Connection or its provider not found (`NOT_FOUND`).
-      content:
-        application/json:
-          schema: { $ref: "#/components/schemas/ErrorResponse" }
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
           example:
-            error: { code: NOT_FOUND, message: Connection with ID 999 not found. }
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: Account not found.
+            code: NOT_FOUND
+    AccountNameConflict:
+      description: The caller already has an account with that name (`CONFLICT`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            detail: An account with this name already exists.
+            code: CONFLICT
+    TransactionNotFound:
+      description: |
+        Transaction does not exist, is soft-deleted, or belongs to another user
+        (`NOT_FOUND`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: Transaction not found.
+            code: NOT_FOUND
 
   schemas:
     Money:
       type: string
-      pattern: '^-?\d+(\.\d+)?$'
-      description: Decimal amount serialized as a string.
+      pattern: '^-?\d+(\.\d{1,2})?$'
+      description: Signed decimal amount serialized as a string, up to 2 decimals.
       example: "147.06"
+
+    PositiveMoney:
+      type: string
+      pattern: '^\d+(\.\d{1,2})?$'
+      description: Non-negative decimal amount serialized as a string, up to 2 decimals.
+      example: "5000.00"
+
+    Percentage:
+      type: string
+      pattern: '^\d+(\.\d{1,2})?$'
+      description: Percentage (0-100, may exceed 100 for budgets) with 2 decimals.
+      example: "75.00"
+
+    LocalDateTime:
+      type: string
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$'
+      description: |
+        Local date-time without timezone (ISO 8601), e.g. what the user saw on
+        the receipt. Responses always include seconds. Not to be confused with
+        `created_at` / `updated_at`, which are UTC instants ending in `Z`.
+      example: "2026-01-02T13:35:00"
 
     UserRole:
       type: string
@@ -536,42 +764,79 @@ components:
         - Currencies
         - Home
         - Salary
-    ConnectionStatus:
-      type: string
-      enum: [ACTIVE, INACTIVE, SYNCING, ERROR]
 
-    ErrorResponse:
+    TransactionType:
+      type: string
+      enum: [EXPENSE, INCOME]
+      description: |
+        Determines the amount sign: EXPENSE > 0, INCOME < 0.
+        TRANSFER is intentionally left out for now; it can be added later
+        (two linked rows plus `to_account_id`) without breaking clients.
+
+    ProblemDetail:
       type: object
-      required: [error]
+      description: |
+        RFC 9457 Problem Details, as produced by Spring's `ProblemDetail`,
+        extended with `code` and `errors`.
+      required: [type, title, status, code]
       properties:
-        error:
-          type: object
-          required: [code, message]
-          properties:
-            code:
-              type: string
-              description: Machine-readable error code.
-              examples:
-                - VALIDATION_ERROR
-                - UNAUTHORIZED
-                - INVALID_TOKEN
-                - INVALID_CREDENTIALS
-                - INVALID_REFRESH_TOKEN
-                - REFRESH_TOKEN_REUSE
-                - FORBIDDEN
-                - ROLE_FORBIDDEN
-                - NOT_FOUND
-                - CONFLICT
-                - RATE_LIMIT_EXCEEDED
-                - HTTP_ERROR
-                - INTERNAL_SERVER_ERROR
-            message:
-              oneOf:
-                - type: string
-                - type: object
-                  additionalProperties:
-                    type: array
-                    items: { type: string }
+        type:
+          type: string
+          format: uri-reference
+          default: about:blank
+        title:
+          type: string
+          description: Short summary of the HTTP status.
+          example: Bad Request
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          description: Human-readable explanation of this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: Request path that produced the error.
+          example: /api/v1/transactions
+        code:
+          type: string
+          description: Machine-readable error code. Clients should branch on this, not on `detail`.
+          examples:
+            - VALIDATION_ERROR
+            - CSV_INVALID_ROWS
+            - UNAUTHORIZED
+            - INVALID_TOKEN
+            - INVALID_CREDENTIALS
+            - INVALID_REFRESH_TOKEN
+            - REFRESH_TOKEN_REUSE
+            - ROLE_FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - RATE_LIMIT_EXCEEDED
+            - PAYLOAD_TOO_LARGE
+            - AI_UNAVAILABLE
+            - INTERNAL_SERVER_ERROR
+        errors:
+          type: array
+          description: Present for `VALIDATION_ERROR` and `CSV_INVALID_ROWS`.
+          items: { $ref: "#/components/schemas/FieldError" }
+
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        row:
+          type: integer
+          minimum: 1
+          description: CSV row number (header excluded). Only for `CSV_INVALID_ROWS`.
+        field:
+          type: string
+          description: JSON field or CSV column name.
+          example: amount
+        message:
+          type: string
+          example: INCOME amounts must be negative.
 
     StatusResponse:
       type: object
@@ -610,53 +875,135 @@ components:
         role: { $ref: "#/components/schemas/UserRole" }
         is_active: { type: boolean }
 
-    Connection:
+    Account:
       type: object
-      required: [id, user_id, provider, name, external_id, status]
+      description: |
+        A money container of the user (debit card, cash, savings...). Replaces
+        the former `Connection`. Transactions always belong to one account.
+      required: [id, name, monthly_budget, created_at, updated_at]
       properties:
-        id: { type: integer, example: 1 }
-        user_id: { type: string, format: uuid }
-        provider: { type: string, enum: [csv] }
-        name: { type: string, example: client1 Connection }
-        external_id:
+        id: { type: string, format: uuid }
+        name:
           type: string
-          description: Provider-specific id. For `csv`, the absolute path of the stored file.
-          x-known-issues:
-            - Leaks an absolute server filesystem path to the client.
-        status: { $ref: "#/components/schemas/ConnectionStatus" }
+          description: Unique per user (case-insensitive). Matched against the CSV `Account` column.
+          example: Debit card
+        monthly_budget:
+          oneOf:
+            - $ref: "#/components/schemas/PositiveMoney"
+            - type: "null"
+          description: Spending limit per calendar month. `null` means no budget.
+          example: "5000.00"
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-01-02T19:35:12Z"
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-01-02T19:35:12Z"
+
+    AccountCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, example: Debit card }
+        monthly_budget:
+          oneOf:
+            - $ref: "#/components/schemas/PositiveMoney"
+            - type: "null"
+          description: Omit or send `null` for no budget.
+
+    AccountUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Partial update. Send `monthly_budget = null` to remove the budget.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        monthly_budget:
+          oneOf:
+            - $ref: "#/components/schemas/PositiveMoney"
+            - type: "null"
+
+    BudgetUsage:
+      type: object
+      required: [account_id, month, budget, spent, remaining, percentage_used, status]
+      properties:
+        account_id: { type: string, format: uuid }
+        month:
+          type: string
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          example: "2026-01"
+        budget:
+          oneOf:
+            - $ref: "#/components/schemas/PositiveMoney"
+            - type: "null"
+          example: "5000.00"
+        spent:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          description: Sum of EXPENSE amounts in the month.
+          example: "3750.00"
+        remaining:
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+          description: budget - spent. Negative when the budget is exceeded.
+          example: "1250.00"
+        percentage_used:
+          oneOf:
+            - $ref: "#/components/schemas/Percentage"
+            - type: "null"
+          example: "75.00"
+        status:
+          type: string
+          enum: [ON_TRACK, WARNING, EXCEEDED, NO_BUDGET]
+          description: |
+            ON_TRACK below 80 %, WARNING from 80 % to 100 %, EXCEEDED above 100 %,
+            NO_BUDGET when the account has no monthly budget.
 
     Transaction:
       type: object
-      required: [id, user_id, connection_id, date, provider_name, amount, category]
+      description: |
+        A stored transaction. Same fields as `TransactionCreateRequest`, plus
+        the server-assigned ones (`id`, `user_id`, timestamps).
+        Optional input fields are always present here, as `null` when not provided.
+        `deleted_at` is internal and never exposed: deleted transactions are not returned.
+      required: [id, user_id, account_id, type, datetime, name, amount, category_group, category, notes, created_at, updated_at]
       properties:
-        id: { type: string, example: "74820509" }
+        id: { type: string, format: uuid }
         user_id: { type: string, format: uuid }
-        connection_id:
+        account_id: { type: string, format: uuid }
+        type: { $ref: "#/components/schemas/TransactionType" }
+        datetime: { $ref: "#/components/schemas/LocalDateTime" }
+        name:
           type: string
-          example: "1"
-          x-known-issues:
-            - Serialized as a string here but as an integer in Connection.id and in every request.
-        date:
-          type: string
-          format: date-time
-          description: Local datetime without timezone offset.
-          example: "2026-01-02T13:35:00"
-        provider_name: { type: string, description: Merchant name., example: Hosp Star }
+          description: Merchant or payee name.
+          example: La tiendita de la esquina
         amount:
           allOf: [{ $ref: "#/components/schemas/Money" }]
-          x-known-issues:
-            - Not normalized to 2 decimal places (e.g. "100.0"), unlike analytics amounts.
-        mcc:
-          type: [integer, "null"]
-          minimum: 0
-          maximum: 9999
-          description: Merchant Category Code.
+          description: Signed by type (EXPENSE positive, INCOME negative).
+          example: "100.00"
+        category_group:
+          type: [string, "null"]
+          example: Food
         category: { $ref: "#/components/schemas/Category" }
-        status:
+        notes:
+          type: [string, "null"]
+        created_at:
           type: string
-          example: verified
-          x-known-issues:
-            - Always "verified" (hardcoded).
+          format: date-time
+          readOnly: true
+          description: When the transaction was stored (UTC).
+          example: "2026-01-02T19:35:12Z"
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Last modification (UTC). Equals created_at until the first edit.
+          example: "2026-01-02T19:35:12Z"
 
     TransactionPage:
       type: object
@@ -674,31 +1021,22 @@ components:
         total_pages: { type: integer, example: 382 }
         has_more: { type: boolean }
 
-    TransactionType:
-      type: string
-      enum: [EXPENSE, INCOME, TRANSFER]
-      x-todo:
-        - Confirm the list of types.
-
     TransactionCreateRequest:
       type: object
       additionalProperties: false
       description: |
         Input for creating one transaction. Field-by-field equivalent of a
-        `CsvTransactionRow`, in snake_case, with `connection_id` instead of the
-        free-text `Account`.
-      required: [type, date, name, amount, connection_id]
+        `CsvTransactionRow`, in snake_case, with `account_id` instead of the
+        account name. The amount sign must match `type`; otherwise the request
+        fails with `VALIDATION_ERROR`.
+      required: [type, datetime, name, amount, account_id]
       properties:
         type: { $ref: "#/components/schemas/TransactionType" }
-        date:
-          type: string
-          format: date
-          example: "2026-01-02"
-        time:
-          type: string
-          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
-          description: Time of day (HH:mm, 24h). Optional.
-          example: "13:35"
+        datetime:
+          allOf: [{ $ref: "#/components/schemas/LocalDateTime" }]
+          description: |
+            Value of the form's `<input type="datetime-local">`. Seconds are
+            optional on input (`"2026-01-02T13:35"` is accepted).
         name:
           type: string
           minLength: 1
@@ -707,48 +1045,62 @@ components:
           example: La tiendita de la esquina
         amount:
           allOf: [{ $ref: "#/components/schemas/Money" }]
-          description: Positive amount; the direction comes from `type`.
+          description: Signed by type (EXPENSE positive, INCOME negative). Zero is not allowed.
           example: "100.00"
         category_group:
           type: string
           maxLength: 100
           example: Food
         category:
-          type: string
-          maxLength: 100
+          allOf: [{ $ref: "#/components/schemas/Category" }]
           description: Omit to let the backend categorize the transaction.
-          example: Groceries
-        connection_id:
-          type: integer
-          minimum: 1
-          description: Account the transaction belongs to (replaces the CSV `Account` column).
+          example: Food
+        account_id: { type: string, format: uuid }
         notes:
           type: string
           maxLength: 1000
+
+    TransactionUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: |
+        Partial update; same fields and rules as `TransactionCreateRequest`.
+        Send `null` to clear an optional field (`category_group`, `notes`).
+      properties:
+        type: { $ref: "#/components/schemas/TransactionType" }
+        datetime: { $ref: "#/components/schemas/LocalDateTime" }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        amount: { $ref: "#/components/schemas/Money" }
+        category_group: { type: [string, "null"], maxLength: 100 }
+        category: { $ref: "#/components/schemas/Category" }
+        account_id: { type: string, format: uuid }
+        notes: { type: [string, "null"], maxLength: 1000 }
 
     CsvTransactionRow:
       type: object
       description: |
         One data row of the uploaded CSV (input format, not an API response).
-        Property names are the exact CSV header names.
-      x-todo:
-        - Confirm the allowed values of Type.
-        - Confirm the Date and Time formats used by the source app.
-        - Confirm whether Amount is signed (negative = expense) or always positive.
-        - Decide how Category Group / Category map to the internal Category enum.
-      required: [Type, Date, Name, Amount]
+        Property names are the exact CSV header names. The file is cleaned
+        before upload, so Category values already match the `Category` enum.
+      required: [Type, Date, Name, Amount, Account]
       properties:
         Type:
           type: string
-          description: Transaction type.
-          examples: [Expense, Income, Transfer]
+          enum: [Expense, Income]
+          description: Mapped to `TransactionType` (Expense → EXPENSE, Income → INCOME).
         Date:
           type: string
-          format: date
-          example: "2026-01-02"
+          pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$'
+          description: |
+            Datetime without timezone, `yyyy-MM-dd HH:mm:ss` (space separator).
+            Becomes the transaction `datetime` (the space is replaced by `T`).
+          example: "2026-01-02 13:35:00"
         Time:
           type: [string, "null"]
-          description: Time of day; empty when unknown.
+          description: |
+            Ignored on import: `Date` already contains the time. Kept only
+            because the source file has the column.
           example: "13:35"
         Name:
           type: string
@@ -756,58 +1108,83 @@ components:
           example: La tiendita de la esquina
         Amount:
           type: string
-          description: Decimal amount as written in the file.
+          description: Signed by type, same rule as the API (EXPENSE positive, INCOME negative).
           example: "100.00"
         Category Group:
           type: [string, "null"]
           example: Food
         Category:
-          type: [string, "null"]
-          example: Groceries
+          oneOf:
+            - $ref: "#/components/schemas/Category"
+            - type: "null"
+          example: Food
         Account:
-          type: [string, "null"]
-          description: Source account name.
+          type: string
+          minLength: 1
+          description: Account name; matched against the caller's accounts (created if missing).
           example: Debit card
         Notes:
           type: [string, "null"]
 
     CsvUploadResponse:
       type: object
-      required: [records_processed, connection_id, connection, message]
+      required: [records_imported, records_duplicated, accounts_created]
       properties:
-        records_processed: { type: integer, example: 763 }
-        connection_id: { type: integer, example: 2 }
-        connection: { $ref: "#/components/schemas/Connection" }
-        message: { type: string, example: Transactions imported successfully. }
+        records_imported:
+          type: integer
+          description: New transactions stored.
+          example: 740
+        records_duplicated:
+          type: integer
+          description: Rows skipped because they were already imported.
+          example: 23
+        accounts_created:
+          type: array
+          description: Accounts created because the CSV referenced names that did not exist.
+          items: { $ref: "#/components/schemas/Account" }
 
     AnalyticsSummary:
       type: object
-      required: [total_spent, average_transaction, largest_transaction, transaction_count]
+      required: [total_expenses, total_income, net, expense_count, income_count, average_expense, largest_expense]
       properties:
-        total_spent: { $ref: "#/components/schemas/Money" }
-        average_transaction: { $ref: "#/components/schemas/Money" }
-        largest_transaction: { $ref: "#/components/schemas/Money" }
-        transaction_count: { type: integer, example: 763 }
+        total_expenses:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          example: "12500.00"
+        total_income:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          example: "20000.00"
+        net:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: total_income - total_expenses. Positive means you saved money.
+          example: "7500.00"
+        expense_count: { type: integer, example: 140 }
+        income_count: { type: integer, example: 2 }
+        average_expense:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          example: "89.29"
+        largest_expense:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          example: "1721.94"
 
     CategoryBreakdown:
       type: object
       required: [category, amount, percentage, count]
       properties:
         category: { $ref: "#/components/schemas/Category" }
-        amount: { $ref: "#/components/schemas/Money" }
+        amount: { $ref: "#/components/schemas/PositiveMoney" }
         percentage:
-          allOf: [{ $ref: "#/components/schemas/Money" }]
-          description: Share of total spending, 0-100 with 2 decimals.
+          allOf: [{ $ref: "#/components/schemas/Percentage" }]
+          description: Share of the total for the selected type.
           example: "22.62"
         count: { type: integer, example: 154 }
 
     ChatRequest:
       type: object
       additionalProperties: false
-      required: [message, connection_id]
+      required: [message, account_id]
       properties:
         message: { type: string, minLength: 1, maxLength: 1000 }
-        connection_id: { type: integer, minimum: 1 }
+        account_id: { type: string, format: uuid }
 
     ChatResponse:
       type: object
