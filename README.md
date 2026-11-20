@@ -1,28 +1,63 @@
 # Financial Coach API
 
+> Personal continuation of a collaborative hackathon project, originally built by a team and now maintained solo.
+
+## Overview
+
+Financial Coach is a personal finance assistant. Users sign in, upload their bank transactions as CSV files, and get a categorized view of their spending: transactions are normalized and assigned to categories (using merchant rules, a cache, and an LLM served through Ollama when needed), then summarized in analytics endpoints by period and by category. A copilot endpoint answers questions and analyzes spending on top of that data. The backend is a Flask API with JWT authentication (short-lived access tokens, rotating refresh tokens), and a React + Vite frontend renders the dashboard.
+
 ## 1. Requirements
 
-- Python 3.14.7
-- virtual environment via standard venv
-- SQLite for local development by default
+Install these before starting:
 
-## 2. Local Setup (.venv)
+| Tool | Version | Used for | Install (macOS / Homebrew) |
+|---|---|---|---|
+| [uv](https://docs.astral.sh/uv/) | 0.13+ | Python version + virtual environment + dependencies | `brew install uv` |
+| Python | 3.14.x | Backend (uv installs it for you, see below) | `uv python install 3.14` |
+| Node.js | 20.19+ (22 LTS recommended) | Frontend (Vite 8) | `brew install node` |
+| Docker (optional) | any recent | Running the API + Redis with Compose | Docker Desktop |
+
+SQLite is used for local development by default; no database server is needed.
+
+> Python does not need to be installed system-wide. `uv` downloads and isolates Python 3.14 for this project only.
+
+## 2. Backend Setup
+
+Run these from the project root:
 
 ```bash
-python3.14 -m venv .venv
+# 1. Install Python 3.14 (once per machine)
+uv python install 3.14
+
+# 2. Pin the project to 3.14 (creates .python-version; only needed once)
+uv python pin 3.14
+
+# 3. Create the virtual environment in .venv/
+uv venv
+
+# 4. Activate it
 source .venv/bin/activate
-pip install -r requirements-dev.txt
-```
 
-## 3. Environment Variables
+# 5. Install dependencies (development set includes test/lint tools)
+uv pip install -r requirements-dev.txt
 
-Copy and edit:
-
-```bash
+# 6. Create your local environment file
 cp .env.example .env
 ```
 
-Important variables:
+Check the setup:
+
+```bash
+python --version   # Python 3.14.x (inside the activated .venv)
+```
+
+> Use `python --version` (or `python3 --version`). `python -v` is *verbose mode*, not the version.
+
+Every new terminal needs `source .venv/bin/activate` before running backend commands. Alternatively, skip activation and prefix commands with `uv run`, e.g. `uv run flask run`.
+
+## 3. Environment Variables
+
+Edit `.env` (created from `.env.example`). Defaults work for local development. Important variables:
 
 - FLASK_ENV: development | testing | production
 - SECRET_KEY
@@ -38,25 +73,55 @@ Important variables:
 
 Production fails fast if critical secrets/config are missing.
 
+AI features use Ollama. `AI_PROVIDER`, `AI_MODEL` and `OLLAMA_BASE_URL` point to a model served from the Colab notebook; set `OLLAMA_BASE_URL` to the URL printed by that notebook. The rest of the API works without it.
+
 ## 4. Database initialization
 
-Run the script to create the database and seed the initial data:
+Run the script to create the database and seed the demo users:
 
 ```bash
 python -m scripts.seed_users
 ```
 
-The script is idempotent and stores only Argon2id password hashes.
+The script is idempotent (safe to run again) and stores only Argon2id password hashes.
 
-## 5. Run the API
+## 5. Run the Application
 
-Local development server:
+### 5.1 Backend API (http://localhost:8000)
+
+With the `.venv` activated, from the project root:
 
 ```bash
 flask run
 ```
 
-Production container/server uses Gunicorn (not flask run).
+Check it is up:
+
+```bash
+curl http://localhost:8000/api/v1/health
+```
+
+Production container/server uses Gunicorn (not `flask run`).
+
+### 5.2 Frontend (http://localhost:5173)
+
+In a second terminal:
+
+```bash
+cd frontend
+cp .env.example .env     # VITE_API_URL=http://localhost:8000/api/v1
+npm install              # first time only
+npm run dev
+```
+
+Open http://localhost:5173. The frontend expects the API from 5.1 to be running.
+
+### 5.3 Troubleshooting
+
+- `command not found: python` inside the project: the venv is not activated (`source .venv/bin/activate`).
+- `python --version` shows 3.13 or older: run `uv venv` again, or use `uv run` commands.
+- Login fails: run `python -m scripts.seed_users` again.
+- CORS errors in the browser: `CORS_ALLOWED_ORIGINS` must include `http://localhost:5173`.
 
 ## 7. Authentication Flow
 
