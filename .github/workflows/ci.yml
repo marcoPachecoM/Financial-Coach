@@ -41,3 +41,25 @@ jobs:
 
       - name: Tests with coverage
         run: pytest --cov=app --cov-report=term-missing --cov-fail-under=60
+
+  backend:
+    name: backend (Spring Boot)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # Testcontainers starts PostgreSQL in Docker (available on ubuntu-latest runners).
+      - name: Build and test (migrations against PostgreSQL)
+        run: ./mvnw -B verify

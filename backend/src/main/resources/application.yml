@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: financial-coach
+
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    # Flyway owns the schema. Hibernate only checks that entities match it.
+    hibernate:
+      ddl-auto: validate
+    # Avoid lazy-loading queries during view rendering (hidden N+1 queries).
+    open-in-view: false
+
+  flyway:
+    locations: classpath:db/migration

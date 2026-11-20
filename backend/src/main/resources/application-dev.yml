@@ -1,0 +1,11 @@
+# Local development profile: ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+# Matches the database started by compose.yaml.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/financial_coach}
+    username: ${DB_USER:financial_coach}
+    password: ${DB_PASSWORD:financial_coach}
+
+  flyway:
+    # db/dev only contains demo data; it is never loaded outside this profile.
+    locations: classpath:db/migration,classpath:db/dev

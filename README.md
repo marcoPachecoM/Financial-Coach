@@ -16,8 +16,10 @@ Install these before starting:
 | Python | 3.14.x | Backend (uv installs it for you, see below) | `uv python install 3.14` |
 | Node.js | 20.19+ (22 LTS recommended) | Frontend (Vite 8) | `brew install node` |
 | Docker (optional) | any recent | Running the API + Redis with Compose | Docker Desktop |
+| Java | 25 (LTS) | Spring Boot backend in `backend/` (section 6) | `brew install openjdk@25` |
+| Docker | any recent | PostgreSQL for `backend/` (dev and tests) | Docker Desktop |
 
-SQLite is used for local development by default; no database server is needed.
+SQLite is used for local development of the Flask API by default; no database server is needed. The Spring Boot backend uses PostgreSQL in Docker.
 
 > Python does not need to be installed system-wide. `uv` downloads and isolates Python 3.14 for this project only.
 
@@ -123,6 +125,60 @@ Open http://localhost:5173. The frontend expects the API from 5.1 to be running.
 - Login fails: run `python -m scripts.seed_users` again.
 - CORS errors in the browser: `CORS_ALLOWED_ORIGINS` must include `http://localhost:5173`.
 
+## 6. Spring Boot Backend (migration in progress)
+
+The API is being migrated to Spring Boot in `backend/`, following the contract in [docs/openapi.yaml](docs/openapi.yaml). The Flask API above remains the working backend until the migration is complete.
+
+Current state: database schema (Flyway migrations) and temporary HTTP Basic authentication against the `users` table. JWT login comes last; until then, the React frontend keeps using the Flask API. See [docs/database.md](docs/database.md) for the data model.
+
+Requirements: Java 25 and Docker running. If Java 25 is not your default JDK:
+
+```bash
+export JAVA_HOME=/opt/homebrew/opt/openjdk@25
+```
+
+Run the tests (Testcontainers starts a throwaway PostgreSQL, applies every migration and checks the constraints):
+
+```bash
+cd backend
+./mvnw verify
+```
+
+Run the app locally against a persistent PostgreSQL:
+
+```bash
+cd backend
+docker compose up -d --wait                               # PostgreSQL 18 on localhost:5432
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev     # applies migrations + demo data
+curl http://localhost:8080/actuator/health                # {"status":"UP"}
+```
+
+The `dev` profile also loads demo data:
+
+| User | Password | Role |
+|---|---|---|
+| `client1@example.local` | `ClientPass123!` | CLIENT (owns a "Debit card" account) |
+| `admin@example.local` | `AdminPass123!` | ADMIN |
+
+Until JWT login exists, authenticate with HTTP Basic (email + password):
+
+```bash
+curl -u 'client1@example.local:ClientPass123!' http://localhost:8080/api/v1/health/protected
+curl -u 'admin@example.local:AdminPass123!' http://localhost:8080/api/v1/health/admin
+```
+
+Inspect the database with:
+
+```bash
+docker compose exec postgres psql -U financial_coach -d financial_coach -c '\dt'
+```
+
+Migration rules:
+
+- Migrations live in `backend/src/main/resources/db/migration` and are named `V<n>__<description>.sql`.
+- Never edit a migration that has been applied; add a new one instead.
+- Hibernate runs with `ddl-auto: validate`: only Flyway changes the schema.
+
 ## 7. Authentication Flow
 
 Endpoints:
@@ -208,6 +264,7 @@ GitHub Actions workflow runs on push and pull_request:
 - bandit
 - pip-audit
 - pytest + coverage gate (>=60%)
+- `backend` job: `./mvnw verify` on Java 25 (Flyway migrations tested against PostgreSQL with Testcontainers)
 
 ## 14. Architecture
 
