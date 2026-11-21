@@ -1,6 +1,13 @@
 import api from "./instance";
 import { toNumber } from "./money";
-import type { ApiTransaction, ApiTransactionPage, CsvUploadResponse } from "../types/api";
+import type {
+  ApiTransaction,
+  ApiTransactionCreateRequest,
+  ApiTransactionPage,
+  CsvUploadResponse,
+  RecurrenceFrequency,
+  TransactionType,
+} from "../types/api";
 import type { Transaction } from "../types/transaction";
 
 /** Largest page the API allows. */
@@ -26,7 +33,56 @@ const toTransaction = (tx: ApiTransaction): Transaction => ({
   categoryGroup: tx.category_group,
   category: tx.category,
   notes: tx.notes,
+  recurringTransactionId: tx.recurring_transaction_id,
 });
+
+/** What the "Add transaction" form collects. */
+export interface NewTransaction {
+  accountId: string;
+  type: TransactionType;
+  /** "YYYY-MM-DDTHH:mm" from the datetime-local input. */
+  datetime: string;
+  name: string;
+  /** Positive figure; the sign is applied from `type`. */
+  amount: number;
+  /** Empty: assigned automatically by the backend. */
+  categoryGroup?: string;
+  category?: string;
+  notes?: string;
+  recurrence?: { frequency: RecurrenceFrequency; endDate?: string };
+}
+
+/** The API wants EXPENSE positive and INCOME negative (the form only asks for the figure). */
+const signedAmount = (type: TransactionType, amount: number) =>
+  (type === "EXPENSE" ? Math.abs(amount) : -Math.abs(amount)).toFixed(2);
+
+export const createTransaction = async (input: NewTransaction): Promise<Transaction> => {
+  const body: ApiTransactionCreateRequest = {
+    type: input.type,
+    datetime: input.datetime,
+    name: input.name,
+    amount: signedAmount(input.type, input.amount),
+    account_id: input.accountId,
+    ...(input.categoryGroup ? { category_group: input.categoryGroup } : {}),
+    ...(input.category?.trim() ? { category: input.category.trim() } : {}),
+    ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
+    ...(input.recurrence
+      ? {
+          recurrence: {
+            frequency: input.recurrence.frequency,
+            ...(input.recurrence.endDate ? { end_date: input.recurrence.endDate } : {}),
+          },
+        }
+      : {}),
+  };
+  const res = await api.post<ApiTransaction>("/transactions", body);
+  return toTransaction(res.data);
+};
+
+/** Soft delete: an occurrence of a recurring transaction is not created again. */
+export const deleteTransaction = async (id: string): Promise<void> => {
+  await api.delete(`/transactions/${id}`);
+};
 
 /**
  * Every transaction of the account in the period, newest first. The charts need the whole

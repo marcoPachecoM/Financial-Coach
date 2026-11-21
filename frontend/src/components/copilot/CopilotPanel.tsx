@@ -1,20 +1,24 @@
 import React from 'react';
+import type { AlertAction } from '../../types/api';
 import type { Insight, ChatMessage } from '../../types/copilot';
 import { InsightCard } from './InsightCard';
 import { ChatBox } from './ChatBox';
 
 interface CopilotPanelProps {
   insights: Insight[];
+  /** Insight whose action is running, if any. */
+  busyInsightId: string | null;
   messages: ChatMessage[];
-  onExecuteInsight: (id: string) => void;
+  onInsightAction: (id: string, action: AlertAction) => void;
   onDismissInsight: (id: string) => void;
   onSendMessage: (text: string) => void;
 }
 
 export const CopilotPanel: React.FC<CopilotPanelProps> = ({
   insights,
+  busyInsightId,
   messages,
-  onExecuteInsight,
+  onInsightAction,
   onDismissInsight,
   onSendMessage,
 }) => {
@@ -44,12 +48,13 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({
 
       {/* 2. Scrollable Feed & Insights Area */}
       <div className="flex-1 overflow-y-auto space-y-3 min-h-0 pr-1 py-1">
-        {/* Real-time Insights */}
+        {/* Alerts of the account (GET /accounts/{id}/alerts) */}
         {insights.map((insight) => (
           <InsightCard
             key={insight.id}
             insight={insight}
-            onExecute={onExecuteInsight}
+            busy={busyInsightId === insight.id}
+            onAction={onInsightAction}
             onDismiss={onDismissInsight}
           />
         ))}

@@ -32,12 +32,14 @@ public class TransactionService {
     private final TransactionRepository transactions;
     private final AccountService accountService;
     private final CategorizationService categorizationService;
+    private final RecurringTransactionService recurringService;
 
     TransactionService(TransactionRepository transactions, AccountService accountService,
-                       CategorizationService categorizationService) {
+                       CategorizationService categorizationService, RecurringTransactionService recurringService) {
         this.transactions = transactions;
         this.accountService = accountService;
         this.categorizationService = categorizationService;
+        this.recurringService = recurringService;
     }
 
     @Transactional(readOnly = true)
@@ -76,7 +78,14 @@ public class TransactionService {
                 group.source(),
                 blankToNull(request.category()),
                 blankToNull(request.notes()));
-        return transactions.saveAndFlush(transaction);
+        transaction = transactions.saveAndFlush(transaction);
+
+        RecurrenceRequest recurrence = request.recurrence();
+        if (recurrence != null) {
+            // Same database transaction: an invalid recurrence also undoes the transaction.
+            recurringService.createFrom(transaction, recurrence.frequency(), recurrence.endDate());
+        }
+        return transaction;
     }
 
     @Transactional

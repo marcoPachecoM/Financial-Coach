@@ -7,6 +7,7 @@ import com.financialcoach.categorization.CategoryGroupAssignment;
 import com.financialcoach.categorization.CategoryGroupSource;
 import com.financialcoach.shared.error.ConflictException;
 import com.financialcoach.shared.error.ValidationException;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -24,6 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code POST /transactions/upload-csv}: validate every row first, then, in one database
  * transaction, create missing accounts, skip rows already imported and store the rest.
  * Any failure rolls back everything, including the new accounts.
+ *
+ * <p>Rows that are occurrences of a recurring transaction are linked to it, replacing the
+ * occurrence that was created automatically (see RecurringReconciler).
  */
 @Service
 class CsvImportService {
@@ -37,13 +41,18 @@ class CsvImportService {
     private final ImportBatchRepository importBatches;
     private final AccountService accountService;
     private final CategorizationService categorizationService;
+    private final RecurringReconciler recurringReconciler;
+    private final Clock clock;
 
     CsvImportService(TransactionRepository transactions, ImportBatchRepository importBatches,
-                     AccountService accountService, CategorizationService categorizationService) {
+                     AccountService accountService, CategorizationService categorizationService,
+                     RecurringReconciler recurringReconciler, Clock clock) {
         this.transactions = transactions;
         this.importBatches = importBatches;
         this.accountService = accountService;
         this.categorizationService = categorizationService;
+        this.recurringReconciler = recurringReconciler;
+        this.clock = clock;
     }
 
     @Transactional
@@ -75,10 +84,13 @@ class CsvImportService {
                     batch.getId(), fingerprint));
         }
 
+        int recurringMatched = recurringReconciler.reconcile(
+                userId, accounts.idsByKey().values(), newTransactions, clock.instant());
         saveAll(newTransactions);
         batch.recordCounts(newTransactions.size(), rows.size() - newTransactions.size());
         importBatches.flush();
-        return new CsvUploadResponse(newTransactions.size(), rows.size() - newTransactions.size(), accounts.created());
+        return new CsvUploadResponse(newTransactions.size(), rows.size() - newTransactions.size(),
+                recurringMatched, accounts.created());
     }
 
     /** Only the base name is kept: some browsers send the full client path. */

@@ -28,8 +28,79 @@ export interface ApiTransaction {
   /** Free text inside the group, e.g. "Gas". */
   category: string | null;
   notes: string | null;
+  /** The recurring transaction this one is an occurrence of; null when it is not recurring. */
+  recurring_transaction_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Body of POST /transactions. */
+export interface ApiTransactionCreateRequest {
+  type: TransactionType;
+  /** "2026-01-02T13:35" (datetime-local input). */
+  datetime: string;
+  name: string;
+  /** Signed by type: EXPENSE positive, INCOME negative. */
+  amount: string;
+  category_group?: string;
+  category?: string;
+  account_id: string;
+  notes?: string;
+  recurrence?: { frequency: RecurrenceFrequency; end_date?: string };
+}
+
+export type RecurrenceFrequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "YEARLY";
+
+export interface ApiRecurringTransaction {
+  id: string;
+  account_id: string;
+  type: TransactionType;
+  name: string;
+  /** Expected amount, signed like transactions. */
+  amount: string;
+  category_group: string;
+  category: string | null;
+  notes: string | null;
+  frequency: RecurrenceFrequency;
+  /** "YYYY-MM-DD" */
+  start_date: string;
+  end_date: string | null;
+  /** Next occurrence to be created automatically; null once the rule has ended. */
+  next_due_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Body of PATCH /recurring-transactions/{id}; null clears category, notes and end_date. */
+export interface ApiRecurringTransactionUpdate {
+  name?: string;
+  amount?: string;
+  category_group?: string;
+  category?: string | null;
+  notes?: string | null;
+  end_date?: string | null;
+}
+
+export type AlertType =
+  | "BUDGET_EXCEEDED"
+  | "BUDGET_WARNING"
+  | "RECURRING_MISSING"
+  | "RECURRING_PRICE_CHANGED"
+  | "RECURRING_UPCOMING"
+  | "SUBSCRIPTION_AUDIT"
+  | "RECURRING_SUGGESTED";
+
+export type AlertSeverity = "CRITICAL" | "WARNING" | "INFO";
+
+export type AlertAction = "CREATE_RECURRING" | "UPDATE_RECURRING_AMOUNT" | "STOP_RECURRING";
+
+/** GET /accounts/{id}/alerts. `data` depends on `type` (see AlertType in docs/openapi.yaml). */
+export interface ApiAlert {
+  id: string;
+  type: AlertType;
+  severity: AlertSeverity;
+  data: Record<string, unknown>;
+  action: AlertAction | null;
 }
 
 export interface ApiTransactionPage {
@@ -73,6 +144,8 @@ export interface ApiBudgetUsage {
 export interface CsvUploadResponse {
   records_imported: number;
   records_duplicated: number;
+  /** Rows linked to a recurring transaction (they replace the automatic occurrence). */
+  recurring_matched: number;
   accounts_created: ApiAccount[];
 }
 

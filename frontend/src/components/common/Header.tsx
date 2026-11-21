@@ -4,6 +4,8 @@ import type { Account } from "../../types/account";
 
 interface HeaderProps {
   onOpenUpload: () => void;
+  /** Opens the "Add transaction" form; hidden when there is no account yet. */
+  onOpenNewTransaction?: () => void;
   onLogout: () => void;
   accounts?: Account[];
   activeAccountId?: string | null;
@@ -13,6 +15,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenUpload,
+  onOpenNewTransaction,
   onLogout,
   accounts = [],
   activeAccountId = null,
@@ -137,12 +140,22 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Action CTA Buttons */}
       <div className="flex items-center gap-3">
+        {onOpenNewTransaction && activeAccount && (
+          <button
+            onClick={onOpenNewTransaction}
+            className="bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 hover:border-emerald-300 px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 shadow-2xs cursor-pointer"
+          >
+            <span className="material-symbols-outlined !text-[18px]">add</span>
+            <span className="hidden sm:inline">Add transaction</span>
+            <span className="sm:hidden">Add</span>
+          </button>
+        )}
         <button
           onClick={onOpenUpload}
           className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 shadow-sm shadow-emerald-200 hover:shadow-md hover:shadow-emerald-200 cursor-pointer"
         >
           <span className="material-symbols-outlined !text-[18px]">
-            add_circle
+            upload_file
           </span>
           <span className="hidden sm:inline">Import CSV</span>
           <span className="sm:hidden">Import</span>

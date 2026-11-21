@@ -50,3 +50,7 @@ financial-coach:
     login: 5
     refresh: 10
     logout: 20
+  # Generator of recurring transactions: daily (server time) and once at startup.
+  recurring:
+    scheduler-enabled: ${RECURRING_SCHEDULER_ENABLED:true}
+    cron: ${RECURRING_CRON:0 5 0 * * *}

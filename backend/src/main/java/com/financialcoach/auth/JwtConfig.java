@@ -3,6 +3,7 @@ package com.financialcoach.auth;
 import com.financialcoach.users.UserRole;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -23,6 +24,8 @@ import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
@@ -30,7 +33,10 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 /**
  * JWT signing and validation (HS256 with a shared secret). The {@link JwtDecoder} bean validates
  * access tokens and is used by Spring Security on every request; refresh tokens are validated by
- * TokenService with {@link #decoder(JwtProperties, TokenType)}.
+ * TokenService with {@link #decoder(JwtProperties, TokenType, Clock)}.
+ *
+ * <p>Expiry is checked against the application's {@link Clock} bean, the same one that sets
+ * {@code iat}/{@code exp} when tokens are issued.
  */
 @Configuration
 @EnableConfigurationProperties({JwtProperties.class, RateLimitProperties.class, CorsProperties.class})
@@ -50,21 +56,25 @@ class JwtConfig {
 
     /** Access tokens only: a refresh token sent to a normal endpoint is rejected. */
     @Bean
-    JwtDecoder jwtDecoder(JwtProperties properties) {
-        return decoder(properties, TokenType.ACCESS);
+    JwtDecoder jwtDecoder(JwtProperties properties, Clock clock) {
+        return decoder(properties, TokenType.ACCESS, clock);
     }
 
     /**
      * Accepts only HS256 tokens signed with our key (so "alg": "none" or another algorithm is
      * rejected), not expired, with our issuer and audience, all required claims and this type.
      */
-    static JwtDecoder decoder(JwtProperties properties, TokenType type) {
+    static JwtDecoder decoder(JwtProperties properties, TokenType type, Clock clock) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(secretKey(properties))
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
 
         List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>();
-        validators.add(JwtValidators.createDefaultWithIssuer(properties.issuer()));
+        JwtTimestampValidator timestamps = new JwtTimestampValidator();
+        timestamps.setClock(clock);
+        // The defaults (token type, certificate binding) plus our issuer and clock-based expiry.
+        validators.add(JwtValidators.createDefaultWithValidators(
+                List.of(new JwtIssuerValidator(properties.issuer()), timestamps)));
         validators.add(new JwtClaimValidator<List<String>>(JwtClaimNames.AUD,
                 audience -> audience != null && audience.contains(properties.audience())));
         validators.add(new JwtClaimValidator<String>(TYPE_CLAIM, type.claim()::equals));

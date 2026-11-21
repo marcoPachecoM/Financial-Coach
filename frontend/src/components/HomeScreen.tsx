@@ -1,9 +1,13 @@
 import React, { useMemo, useState } from "react";
 import type { MetricSummary } from "../types/metrics";
-import type { CsvUploadResponse } from "../types/api";
+import type { CsvUploadResponse, RecurrenceFrequency } from "../types/api";
+import type { Transaction } from "../types/transaction";
+import { FREQUENCY_LABELS, type RecurringTransaction } from "../types/recurring";
 
 import { Header } from "./common/Header";
 import { UploadModal } from "./common/UploadModal";
+import { TransactionFormModal } from "./transactions/TransactionFormModal";
+import { RecurringCard } from "./dashboard/RecurringCard";
 import { MetricCards } from "./dashboard/MetricCards";
 import { BudgetCard } from "./dashboard/BudgetCard";
 import { CategoryFilters } from "./dashboard/CategoryFilters";
@@ -21,12 +25,18 @@ import {
 } from "../utils/dateHelper";
 import {
   useAccounts,
+  useAlerts,
   useAnalyticsSummary,
   useBudgetUsage,
   useCategoryGroupSummary,
   useCurrentUser,
+  useRecurringTransactions,
   useTransactions,
 } from "../hooks/useDashboardData";
+import { updateMonthlyBudget } from "../services/accounts";
+import { getErrorMessage } from "../services/errors";
+import { deleteRecurring, makeRecurring, stopRecurring } from "../services/recurring";
+import { formatCurrency, formatFullDate } from "../utils/formatters";
 import { useLocalCopilot } from "../hooks/useLocalCopilot";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -53,6 +63,8 @@ export const HomeScreen: React.FC = () => {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isNewTransactionOpen, setIsNewTransactionOpen] = useState(false);
+  const [busyRecurringId, setBusyRecurringId] = useState<string | null>(null);
 
   // 3. All transactions of the account: the presets are anchored to its latest transaction,
   //    and the table and trend chart filter them locally.
@@ -86,7 +98,22 @@ export const HomeScreen: React.FC = () => {
   const summary = useAnalyticsSummary(periodFilters);
   const categories = useCategoryGroupSummary(periodFilters);
   const budget = useBudgetUsage(accountId);
+  const recurring = useRecurringTransactions(accountId);
+  const alerts = useAlerts(accountId);
   const categorySummary = useMemo(() => categories.data ?? [], [categories.data]);
+  const recurringList = useMemo(() => recurring.data ?? [], [recurring.data]);
+  const alertList = useMemo(() => alerts.data ?? [], [alerts.data]);
+
+  /** After any change: every card depends on the transactions. */
+  const refreshAll = () => {
+    accounts.refetch();
+    allTransactions.refetch();
+    summary.refetch();
+    categories.refetch();
+    budget.refetch();
+    recurring.refetch();
+    alerts.refetch();
+  };
 
   const metrics: MetricSummary = useMemo(() => {
     const days = Math.max(
@@ -110,23 +137,86 @@ export const HomeScreen: React.FC = () => {
     };
   }, [summary.data, categorySummary, activePreset]);
 
-  const copilot = useLocalCopilot(dateFilteredTransactions, budget.data, activePreset.sublabel);
+  const copilot = useLocalCopilot({
+    accountId,
+    transactions: dateFilteredTransactions,
+    budget: budget.data,
+    recurring: recurringList,
+    alerts: alertList,
+    periodLabel: activePreset.sublabel,
+    onDataChanged: refreshAll,
+  });
 
   const handleImported = (result: CsvUploadResponse) => {
-    accounts.refetch();
-    allTransactions.refetch();
-    summary.refetch();
-    categories.refetch();
-    budget.refetch();
+    refreshAll();
     setSelectedPresetId("all_time");
     setSelectedCategory("all");
     copilot.say(
       `Imported ${result.records_imported} transaction(s)` +
-        (result.records_duplicated ? `; ${result.records_duplicated} already imported were skipped.` : "."),
+        (result.records_duplicated ? `; ${result.records_duplicated} already imported were skipped` : "") +
+        (result.recurring_matched ? `; ${result.recurring_matched} matched recurring charges` : "") +
+        ".",
     );
   };
 
-  const loadError = accounts.error ?? allTransactions.error ?? summary.error ?? categories.error;
+  const handleCreated = (tx: Transaction, repeated: RecurrenceFrequency | null) => {
+    refreshAll();
+    copilot.say(
+      `Added ${tx.name} (${formatCurrency(Math.abs(tx.amount))}).` +
+        (repeated ? ` It repeats ${FREQUENCY_LABELS[repeated].toLowerCase()}: the next ones are added automatically.` : ""),
+    );
+  };
+
+  /** Runs a change on a recurring transaction, reporting the outcome in the copilot chat. */
+  const withRecurring = async (id: string, action: () => Promise<string>) => {
+    setBusyRecurringId(id);
+    try {
+      copilot.say(await action());
+      refreshAll();
+    } catch (error) {
+      copilot.say(`I couldn't do that: ${getErrorMessage(error)}`);
+    } finally {
+      setBusyRecurringId(null);
+    }
+  };
+
+  const handleMakeRecurring = (tx: Transaction, frequency: RecurrenceFrequency) =>
+    withRecurring(tx.id, async () => {
+      const rule = await makeRecurring(tx.id, frequency);
+      return (
+        `${tx.name} is now recurring (${FREQUENCY_LABELS[frequency].toLowerCase()}).` +
+        (rule.nextDueDate ? ` Next one: ${formatFullDate(rule.nextDueDate)}.` : "")
+      );
+    });
+
+  const handleStopRecurring = (rule: RecurringTransaction) =>
+    withRecurring(rule.id, async () => {
+      await stopRecurring(rule.id, formatLocalDateToISO(new Date()));
+      return `${rule.name} will no longer be added automatically.`;
+    });
+
+  const handleDeleteRecurring = (rule: RecurringTransaction) => {
+    if (!window.confirm(`Delete the recurring transaction "${rule.name}"? Transactions already added are kept.`)) {
+      return;
+    }
+    return withRecurring(rule.id, async () => {
+      await deleteRecurring(rule.id);
+      return `Deleted the recurring transaction ${rule.name}. Its past transactions were kept.`;
+    });
+  };
+
+  const handleSaveBudget = async (monthlyBudget: number | null) => {
+    if (!accountId) return;
+    try {
+      await updateMonthlyBudget(accountId, monthlyBudget);
+    } catch (error) {
+      throw new Error(getErrorMessage(error), { cause: error });
+    }
+    refreshAll();
+  };
+
+  const loadError =
+    accounts.error ?? allTransactions.error ?? summary.error ?? categories.error ?? recurring.error ?? alerts.error;
   const noAccounts = !accounts.loading && accountList.length === 0 && !accounts.error;
 
   return (
@@ -141,6 +231,7 @@ export const HomeScreen: React.FC = () => {
         }}
         loadingAccounts={accounts.loading}
         onOpenUpload={() => setIsUploadModalOpen(true)}
+        onOpenNewTransaction={() => setIsNewTransactionOpen(true)}
         onLogout={logout}
       />
 
@@ -247,7 +338,15 @@ export const HomeScreen: React.FC = () => {
               <>
                 <MetricCards metrics={metrics} />
 
-                <BudgetCard usage={budget.data} loading={budget.loading} />
+                <BudgetCard usage={budget.data} loading={budget.loading} onSaveBudget={handleSaveBudget} />
+
+                <RecurringCard
+                  rules={recurringList}
+                  loading={recurring.loading}
+                  busyId={busyRecurringId}
+                  onStop={handleStopRecurring}
+                  onDelete={handleDeleteRecurring}
+                />
 
                 <div className="flex items-center justify-between gap-2 pt-1">
                   <CategoryFilters
@@ -270,6 +369,7 @@ export const HomeScreen: React.FC = () => {
                   transactions={dateFilteredTransactions}
                   selectedCategory={selectedCategory}
                   onOpenUpload={() => setIsUploadModalOpen(true)}
+                  onMakeRecurring={handleMakeRecurring}
                 />
               </>
             )}
@@ -277,8 +377,9 @@ export const HomeScreen: React.FC = () => {
 
           <CopilotPanel
             insights={copilot.insights}
+            busyInsightId={copilot.busyInsightId}
             messages={copilot.messages}
-            onExecuteInsight={copilot.executeInsight}
+            onInsightAction={copilot.runAction}
             onDismissInsight={copilot.dismissInsight}
             onSendMessage={copilot.sendMessage}
           />
@@ -289,6 +390,14 @@ export const HomeScreen: React.FC = () => {
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
         onImported={handleImported}
+      />
+
+      <TransactionFormModal
+        isOpen={isNewTransactionOpen}
+        accountId={accountId}
+        accountName={activeAccount?.name ?? ""}
+        onClose={() => setIsNewTransactionOpen(false)}
+        onCreated={handleCreated}
       />
     </div>
   );

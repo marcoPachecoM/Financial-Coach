@@ -38,6 +38,12 @@ tags:
   - name: Auth
   - name: Accounts
   - name: Transactions
+  - name: Recurring transactions
+    description: |
+      A rule ("Netflix, 199.00, every month") created from a transaction. The
+      application creates the next occurrences automatically every day (and at
+      startup). A charge imported from a CSV replaces the occurrence created
+      automatically, so the bank's charge and the automatic one are never both counted.
   - name: Analytics
   - name: Copilot
 
@@ -334,6 +340,38 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/AccountNotFound" }
 
+  /api/v1/accounts/{account_id}/alerts:
+    parameters:
+      - $ref: "#/components/parameters/AccountIdPath"
+    get:
+      tags: [Analytics]
+      summary: Alerts of an account for a month
+      description: |
+        Computed on every request from the monthly budget and the recurring
+        transactions (deterministic rules, nothing is stored). Sorted by
+        `severity` (CRITICAL, WARNING, INFO). See `AlertType` for the list and
+        the fields of `data` for each type.
+      operationId: listAccountAlerts
+      parameters:
+        - name: month
+          in: query
+          description: Calendar month. Defaults to the current month (server time zone).
+          schema:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+            example: "2026-11"
+      responses:
+        "200":
+          description: The alerts (an empty array when there are none).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Alert" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+
   /api/v1/transactions:
     get:
       tags: [Transactions]
@@ -371,6 +409,11 @@ paths:
 
         If `category_group` is omitted, it is assigned automatically. `category`
         is free text (e.g. "Gas" inside the "Utilities" group) and is never guessed.
+
+        With `recurrence`, the transaction becomes occurrence 0 of a new recurring
+        transaction. If its date is in the past, the occurrences already due are
+        created at once (an existing charge of the same merchant close to a due
+        date is linked instead of creating another one).
       operationId: createTransaction
       x-status: planned
       requestBody:
@@ -411,7 +454,8 @@ paths:
         Only the fields sent are changed. The amount sign rule is checked
         against the resulting `type` and `amount` (e.g. changing `type` to
         INCOME while keeping a positive amount is rejected). Moving it to
-        another account is allowed if that account belongs to the caller.
+        another account is allowed if that account belongs to the caller; it
+        then stops being an occurrence of its recurring transaction.
       operationId: updateTransaction
       x-status: planned
       requestBody:
@@ -438,7 +482,8 @@ paths:
       description: |
         Marks the transaction as deleted (sets `deleted_at` internally). The row
         is kept in the database but excluded from listings, analytics and
-        budgets. Deleting an already deleted transaction returns 404.
+        budgets. Deleting an already deleted transaction returns 404. Deleting an
+        occurrence of a recurring transaction does not create it again.
       operationId: deleteTransaction
       x-status: planned
       responses:
@@ -524,6 +569,112 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetail" }
+
+  /api/v1/recurring-transactions:
+    get:
+      tags: [Recurring transactions]
+      summary: List the recurring transactions of an account
+      description: Sorted by name. Includes the ones that have ended (`next_due_date` null).
+      operationId: listRecurringTransactions
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: The recurring transactions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RecurringTransaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+    post:
+      tags: [Recurring transactions]
+      summary: Make an existing transaction recurring
+      description: |
+        The rule copies the transaction's account, type, name, amount, group,
+        category and notes; the transaction becomes occurrence 0. Occurrences
+        already due are created at once, as in `POST /transactions` with `recurrence`.
+      operationId: createRecurringTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecurringTransactionCreateRequest" }
+      responses:
+        "201":
+          description: Recurring transaction created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTransaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/TransactionNotFound" }
+        "409":
+          description: The transaction is already an occurrence of a recurring transaction (`ALREADY_RECURRING`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+              example:
+                type: about:blank
+                title: Conflict
+                status: 409
+                detail: This transaction is already part of a recurring transaction.
+                code: ALREADY_RECURRING
+
+  /api/v1/recurring-transactions/{recurring_transaction_id}:
+    parameters:
+      - $ref: "#/components/parameters/RecurringTransactionIdPath"
+    get:
+      tags: [Recurring transactions]
+      summary: Get one recurring transaction
+      operationId: getRecurringTransaction
+      responses:
+        "200":
+          description: The recurring transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTransaction" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/RecurringTransactionNotFound" }
+    patch:
+      tags: [Recurring transactions]
+      summary: Edit a recurring transaction
+      description: |
+        Only the fields sent are changed, and only the occurrences created from
+        now on use them: existing transactions are not modified.
+
+        `end_date` stops the rule (no occurrence after it is created); `null`
+        removes it. A rule that had ended resumes from the first occurrence
+        after today; the ones skipped meanwhile are not created.
+      operationId: updateRecurringTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecurringTransactionUpdateRequest" }
+      responses:
+        "200":
+          description: Updated recurring transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTransaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/RecurringTransactionNotFound" }
+    delete:
+      tags: [Recurring transactions]
+      summary: Delete a recurring transaction
+      description: |
+        No more occurrences are created. The transactions already created are
+        kept as ordinary transactions (their `recurring_transaction_id` becomes null).
+      operationId: deleteRecurringTransaction
+      responses:
+        "204":
+          description: Recurring transaction deleted. No body.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/RecurringTransactionNotFound" }
 
   /api/v1/analytics/summary:
     get:
@@ -637,6 +788,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    RecurringTransactionIdPath:
+      name: recurring_transaction_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     TransactionIdPath:
       name: transaction_id
       in: path
@@ -731,6 +887,17 @@ components:
             title: Not Found
             status: 404
             detail: Transaction not found.
+            code: NOT_FOUND
+    RecurringTransactionNotFound:
+      description: Recurring transaction does not exist or belongs to another user (`NOT_FOUND`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: Recurring transaction not found.
             code: NOT_FOUND
 
   schemas:
@@ -1006,7 +1173,7 @@ components:
         the server-assigned ones (`id`, `user_id`, timestamps).
         Optional input fields are always present here, as `null` when not provided.
         `deleted_at` is internal and never exposed: deleted transactions are not returned.
-      required: [id, user_id, account_id, type, datetime, name, amount, category_group, category, notes, created_at, updated_at]
+      required: [id, user_id, account_id, type, datetime, name, amount, category_group, category, notes, recurring_transaction_id, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
         user_id: { type: string, format: uuid }
@@ -1028,6 +1195,11 @@ components:
           example: Gas
         notes:
           type: [string, "null"]
+        recurring_transaction_id:
+          type: [string, "null"]
+          format: uuid
+          readOnly: true
+          description: The recurring transaction this one is an occurrence of; null when it is not recurring.
         created_at:
           type: string
           format: date-time
@@ -1096,6 +1268,158 @@ components:
         notes:
           type: string
           maxLength: 1000
+        recurrence:
+          $ref: "#/components/schemas/RecurrenceRequest"
+
+    RecurrenceFrequency:
+      type: string
+      enum: [WEEKLY, BIWEEKLY, MONTHLY, YEARLY]
+      description: |
+        Every due date is computed from `start_date`: a monthly rule that starts
+        on January 31 is due on February 28, then March 31. BIWEEKLY is every 2 weeks.
+
+    RecurrenceRequest:
+      type: object
+      additionalProperties: false
+      description: Repeat the transaction automatically.
+      required: [frequency]
+      properties:
+        frequency: { $ref: "#/components/schemas/RecurrenceFrequency" }
+        end_date:
+          type: string
+          format: date
+          description: Last day an occurrence may fall on. Not before the transaction's date. Omit for no end.
+          example: "2027-12-31"
+
+    RecurringTransaction:
+      type: object
+      description: |
+        A rule from which the next occurrences of a transaction are created.
+        Changes apply to the occurrences created afterwards.
+      required: [id, account_id, type, name, amount, category_group, category, notes, frequency,
+                 start_date, end_date, next_due_date, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        account_id: { type: string, format: uuid }
+        type: { $ref: "#/components/schemas/TransactionType" }
+        name: { type: string, example: Netflix }
+        amount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Expected amount, signed by type. Generated occurrences use it.
+          example: "199.00"
+        category_group: { $ref: "#/components/schemas/CategoryGroup" }
+        category: { type: [string, "null"], example: Streaming }
+        notes: { type: [string, "null"] }
+        frequency: { $ref: "#/components/schemas/RecurrenceFrequency" }
+        start_date:
+          type: string
+          format: date
+          description: Due date of occurrence 0 (the original transaction).
+          example: "2026-09-05"
+        end_date:
+          type: [string, "null"]
+          format: date
+          description: Last day an occurrence may fall on; null for no end.
+        next_due_date:
+          type: [string, "null"]
+          format: date
+          description: Next occurrence to be created; null once the rule has ended.
+          example: "2026-12-05"
+        created_at: { type: string, format: date-time, readOnly: true }
+        updated_at: { type: string, format: date-time, readOnly: true }
+
+    RecurringTransactionCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [transaction_id, frequency]
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+          description: The transaction that becomes occurrence 0.
+        frequency: { $ref: "#/components/schemas/RecurrenceFrequency" }
+        end_date:
+          type: string
+          format: date
+          description: Not before the transaction's date. Omit for no end.
+
+    RecurringTransactionUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: |
+        Partial update. Send `null` to clear `category`, `notes` or `end_date`.
+        `type`, `frequency` and the dates of the occurrences cannot change:
+        delete the rule and create another one instead.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        amount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Must keep the sign of the rule's type.
+        category_group: { $ref: "#/components/schemas/CategoryGroup" }
+        category: { type: [string, "null"], maxLength: 100 }
+        notes: { type: [string, "null"], maxLength: 1000 }
+        end_date:
+          type: [string, "null"]
+          format: date
+          description: Not before `start_date`. Setting it to today stops the rule.
+
+    AlertType:
+      type: string
+      enum: [BUDGET_EXCEEDED, BUDGET_WARNING, RECURRING_MISSING, RECURRING_PRICE_CHANGED,
+             RECURRING_UPCOMING, SUBSCRIPTION_AUDIT, RECURRING_SUGGESTED]
+      description: |
+        Fields of `data` per type (money as strings, dates as `yyyy-MM-dd`):
+
+        - `BUDGET_EXCEEDED` (CRITICAL) / `BUDGET_WARNING` (WARNING, from 80 %):
+          `month`, `budget`, `spent`, `remaining`, `percentage_used`.
+        - `RECURRING_MISSING` (WARNING): an occurrence created automatically
+          that the imported bank statements do not show, although they already
+          cover its date (maybe the subscription was cancelled).
+          `transaction_id`, `recurring_transaction_id`, `name`, `amount`, `due_date`.
+          Action `STOP_RECURRING`.
+        - `RECURRING_PRICE_CHANGED` (WARNING): a real charge of a recurring
+          transaction with another amount. `recurring_transaction_id`,
+          `transaction_id`, `name`, `expected_amount`, `charged_amount`,
+          `change_percentage` (by absolute value, positive = more), `due_date`.
+          Action `UPDATE_RECURRING_AMOUNT`.
+        - `RECURRING_UPCOMING` (INFO, current month only): an occurrence due in
+          the next 7 days. `recurring_transaction_id`, `name`, `amount`, `due_date`.
+        - `SUBSCRIPTION_AUDIT` (INFO): recurring expenses charged this month at
+          the expected amount, when there is no price change. `month`, `count`,
+          `names` (one per recurring transaction).
+        - `RECURRING_SUGGESTED` (INFO): at least 3 charges of the same merchant,
+          not recurring yet, at a regular interval and similar amounts (±10 %).
+          `transaction_id` (the latest charge), `name`, `amount`, `frequency`,
+          `occurrences`. Action `CREATE_RECURRING`.
+
+    Alert:
+      type: object
+      required: [id, type, severity, data, action]
+      properties:
+        id:
+          type: string
+          description: |
+            Stable identifier of the situation (the same alert keeps the same
+            id), so clients can remember which alerts the user dismissed.
+          example: BUDGET_WARNING:2026-11
+        type: { $ref: "#/components/schemas/AlertType" }
+        severity:
+          type: string
+          enum: [CRITICAL, WARNING, INFO]
+        data:
+          type: object
+          additionalProperties: true
+          description: Structured values; the fields depend on `type`. The client writes the text.
+          example: { month: "2026-11", budget: "400.00", spent: "350.00", remaining: "50.00", percentage_used: "87.50" }
+        action:
+          type: [string, "null"]
+          enum: [CREATE_RECURRING, UPDATE_RECURRING_AMOUNT, STOP_RECURRING, null]
+          description: |
+            What the client can offer: `CREATE_RECURRING` is `POST /recurring-transactions`
+            with `data.transaction_id` and `data.frequency`; `UPDATE_RECURRING_AMOUNT` is
+            `PATCH /recurring-transactions/{data.recurring_transaction_id}` with
+            `amount` = `data.charged_amount`; `STOP_RECURRING` is the same PATCH with an `end_date`.
 
     TransactionUpdateRequest:
       type: object
@@ -1175,7 +1499,7 @@ components:
 
     CsvUploadResponse:
       type: object
-      required: [records_imported, records_duplicated, accounts_created]
+      required: [records_imported, records_duplicated, recurring_matched, accounts_created]
       properties:
         records_imported:
           type: integer
@@ -1185,6 +1509,13 @@ components:
           type: integer
           description: Rows skipped because they were already imported.
           example: 23
+        recurring_matched:
+          type: integer
+          description: |
+            Imported rows linked to a recurring transaction: same account, type and
+            merchant, dated close to a due date. Each one replaces the occurrence that
+            had been created automatically (which is deleted), or covers a future one.
+          example: 2
         accounts_created:
           type: array
           description: Accounts created because the CSV referenced names that did not exist.

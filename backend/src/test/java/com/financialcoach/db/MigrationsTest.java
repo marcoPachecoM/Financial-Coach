@@ -30,7 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class MigrationsTest {
 
-    private static final int EXPECTED_VERSIONED_MIGRATIONS = 7;
+    private static final int EXPECTED_VERSIONED_MIGRATIONS = 8;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -61,7 +61,7 @@ class MigrationsTest {
 
         assertThat(tables).contains(
                 "users", "refresh_tokens", "accounts", "category_groups",
-                "import_batches", "transactions", "merchant_category_cache");
+                "import_batches", "transactions", "merchant_category_cache", "recurring_transactions");
     }
 
     @Test
@@ -154,6 +154,67 @@ class MigrationsTest {
                 .hasMessageContaining("ck_transactions_fingerprint");
     }
 
+    /** V8: recurring transactions. */
+    @Test
+    void rejectsRecurringRuleWithWrongSign() {
+        assertThatThrownBy(() -> insertRule(accountId, "INCOME", "199.00"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_recurring_transactions_amount_sign");
+    }
+
+    @Test
+    void rejectsRecurrenceDateWithoutRule() {
+        UUID id = insertTransaction(userId, accountId, "EXPENSE", "199.00", "Services", "MANUAL", null);
+
+        assertThatThrownBy(() -> jdbc.update("UPDATE transactions SET recurrence_date = '2026-01-05' WHERE id = ?", id))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_transactions_recurrence");
+    }
+
+    @Test
+    void onlyOneActiveTransactionPerOccurrence() {
+        UUID rule = insertRule(accountId, "EXPENSE", "199.00");
+        UUID first = insertTransaction(userId, accountId, "EXPENSE", "199.00", "Services", "RECURRING", null);
+        UUID second = insertTransaction(userId, accountId, "EXPENSE", "219.00", "Services", "MANUAL", null);
+        link(first, rule);
+
+        assertThatThrownBy(() -> link(second, rule))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ux_transactions_recurrence");
+    }
+
+    /** A deleted occurrence does not count: the real charge can replace the generated one. */
+    @Test
+    void aDeletedOccurrenceCanBeReplaced() {
+        UUID rule = insertRule(accountId, "EXPENSE", "199.00");
+        UUID generated = insertTransaction(userId, accountId, "EXPENSE", "199.00", "Services", "RECURRING", null);
+        UUID real = insertTransaction(userId, accountId, "EXPENSE", "219.00", "Services", "MANUAL", null);
+        link(generated, rule);
+        jdbc.update("UPDATE transactions SET deleted_at = now() WHERE id = ?", generated);
+
+        assertThatCode(() -> link(real, rule)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void rejectsRuleOfAnotherAccount() {
+        UUID cash = insertAccount(userId, "Cash");
+        UUID rule = insertRule(cash, "EXPENSE", "199.00");
+        UUID transaction = insertTransaction(userId, accountId, "EXPENSE", "199.00", "Services", "MANUAL", null);
+
+        assertThatThrownBy(() -> link(transaction, rule))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("fk_transactions_recurring_transaction");
+    }
+
+    @Test
+    void deletingTheAccountRemovesRulesAndTheirTransactions() {
+        UUID rule = insertRule(accountId, "EXPENSE", "199.00");
+        link(insertTransaction(userId, accountId, "EXPENSE", "199.00", "Services", "RECURRING", null), rule);
+
+        assertThatCode(() -> jdbc.update("DELETE FROM accounts WHERE id = ?", accountId)).doesNotThrowAnyException();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM recurring_transactions", Integer.class)).isZero();
+    }
+
     @Test
     void rejectsNegativeMonthlyBudget() {
         assertThatThrownBy(() -> jdbc.update(
@@ -176,6 +237,20 @@ class MigrationsTest {
                 VALUES (?, ?)
                 RETURNING id
                 """, UUID.class, owner, name);
+    }
+
+    private UUID insertRule(UUID account, String type, String amount) {
+        return jdbc.queryForObject("""
+                INSERT INTO recurring_transactions
+                    (user_id, account_id, type, name, amount, category_group, frequency, start_date, time_of_day)
+                VALUES (?, ?, ?, 'Netflix', ?, 'Services', 'MONTHLY', '2026-01-05', '12:00')
+                RETURNING id
+                """, UUID.class, userId, account, type, new BigDecimal(amount));
+    }
+
+    private void link(UUID transaction, UUID rule) {
+        jdbc.update("UPDATE transactions SET recurring_transaction_id = ?, recurrence_date = '2026-01-05' WHERE id = ?",
+                rule, transaction);
     }
 
     private UUID insertTransaction(UUID owner, UUID account, String type, String amount,

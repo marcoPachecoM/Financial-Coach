@@ -15,6 +15,14 @@ export const getAccounts = async (): Promise<Account[]> => {
   return res.data.map(toAccount);
 };
 
+/** Sets the monthly budget (null removes it). */
+export const updateMonthlyBudget = async (accountId: string, monthlyBudget: number | null): Promise<Account> => {
+  const res = await api.patch<ApiAccount>(`/accounts/${accountId}`, {
+    monthly_budget: monthlyBudget === null ? null : monthlyBudget.toFixed(2),
+  });
+  return toAccount(res.data);
+};
+
 /** month: "YYYY-MM"; omitted means the current month (server time). */
 export const getBudgetUsage = async (accountId: string, month?: string): Promise<BudgetUsage> => {
   const res = await api.get<ApiBudgetUsage>(`/accounts/${accountId}/budget`, {

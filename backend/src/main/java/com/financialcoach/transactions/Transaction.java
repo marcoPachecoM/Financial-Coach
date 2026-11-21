@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
@@ -82,6 +83,12 @@ class Transaction {
     @Column(length = 64, updatable = false)
     private String fingerprint;
 
+    /** Rule this transaction is an occurrence of (V8); null when it is not recurring. */
+    private UUID recurringTransactionId;
+
+    /** Due date of the occurrence it covers; set together with recurringTransactionId. */
+    private LocalDate recurrenceDate;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
@@ -128,6 +135,27 @@ class Transaction {
         return transaction;
     }
 
+    /** The occurrence of {@code rule} due on {@code dueDate}, created automatically. */
+    static Transaction generated(RecurringTransaction rule, LocalDate dueDate) {
+        Transaction transaction = manual(rule.getUserId(), rule.getAccountId(), rule.getType(),
+                rule.occurrenceDateTime(dueDate), rule.getName(), rule.getAmount(), rule.getCategoryGroup(),
+                CategoryGroupSource.USER, rule.getCategory(), rule.getNotes());
+        transaction.source = TransactionSource.RECURRING;
+        transaction.linkTo(rule, dueDate);
+        return transaction;
+    }
+
+    /** Marks this transaction as the occurrence of {@code rule} due on {@code dueDate}. */
+    void linkTo(RecurringTransaction rule, LocalDate dueDate) {
+        this.recurringTransactionId = rule.getId();
+        this.recurrenceDate = dueDate;
+    }
+
+    void unlink() {
+        this.recurringTransactionId = null;
+        this.recurrenceDate = null;
+    }
+
     void changeType(TransactionType newType) {
         this.type = newType;
     }
@@ -158,7 +186,11 @@ class Transaction {
         this.notes = newNotes;
     }
 
+    /** A rule belongs to one account, so moving the transaction ends its link to the rule. */
     void moveTo(UUID newAccountId) {
+        if (!newAccountId.equals(accountId)) {
+            unlink();
+        }
         this.accountId = newAccountId;
     }
 
@@ -204,6 +236,22 @@ class Transaction {
 
     String getNotes() {
         return notes;
+    }
+
+    TransactionSource getSource() {
+        return source;
+    }
+
+    UUID getRecurringTransactionId() {
+        return recurringTransactionId;
+    }
+
+    LocalDate getRecurrenceDate() {
+        return recurrenceDate;
+    }
+
+    boolean isGenerated() {
+        return source == TransactionSource.RECURRING;
     }
 
     Instant getCreatedAt() {

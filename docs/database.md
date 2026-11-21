@@ -10,6 +10,8 @@ erDiagram
     users ||--o{ accounts : "owns"
     users ||--o{ import_batches : "uploads"
     accounts ||--o{ transactions : "contains"
+    accounts ||--o{ recurring_transactions : "repeats"
+    recurring_transactions |o--o{ transactions : "occurrences"
     import_batches |o--o{ transactions : "imported"
     category_groups ||--o{ transactions : "classifies"
     category_groups ||--o{ merchant_category_cache : "classifies"
@@ -69,13 +71,34 @@ erDiagram
         varchar category_group FK
         varchar category "free text"
         varchar notes
-        varchar source "MANUAL | CSV"
+        varchar source "MANUAL | CSV | RECURRING"
         varchar category_group_source "USER | CSV | RULE | LLM"
         uuid import_batch_id FK
         char fingerprint "CSV rows only"
+        uuid recurring_transaction_id FK "with account_id"
+        date recurrence_date "occurrence it covers"
         timestamptz created_at
         timestamptz updated_at
         timestamptz deleted_at "soft delete"
+    }
+
+    recurring_transactions {
+        uuid id PK
+        uuid user_id FK "with account_id"
+        uuid account_id FK
+        varchar type "EXPENSE | INCOME"
+        varchar name
+        numeric amount "expected, signed by type"
+        varchar category_group FK
+        varchar category
+        varchar notes
+        varchar frequency "WEEKLY | BIWEEKLY | MONTHLY | YEARLY"
+        date start_date "occurrence 0"
+        time time_of_day
+        date end_date "null = no end"
+        date next_due_date "null = ended"
+        timestamptz created_at
+        timestamptz updated_at
     }
 
     merchant_category_cache {
@@ -114,6 +137,10 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 | A CSV row cannot be imported twice into the same account | `ux_transactions_account_fingerprint` |
 | CSV rows always have a fingerprint, manual rows never do | `ck_transactions_fingerprint` |
 | Budgets are not negative | `ck_accounts_monthly_budget` |
+| A recurring transaction belongs to an account of the same user | `fk_recurring_transactions_account` |
+| An occurrence belongs to a rule of its own account | `fk_transactions_recurring_transaction` (composite FK on `recurring_transaction_id, account_id`) |
+| A linked transaction always says which occurrence it covers | `ck_transactions_recurrence` |
+| At most one active transaction per occurrence | `ux_transactions_recurrence` (partial: deleted rows excluded) |
 | Email and username are unique, ignoring case | `ux_users_email`, `ux_users_username` |
 
 ## Notable decisions
@@ -126,6 +153,9 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 - **`source` and `category_group_source` are internal**: not exposed by the API, but they record which channel created a row (form, CSV, later WhatsApp) and who chose the category group (user, CSV, rules, LLM).
 - **`import_batches`** keeps one row per upload, for auditing and a future "undo import".
 - **`merchant_category_cache` is shared** by all users, so a merchant is sent to the LLM only once.
+- **Recurring transactions create their occurrences automatically** (V8). A daily job (and one run at startup) inserts each due occurrence as a transaction with `source = RECURRING`. `next_due_date` only moves forward, so an occurrence the user deleted is not created again. Due dates are always computed from `start_date` (January 31 → February 28 → March 31).
+- **A real charge replaces the automatic one.** When a CSV row matches a rule (same account, type and merchant, within a few days of a due date), the generated transaction is soft-deleted and the CSV row takes its place, with the real amount. `ux_transactions_recurrence` excludes deleted rows so the two can coexist. This avoids counting a subscription twice and lets the alerts detect price changes.
+- **Alerts are not stored**: `GET /accounts/{id}/alerts` computes them on every request from the budget and the recurring transactions.
 
 ## Not migrated
 

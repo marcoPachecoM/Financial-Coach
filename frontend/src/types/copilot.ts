@@ -1,15 +1,21 @@
-export type InsightType = 'optimization' | 'alert' | 'info';
-export type InsightStatus = 'active' | 'executed' | 'dismissed';
+import type { AlertAction } from './api';
 
+export type InsightSeverity = 'critical' | 'warning' | 'info';
+
+export interface InsightAction {
+  id: AlertAction;
+  label: string;
+}
+
+/** An alert from the API, ready to show in the copilot panel (see utils/alertMessages.ts). */
 export interface Insight {
+  /** The alert id: stable, so a dismissed alert stays dismissed. */
   id: string;
-  type: InsightType;
+  severity: InsightSeverity;
+  icon: string;
   title: string;
   description: string;
-  actionText?: string;
-  status: InsightStatus;
-  category?: string;
-  amount?: number;
+  actions: InsightAction[];
 }
 
 export interface ChatMessage {

@@ -6,6 +6,11 @@ import org.springframework.http.HttpStatus;
 public class ConflictException extends ApiException {
 
     public ConflictException(String detail) {
-        super(HttpStatus.CONFLICT, "CONFLICT", detail);
+        this("CONFLICT", detail);
+    }
+
+    /** With a more specific code than CONFLICT, e.g. ALREADY_RECURRING. */
+    public ConflictException(String code, String detail) {
+        super(HttpStatus.CONFLICT, code, detail);
     }
 }

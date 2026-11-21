@@ -18,6 +18,8 @@ export interface Transaction {
   /** Free text inside the group, e.g. "Gas" in "Utilities". */
   category: string | null;
   notes: string | null;
+  /** Set when the transaction is an occurrence of a recurring transaction. */
+  recurringTransactionId: string | null;
 }
 
 export interface CategoryStyle {

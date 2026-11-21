@@ -30,7 +30,7 @@ public class TokenService {
 
     TokenService(JwtEncoder encoder, JwtProperties properties, Clock clock) {
         this.encoder = encoder;
-        this.refreshTokenDecoder = JwtConfig.decoder(properties, TokenType.REFRESH);
+        this.refreshTokenDecoder = JwtConfig.decoder(properties, TokenType.REFRESH, clock);
         this.properties = properties;
         this.clock = clock;
     }

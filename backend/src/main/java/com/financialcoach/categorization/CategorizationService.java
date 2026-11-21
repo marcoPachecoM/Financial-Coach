@@ -21,6 +21,14 @@ public class CategorizationService {
         this.cache = cache;
     }
 
+    /**
+     * The normalized form of a merchant name ("NETFLIX.COM #123" becomes "netflix com"), used to
+     * match transactions of the same merchant. Empty when nothing is left after normalizing.
+     */
+    public static String merchantKey(String merchantName) {
+        return MerchantNames.normalize(merchantName);
+    }
+
     @Transactional(readOnly = true)
     public CategoryGroupAssignment categorize(String merchantName) {
         String key = MerchantNames.normalize(merchantName);

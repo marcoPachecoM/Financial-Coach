@@ -13,13 +13,35 @@ interface UploadModalProps {
 /** Header of the CSV format accepted by POST /transactions/upload-csv (docs/openapi.yaml). */
 const COLUMNS = ['Type', 'Date', 'Time', 'Name', 'Amount', 'Category Group', 'Category', 'Account', 'Notes'];
 
-const SAMPLE_CSV = `${COLUMNS.join(',')}
-Expense,2026-11-02 13:35:00,13:35,La tiendita,120.50,Food,Groceries,Debit card,
-Expense,2026-11-03 09:10:00,09:10,Starbucks,85.00,Drink,Coffee,Debit card,
-Expense,2026-11-05 20:00:00,20:00,Cinepolis,240.00,Entertainment,Movies,Debit card,"Movie night, 2 tickets"
-Income,2026-11-15 09:00:00,09:00,Employer Inc,-20000.00,Salary,Payroll,Debit card,November salary
-Expense,2026-11-18 18:30:00,18:30,Uber,95.40,Travel,Taxi,Credit card,
-Expense,2026-11-20 15:58:12,15:58,Engigas,232.50,Utilities,Gas,Debit card,`;
+/** "yyyy-MM-dd HH:mm:ss" for the day `daysAgo` days before today, at `time`. */
+const csvDate = (daysAgo: number, time: string) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}:00`;
+};
+
+/**
+ * Sample relative to today, so it always looks recent. Netflix and Spotify appear every 30 days:
+ * after importing, the copilot suggests making them recurring.
+ */
+const sampleCsv = () => {
+  const row = (type: string, daysAgo: number, time: string, rest: string) =>
+    `${type},${csvDate(daysAgo, time)},${time},${rest}`;
+  return [
+    COLUMNS.join(','),
+    row('Expense', 88, '08:15', 'Spotify,129.00,Entertainment,Music,Debit card,'),
+    row('Expense', 60, '07:00', 'Netflix,199.00,Entertainment,Streaming,Debit card,'),
+    row('Expense', 58, '08:15', 'Spotify,129.00,Entertainment,Music,Debit card,'),
+    row('Expense', 30, '07:00', 'Netflix,199.00,Entertainment,Streaming,Debit card,'),
+    row('Expense', 28, '08:15', 'Spotify,129.00,Entertainment,Music,Debit card,'),
+    row('Expense', 12, '13:35', 'La tiendita,120.50,Food,Groceries,Debit card,'),
+    row('Expense', 9, '20:00', 'Cinepolis,240.00,Entertainment,Movies,Debit card,"Movie night, 2 tickets"'),
+    row('Income', 6, '09:00', 'Employer Inc,-20000.00,Salary,Payroll,Debit card,Salary'),
+    row('Expense', 3, '15:58', 'Engigas,232.50,Utilities,Gas,Debit card,'),
+    row('Expense', 0, '07:00', 'Netflix,199.00,Entertainment,Streaming,Debit card,'),
+  ].join('\n');
+};
 
 /** Data rows (non-empty lines after the header); only for the preview, the server does the real parsing. */
 const countRows = (text: string) => Math.max(0, text.split(/\r?\n/).filter((line) => line.trim()).length - 1);
@@ -122,6 +144,12 @@ export const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onImp
                   skipped.
                 </p>
               )}
+              {result.recurring_matched > 0 && (
+                <p className="text-xs text-emerald-800">
+                  {result.recurring_matched} matched recurring charge{result.recurring_matched === 1 ? '' : 's'}{' '}
+                  (they replace the ones added automatically).
+                </p>
+              )}
               {result.accounts_created.length > 0 && (
                 <p className="text-xs text-emerald-800">
                   New account{result.accounts_created.length === 1 ? '' : 's'}:{' '}
@@ -181,7 +209,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onImp
                 </label>
                 <button
                   type="button"
-                  onClick={() => handleTextChange(SAMPLE_CSV)}
+                  onClick={() => handleTextChange(sampleCsv())}
                   className="text-xs text-emerald-600 hover:text-emerald-700 font-medium hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <span className="material-symbols-outlined !text-[14px]">auto_fix_high</span>

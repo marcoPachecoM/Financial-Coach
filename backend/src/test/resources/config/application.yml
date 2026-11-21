@@ -3,3 +3,6 @@
 financial-coach:
   jwt:
     secret: test-only-jwt-secret-0123456789abcdef
+  # Tests call RecurringTransactionService.generateDue with fixed dates instead.
+  recurring:
+    scheduler-enabled: false

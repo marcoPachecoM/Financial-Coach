@@ -1,4 +1,6 @@
 import { getAccounts, getBudgetUsage } from "../services/accounts";
+import { getAlerts } from "../services/alerts";
+import { getRecurringTransactions } from "../services/recurring";
 import { getAnalyticsByCategoryGroup, getAnalyticsSummary } from "../services/analytics";
 import { getAllTransactions, type TransactionFilters } from "../services/transactions";
 import { getCurrentUser } from "../services/users";
@@ -24,3 +26,10 @@ export const useCategoryGroupSummary = (filters: TransactionFilters | null) =>
 /** Current month's budget usage of the account. */
 export const useBudgetUsage = (accountId: string | null) =>
   useAsync(() => getBudgetUsage(accountId!), accountId);
+
+/** Recurring transactions of the account. */
+export const useRecurringTransactions = (accountId: string | null) =>
+  useAsync(() => getRecurringTransactions(accountId!), accountId);
+
+/** Current month's alerts of the account, most severe first. */
+export const useAlerts = (accountId: string | null) => useAsync(() => getAlerts(accountId!), accountId);

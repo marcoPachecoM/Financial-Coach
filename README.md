@@ -129,7 +129,7 @@ Open http://localhost:5173 and log in with the demo user (prefilled in developme
 
 The API is being migrated to Spring Boot in `backend/`, following the contract in [docs/openapi.yaml](docs/openapi.yaml). The Flask API above remains the working backend until the migration is complete.
 
-Current state: database schema (Flyway migrations), **JWT authentication** (`POST /api/v1/auth/login`, `/refresh` with rotation and reuse detection, `/logout`, `GET /api/v1/auth/me`), the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`), the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`), the **CSV import** (`POST /api/v1/transactions/upload-csv`: all or nothing, creates missing accounts, skips rows already imported), **analytics** (`GET /api/v1/analytics/summary`, `GET /api/v1/analytics/by-category-group`) and the **monthly budget** (`GET /api/v1/accounts/{id}/budget?month=YYYY-MM`). Transactions have a **category group** from a closed list of 26 (assigned automatically from the merchant cache when missing, falling back to `Other`) and an optional free-text **category** inside it (e.g. group `Utilities`, category `Gas`); the LLM step comes later. The React frontend (section 5.2) uses this backend; its copilot panel answers locally until the copilot endpoint is migrated. See [docs/database.md](docs/database.md) for the data model.
+Current state: database schema (Flyway migrations), **JWT authentication** (`POST /api/v1/auth/login`, `/refresh` with rotation and reuse detection, `/logout`, `GET /api/v1/auth/me`), the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`), the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`), the **CSV import** (`POST /api/v1/transactions/upload-csv`: all or nothing, creates missing accounts, skips rows already imported), **analytics** (`GET /api/v1/analytics/summary`, `GET /api/v1/analytics/by-category-group`) the **monthly budget** (`GET /api/v1/accounts/{id}/budget?month=YYYY-MM`), **recurring transactions** (`/api/v1/recurring-transactions`, or `recurrence` when creating a transaction: the next occurrences are created automatically every day, and a matching CSV charge replaces the automatic one) and **alerts** (`GET /api/v1/accounts/{id}/alerts`: budget near or over the limit, upcoming and missing recurring charges, price changes, subscription audit and suggested subscriptions). Transactions have a **category group** from a closed list of 26 (assigned automatically from the merchant cache when missing, falling back to `Other`) and an optional free-text **category** inside it (e.g. group `Utilities`, category `Gas`); the LLM step comes later. The React frontend (section 5.2) uses this backend: the copilot panel shows the real alerts with their actions, while its chat still answers locally until the copilot endpoint is migrated. See [docs/database.md](docs/database.md) for the data model.
 
 Requirements: Java 25 and Docker running. If Java 25 is not your default JDK:
 
@@ -197,7 +197,33 @@ curl -H "$AUTH" -F 'file=@transactions.csv' $API/transactions/upload-csv
 curl -H "$AUTH" "$API/analytics/summary?account_id=$ACCOUNT&start_date=2026-11-01&end_date=2026-11-30"
 curl -H "$AUTH" "$API/analytics/by-category-group?account_id=$ACCOUNT&type=EXPENSE"
 curl -H "$AUTH" "$API/accounts/$ACCOUNT/budget?month=2026-11"
+
+# Recurring: Netflix every month from September. The occurrences already due
+# (October, November) are created at once; the next ones, every day at 00:05.
+curl -H "$AUTH" -H 'Content-Type: application/json' \
+     -d '{"type": "EXPENSE", "datetime": "2026-09-05T07:00", "name": "Netflix", "amount": "199",
+          "category_group": "Entertainment", "account_id": "'$ACCOUNT'",
+          "recurrence": {"frequency": "MONTHLY"}}' \
+     $API/transactions
+curl -H "$AUTH" "$API/recurring-transactions?account_id=$ACCOUNT"
+RULE=<id from the list>
+curl -X PATCH -H "$AUTH" -H 'Content-Type: application/json' -d '{"amount": "219"}' $API/recurring-transactions/$RULE
+curl -X PATCH -H "$AUTH" -H 'Content-Type: application/json' -d '{"end_date": "2026-12-31"}' $API/recurring-transactions/$RULE
+
+# Alerts of the month (most severe first)
+curl -H "$AUTH" "$API/accounts/$ACCOUNT/alerts"
 ```
+
+Alerts are computed on every request (nothing is stored). Each one has a stable `id`, a `type`, a `severity` and structured `data`; the client writes the text:
+
+| Type | When |
+|---|---|
+| `BUDGET_WARNING` / `BUDGET_EXCEEDED` | The month's expenses reach 80 % / exceed the account's budget. |
+| `RECURRING_UPCOMING` | A recurring transaction is due in the next 7 days. |
+| `RECURRING_MISSING` | An occurrence was created automatically, but an imported bank statement that already covers its date does not show it. |
+| `RECURRING_PRICE_CHANGED` | A real charge of a recurring transaction has another amount. |
+| `SUBSCRIPTION_AUDIT` | The month's recurring expenses were charged at the expected amount. |
+| `RECURRING_SUGGESTED` | 3+ charges of the same merchant at a regular interval that are not recurring yet. |
 
 Configuration (environment variables; the `dev` profile provides a development secret):
 
@@ -208,6 +234,8 @@ Configuration (environment variables; the `dev` profile provides a development s
 | `JWT_ACCESS_TOKEN_TTL` / `JWT_REFRESH_TOKEN_TTL` | `15m` / `14d` | Spring durations (`30m`, `7d`...). |
 | `DB_URL`, `DB_USER`, `DB_PASSWORD` | dev: local Docker database | Required outside `dev`. |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | Comma-separated browser origins allowed to call the API (no `*`). |
+| `RECURRING_SCHEDULER_ENABLED` | `true` | Creates the due occurrences of recurring transactions daily and at startup. Safe with several instances. |
+| `RECURRING_CRON` | `0 5 0 * * *` | When the daily run happens (Spring cron, server time zone). |
 
 Login, refresh and logout are rate limited per client IP (5, 10 and 20 per minute) and answer `429` with `Retry-After` when exceeded.
 
