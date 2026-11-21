@@ -54,3 +54,7 @@ financial-coach:
   recurring:
     scheduler-enabled: ${RECURRING_SCHEDULER_ENABLED:true}
     cron: ${RECURRING_CRON:0 5 0 * * *}
+  # Daily deletion of expired refresh tokens.
+  refresh-token-cleanup:
+    enabled: true
+    cron: ${REFRESH_TOKEN_CLEANUP_CRON:0 30 3 * * *}
