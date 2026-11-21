@@ -10,7 +10,7 @@ import java.time.Instant;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-/** Maps {@code merchant_category_cache} (V6 migration): normalized merchant name → category. */
+/** Maps {@code merchant_category_cache} (V6, column renamed in V7): normalized merchant name → category group. */
 @Entity
 @Table(name = "merchant_category_cache")
 class MerchantCategory {
@@ -20,11 +20,11 @@ class MerchantCategory {
     private String merchantName;
 
     @Column(nullable = false, length = 50)
-    private Category category;
+    private CategoryGroup categoryGroup;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
-    private CategorySource source;
+    private CategoryGroupSource source;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
@@ -38,11 +38,11 @@ class MerchantCategory {
         // Required by JPA.
     }
 
-    Category getCategory() {
-        return category;
+    CategoryGroup getCategoryGroup() {
+        return categoryGroup;
     }
 
-    CategorySource getSource() {
+    CategoryGroupSource getSource() {
         return source;
     }
 }

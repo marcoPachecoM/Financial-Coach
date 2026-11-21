@@ -2,7 +2,7 @@ package com.financialcoach.analytics;
 
 import com.financialcoach.shared.DateRange;
 import com.financialcoach.shared.Money;
-import com.financialcoach.transactions.CategoryTotal;
+import com.financialcoach.transactions.CategoryGroupTotal;
 import com.financialcoach.transactions.TransactionStatistics;
 import com.financialcoach.transactions.TransactionTotals;
 import com.financialcoach.transactions.TransactionType;
@@ -43,16 +43,17 @@ class AnalyticsService {
     }
 
     /** Percentages are of the total of the selected type; they may not add up to exactly 100 after rounding. */
-    List<CategoryBreakdownResponse> byCategory(UUID userId, UUID accountId, TransactionType type, DateRange range) {
-        List<CategoryTotal> categories = statistics.totalsByCategory(userId, accountId, type, range);
-        BigDecimal total = categories.stream().map(CategoryTotal::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    List<CategoryGroupBreakdownResponse> byCategoryGroup(UUID userId, UUID accountId, TransactionType type,
+                                                         DateRange range) {
+        List<CategoryGroupTotal> groups = statistics.totalsByCategoryGroup(userId, accountId, type, range);
+        BigDecimal total = groups.stream().map(CategoryGroupTotal::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        return categories.stream()
-                .map(category -> new CategoryBreakdownResponse(
-                        category.category(),
-                        Money.format(category.amount()),
-                        Percentages.of(category.amount(), total).toPlainString(),
-                        category.count()))
+        return groups.stream()
+                .map(group -> new CategoryGroupBreakdownResponse(
+                        group.categoryGroup(),
+                        Money.format(group.amount()),
+                        Percentages.of(group.amount(), total).toPlainString(),
+                        group.count()))
                 .toList();
     }
 }

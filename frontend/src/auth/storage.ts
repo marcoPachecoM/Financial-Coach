@@ -1,6 +1,9 @@
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
 
+/** Fired when the session ends without the user logging out (refresh failed). */
+export const SESSION_EXPIRED_EVENT = "auth:session-expired";
+
 export const authStorage = {
   setTokens(accessToken: string, refreshToken: string, rememberMe: boolean) {
     this.clear();
@@ -33,34 +36,14 @@ export const authStorage = {
     sessionStorage.removeItem(REFRESH_TOKEN_KEY);
   },
 
-  updateAccessToken(accessToken: string) {
-    if (localStorage.getItem("access_token")) {
-      localStorage.setItem("access_token", accessToken);
-      return;
-    }
-
-    if (sessionStorage.getItem("access_token")) {
-      sessionStorage.setItem("access_token", accessToken);
-    }
+  /** Replaces both tokens (refresh rotates them) in the storage chosen at login. */
+  updateTokens(accessToken: string, refreshToken: string) {
+    const storage = localStorage.getItem(REFRESH_TOKEN_KEY) !== null ? localStorage : sessionStorage;
+    storage.setItem(ACCESS_TOKEN_KEY, accessToken);
+    storage.setItem(REFRESH_TOKEN_KEY, refreshToken);
   },
 
-  updateTokens(accessToken: string, refreshToken?: string) {
-    this.updateAccessToken(accessToken);
-
-    if (!refreshToken) {
-      return;
-    }
-
-    if (localStorage.getItem("refresh_token")) {
-      localStorage.setItem("refresh_token", refreshToken);
-      return;
-    }
-
-    if (sessionStorage.getItem("refresh_token")) {
-      sessionStorage.setItem("refresh_token", refreshToken);
-    }
-  },
   isAuthenticated() {
-    return Boolean(this.getAccessToken());
+    return Boolean(this.getRefreshToken());
   },
 };

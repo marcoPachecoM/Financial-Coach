@@ -42,11 +42,12 @@ public class TransactionStatistics {
                 income.count(), income.sum().negate());
     }
 
-    /** One entry per category with transactions of this type, largest amount first. */
+    /** One entry per category group with transactions of this type, largest amount first. */
     @Transactional(readOnly = true)
-    public List<CategoryTotal> totalsByCategory(UUID userId, UUID accountId, TransactionType type, DateRange range) {
+    public List<CategoryGroupTotal> totalsByCategoryGroup(UUID userId, UUID accountId, TransactionType type,
+                                                          DateRange range) {
         accountService.requireOwned(userId, accountId);
-        return transactions.totalsByCategory(userId, accountId, type, range.from(), range.to());
+        return transactions.totalsByCategoryGroup(userId, accountId, type, range.from(), range.to());
     }
 
     private static TypeTotals empty(TransactionType type) {

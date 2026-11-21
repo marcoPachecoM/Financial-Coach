@@ -33,7 +33,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
  * TokenService with {@link #decoder(JwtProperties, TokenType)}.
  */
 @Configuration
-@EnableConfigurationProperties({JwtProperties.class, RateLimitProperties.class})
+@EnableConfigurationProperties({JwtProperties.class, RateLimitProperties.class, CorsProperties.class})
 class JwtConfig {
 
     static final String TYPE_CLAIM = "type";

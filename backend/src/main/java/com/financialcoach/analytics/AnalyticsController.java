@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 class AnalyticsController {
 
     private static final Set<String> SUMMARY_PARAMETERS = Set.of("account_id", "start_date", "end_date");
-    private static final Set<String> BY_CATEGORY_PARAMETERS = Set.of("account_id", "type", "start_date", "end_date");
+    private static final Set<String> BY_CATEGORY_GROUP_PARAMETERS = Set.of("account_id", "type", "start_date", "end_date");
 
     private final AnalyticsService analyticsService;
 
@@ -42,8 +42,8 @@ class AnalyticsController {
         return analyticsService.summary(user.id(), accountId, DateRange.between(startDate, endDate));
     }
 
-    @GetMapping("/by-category")
-    List<CategoryBreakdownResponse> byCategory(@AuthenticationPrincipal AuthenticatedUser user,
+    @GetMapping("/by-category-group")
+    List<CategoryGroupBreakdownResponse> byCategoryGroup(@AuthenticationPrincipal AuthenticatedUser user,
                                                HttpServletRequest request,
                                                @RequestParam("account_id") UUID accountId,
                                                @RequestParam(name = "type", defaultValue = "EXPENSE")
@@ -52,7 +52,7 @@ class AnalyticsController {
                                                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
                                                @RequestParam(name = "end_date", required = false)
                                                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        QueryParameters.requireOnly(request, BY_CATEGORY_PARAMETERS);
-        return analyticsService.byCategory(user.id(), accountId, type, DateRange.between(startDate, endDate));
+        QueryParameters.requireOnly(request, BY_CATEGORY_GROUP_PARAMETERS);
+        return analyticsService.byCategoryGroup(user.id(), accountId, type, DateRange.between(startDate, endDate));
     }
 }

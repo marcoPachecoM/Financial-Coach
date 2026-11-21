@@ -20,21 +20,21 @@ export const SpendingTrendChart: React.FC<SpendingTrendChartProps> = ({
   // Group transactions by date (normalized to YYYY-MM-DD dayKey)
   const chartData = useMemo(() => {
     // Filter by category if selected
+    // Spending only: income would inflate the daily totals.
     const filtered = transactions.filter((tx) => {
+      if (tx.type !== 'EXPENSE') return false;
       if (selectedCategory === 'all') return true;
-      const cat = tx.category;
-      return cat.toLowerCase() === selectedCategory.toLowerCase();
+      return tx.categoryGroup === selectedCategory;
     });
 
     // Extract unique dates sorted ascending
     const dateMap = new Map<string, { total: number; count: number }>();
 
     // Sort transactions chronologically by normalized day
-    const sortedTx = [...filtered].sort((a, b) => a.date.localeCompare(b.date));
+    const sortedTx = [...filtered].sort((a, b) => a.datetime.localeCompare(b.datetime));
 
     sortedTx.forEach((tx) => {
-      const dayKey = tx.date.trim().split(/[\sT]/)[0];
-      // Treat negative amounts as positive spending for the chart
+      const dayKey = tx.datetime.split('T')[0];
       const expense = Math.abs(tx.amount);
       const current = dateMap.get(dayKey) || { total: 0, count: 0 };
       dateMap.set(dayKey, {

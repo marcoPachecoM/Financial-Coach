@@ -1,6 +1,6 @@
 package com.financialcoach.transactions;
 
-import com.financialcoach.categorization.Category;
+import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.shared.Money;
 import com.financialcoach.shared.error.ApiFieldError;
 import com.financialcoach.shared.error.ValidationException;
@@ -130,8 +130,8 @@ final class CsvTransactionReader {
         // "Time" is ignored: "Date" already contains the time.
         String name = required(row, "Name", text(record, "Name"), 255, errors);
         BigDecimal amount = parseAmount(row, text(record, "Amount"), errors);
-        String categoryGroup = optional(row, "Category Group", text(record, "Category Group"), 100, errors);
-        Category category = parseCategory(row, text(record, "Category"), errors);
+        CategoryGroup categoryGroup = parseCategoryGroup(row, text(record, "Category Group"), errors);
+        String category = optional(row, "Category", text(record, "Category"), 100, errors);
         String account = required(row, "Account", text(record, "Account"), 100, errors);
         String notes = optional(row, "Notes", text(record, "Notes"), 1000, errors);
 
@@ -179,14 +179,14 @@ final class CsvTransactionReader {
         return Money.parse(value);
     }
 
-    private static Category parseCategory(int row, String value, List<ApiFieldError> errors) {
+    private static CategoryGroup parseCategoryGroup(int row, String value, List<ApiFieldError> errors) {
         if (value.isEmpty()) {
             return null;
         }
         try {
-            return Category.fromLabel(value);
+            return CategoryGroup.fromLabel(value);
         } catch (IllegalArgumentException e) {
-            return fail(row, "Category", "Unknown category.", errors);
+            return fail(row, "Category Group", "Unknown category group.", errors);
         }
     }
 

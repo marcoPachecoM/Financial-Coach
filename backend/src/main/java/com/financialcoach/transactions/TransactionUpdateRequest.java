@@ -1,7 +1,7 @@
 package com.financialcoach.transactions;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.financialcoach.categorization.Category;
+import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.shared.Money;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -12,7 +12,7 @@ import java.util.UUID;
  * Body of {@code PATCH /transactions/{id}} ({@code TransactionUpdateRequest} in openapi.yaml).
  *
  * <p>Same technique as AccountUpdateRequest: each setter records that its field was sent, so
- * "not sent" (keep) and "sent as null" (clear) can be told apart. Only category_group and
+ * "not sent" (keep) and "sent as null" (clear) can be told apart. Only category and
  * notes may be cleared; null for any other field is rejected by TransactionService.
  */
 final class TransactionUpdateRequest {
@@ -32,11 +32,11 @@ final class TransactionUpdateRequest {
     private String amount;
     private boolean amountProvided;
 
-    @Size(max = 100)
-    private String categoryGroup;
+    private CategoryGroup categoryGroup;
     private boolean categoryGroupProvided;
 
-    private Category category;
+    @Size(max = 100)
+    private String category;
     private boolean categoryProvided;
 
     private UUID accountId;
@@ -71,13 +71,13 @@ final class TransactionUpdateRequest {
     }
 
     @JsonProperty("category_group")
-    void setCategoryGroup(String categoryGroup) {
+    void setCategoryGroup(CategoryGroup categoryGroup) {
         this.categoryGroup = categoryGroup;
         this.categoryGroupProvided = true;
     }
 
     @JsonProperty("category")
-    void setCategory(Category category) {
+    void setCategory(String category) {
         this.category = category;
         this.categoryProvided = true;
     }
@@ -106,10 +106,10 @@ final class TransactionUpdateRequest {
     String amount() { return amount; }
     boolean amountProvided() { return amountProvided; }
 
-    String categoryGroup() { return categoryGroup; }
+    CategoryGroup categoryGroup() { return categoryGroup; }
     boolean categoryGroupProvided() { return categoryGroupProvided; }
 
-    Category category() { return category; }
+    String category() { return category; }
     boolean categoryProvided() { return categoryProvided; }
 
     UUID accountId() { return accountId; }

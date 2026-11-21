@@ -11,8 +11,8 @@ erDiagram
     users ||--o{ import_batches : "uploads"
     accounts ||--o{ transactions : "contains"
     import_batches |o--o{ transactions : "imported"
-    categories ||--o{ transactions : "classifies"
-    categories ||--o{ merchant_category_cache : "classifies"
+    category_groups ||--o{ transactions : "classifies"
+    category_groups ||--o{ merchant_category_cache : "classifies"
 
     users {
         uuid id PK
@@ -45,7 +45,7 @@ erDiagram
         timestamptz updated_at
     }
 
-    categories {
+    category_groups {
         varchar name PK
     }
 
@@ -66,11 +66,11 @@ erDiagram
         timestamp datetime "local, no timezone"
         varchar name
         numeric amount "EXPENSE > 0, INCOME < 0"
-        varchar category FK
-        varchar category_group
+        varchar category_group FK
+        varchar category "free text"
         varchar notes
         varchar source "MANUAL | CSV"
-        varchar category_source "USER | CSV | RULE | LLM"
+        varchar category_group_source "USER | CSV | RULE | LLM"
         uuid import_batch_id FK
         char fingerprint "CSV rows only"
         timestamptz created_at
@@ -80,7 +80,7 @@ erDiagram
 
     merchant_category_cache {
         varchar merchant_name PK "normalized"
-        varchar category FK
+        varchar category_group FK
         varchar source "RULE | LLM"
         timestamptz created_at
         timestamptz updated_at
@@ -96,7 +96,7 @@ erDiagram
 | Transaction time | `timestamp` (no timezone) | It is the local time on the receipt; converting to UTC could move it to another day or month |
 | System timestamps | `timestamptz` | They are instants (when something happened in the system) |
 | Small fixed sets | `varchar` + `CHECK` | Simple; readable values in SQL and logs |
-| Categories | Lookup table `categories` + FK | One list referenced by two tables; adding a category is a single `INSERT` migration |
+| Category groups | Lookup table `category_groups` + FK; `category` is free text inside the group | One list referenced by two tables; adding a group is a single `INSERT` migration. V7 renamed `categories` and swapped the two columns |
 | `updated_at` | Set by Hibernate (`@UpdateTimestamp`) | No database triggers to maintain |
 | Schema ownership | Flyway only; Hibernate `ddl-auto: validate` | Every schema change is versioned and reviewable |
 | Constraint names | `ck_*`, `fk_*`, `uq_*`, `ux_*`, `ix_*` | Errors name the rule that failed, so they can be mapped to API errors |
@@ -110,7 +110,7 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 | Expenses are positive, income is negative, zero is invalid | `ck_transactions_amount_sign` |
 | A transaction belongs to an account of the same user | `fk_transactions_account` (composite FK on `account_id, user_id`) |
 | Account names are unique per user, ignoring case | `ux_accounts_user_name` |
-| Categories come from the allowed list | `fk_transactions_category`, `fk_merchant_category_cache_category` |
+| Category groups come from the allowed list | `fk_transactions_category_group`, `fk_merchant_category_cache_category_group` |
 | A CSV row cannot be imported twice into the same account | `ux_transactions_account_fingerprint` |
 | CSV rows always have a fingerprint, manual rows never do | `ck_transactions_fingerprint` |
 | Budgets are not negative | `ck_accounts_monthly_budget` |
@@ -123,7 +123,7 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 - **`transactions.user_id` is redundant on purpose.** It makes ownership checks a single-table filter, and the composite FK guarantees it always matches the account owner.
 - **`refresh_tokens.revoked_at` replaces `is_revoked`**: one source of truth instead of a flag and a timestamp that could disagree.
 - **`users.id` is the public id** (JWT `sub`). The Flask schema had an integer `id` plus a separate `public_id`.
-- **`source` and `category_source` are internal**: not exposed by the API, but they record which channel created a row (form, CSV, later WhatsApp) and who chose the category (user, CSV, rules, LLM).
+- **`source` and `category_group_source` are internal**: not exposed by the API, but they record which channel created a row (form, CSV, later WhatsApp) and who chose the category group (user, CSV, rules, LLM).
 - **`import_batches`** keeps one row per upload, for auditing and a future "undo import".
 - **`merchant_category_cache` is shared** by all users, so a merchant is sent to the LLM only once.
 

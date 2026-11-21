@@ -30,7 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class MigrationsTest {
 
-    private static final int EXPECTED_VERSIONED_MIGRATIONS = 6;
+    private static final int EXPECTED_VERSIONED_MIGRATIONS = 7;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -60,7 +60,7 @@ class MigrationsTest {
                 String.class);
 
         assertThat(tables).contains(
-                "users", "refresh_tokens", "accounts", "categories",
+                "users", "refresh_tokens", "accounts", "category_groups",
                 "import_batches", "transactions", "merchant_category_cache");
     }
 
@@ -110,10 +110,20 @@ class MigrationsTest {
     }
 
     @Test
-    void rejectsUnknownCategory() {
+    void rejectsUnknownCategoryGroup() {
         assertThatThrownBy(() -> insertTransaction(userId, accountId, "EXPENSE", "10.00", "Groceries", "MANUAL", null))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("fk_transactions_category");
+                .hasMessageContaining("fk_transactions_category_group");
+    }
+
+    /** V7: the group is the closed list; the category is free text and optional. */
+    @Test
+    void categoryIsFreeText() {
+        insertTransaction(userId, accountId, "EXPENSE", "232.50", "Utilities", "MANUAL", null);
+        jdbc.update("UPDATE transactions SET category = 'Gas' WHERE account_id = ?", accountId);
+
+        assertThat(jdbc.queryForObject("SELECT category FROM transactions WHERE account_id = ?", String.class, accountId))
+                .isEqualTo("Gas");
     }
 
     @Test
@@ -169,16 +179,16 @@ class MigrationsTest {
     }
 
     private UUID insertTransaction(UUID owner, UUID account, String type, String amount,
-                                   String category, String source, String fingerprint) {
-        String categorySource = "CSV".equals(source) ? "CSV" : "USER";
+                                   String categoryGroup, String source, String fingerprint) {
+        String groupSource = "CSV".equals(source) ? "CSV" : "USER";
         return jdbc.queryForObject("""
                 INSERT INTO transactions
-                    (user_id, account_id, type, datetime, name, amount, category,
-                     source, category_source, fingerprint)
+                    (user_id, account_id, type, datetime, name, amount, category_group,
+                     source, category_group_source, fingerprint)
                 VALUES (?, ?, ?, ?, 'La tiendita', ?, ?, ?, ?, ?)
                 RETURNING id
                 """, UUID.class,
                 owner, account, type, LocalDateTime.of(2026, 1, 2, 13, 35),
-                new BigDecimal(amount), category, source, categorySource, fingerprint);
+                new BigDecimal(amount), categoryGroup, source, groupSource, fingerprint);
     }
 }

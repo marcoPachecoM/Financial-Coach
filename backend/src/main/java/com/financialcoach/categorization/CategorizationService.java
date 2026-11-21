@@ -4,15 +4,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Assigns a category to a merchant when the user did not choose one.
+ * Assigns a category group to a merchant when the user did not choose one. The free-text
+ * category is never guessed.
  *
- * <p>Current pipeline: merchant cache, then the default category. The LLM step (and keyword
- * rules for the new categories) will be added here later; callers will not change.
+ * <p>Current pipeline: merchant cache, then the default group. The LLM step (and keyword
+ * rules) will be added here later; callers will not change.
  */
 @Service
 public class CategorizationService {
 
-    static final Category DEFAULT_CATEGORY = Category.OTHER;
+    static final CategoryGroup DEFAULT_GROUP = CategoryGroup.OTHER;
 
     private final MerchantCategoryRepository cache;
 
@@ -21,13 +22,13 @@ public class CategorizationService {
     }
 
     @Transactional(readOnly = true)
-    public CategoryAssignment categorize(String merchantName) {
+    public CategoryGroupAssignment categorize(String merchantName) {
         String key = MerchantNames.normalize(merchantName);
         if (key.isEmpty()) {
-            return new CategoryAssignment(DEFAULT_CATEGORY, CategorySource.RULE);
+            return new CategoryGroupAssignment(DEFAULT_GROUP, CategoryGroupSource.RULE);
         }
         return cache.findById(key)
-                .map(cached -> new CategoryAssignment(cached.getCategory(), cached.getSource()))
-                .orElse(new CategoryAssignment(DEFAULT_CATEGORY, CategorySource.RULE));
+                .map(cached -> new CategoryGroupAssignment(cached.getCategoryGroup(), cached.getSource()))
+                .orElse(new CategoryGroupAssignment(DEFAULT_GROUP, CategoryGroupSource.RULE));
     }
 }

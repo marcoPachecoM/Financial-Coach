@@ -49,8 +49,8 @@ class CsvImportTest extends ApiIntegrationTest {
         void importsRowsAndCreatesMissingAccounts() throws Exception {
             upload(alice, HEADER + """
                     Expense,2026-01-02 13:35:00,13:35,La tiendita,100.00,Food,Food,debit card,
-                    Income,2026-01-15 09:00:00,09:00,Employer Inc,-20000.00,Work,Salary,Debit Card,January
-                    Expense,2026-01-03 18:00:00,18:00,Cinema,250,,Entertainment,Savings,
+                    Income,2026-01-15 09:00:00,09:00,Employer Inc,-20000.00,Salary,Work,Debit Card,January
+                    Expense,2026-01-03 18:00:00,18:00,Cinema,250,Entertainment,,Savings,
                     """)
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.records_imported").value(3))
@@ -71,7 +71,7 @@ class CsvImportTest extends ApiIntegrationTest {
         @Test
         void storesEveryColumn() throws Exception {
             upload(alice, HEADER
-                    + "Income,2026-01-15 09:00:05,ignored,  Employer Inc  ,-20000.5,Work,Salary,Debit card,"
+                    + "Income,2026-01-15 09:00:05,ignored,  Employer Inc  ,-20000.5,Salary,  Payroll  ,Debit card,"
                     + "\"Bonus, \"\"January\"\"\"\n")
                     .andExpect(status().isCreated());
 
@@ -82,35 +82,35 @@ class CsvImportTest extends ApiIntegrationTest {
                     .containsEntry("datetime", java.sql.Timestamp.valueOf("2026-01-15 09:00:05"))
                     .containsEntry("name", "Employer Inc")
                     .containsEntry("amount", new java.math.BigDecimal("-20000.50"))
-                    .containsEntry("category_group", "Work")
-                    .containsEntry("category", "Salary")
+                    .containsEntry("category_group", "Salary")
+                    .containsEntry("category", "Payroll")
                     .containsEntry("notes", "Bonus, \"January\"")
                     .containsEntry("source", "CSV")
-                    .containsEntry("category_source", "CSV");
+                    .containsEntry("category_group_source", "CSV");
             assertThat((String) row.get("fingerprint")).hasSize(64);
             assertThat(row.get("import_batch_id")).isNotNull();
         }
 
         @Test
-        void categorizesRowsWithoutCategory() throws Exception {
+        void assignsTheGroupWhenTheRowHasNone() throws Exception {
             upload(alice, HEADER + "Expense,2026-01-02 13:35:00,,Unknown shop,10,,,Debit card,\n")
                     .andExpect(status().isCreated());
 
             Map<String, Object> row = jdbc.queryForMap(
-                    "SELECT category, category_source, category_group, notes FROM transactions WHERE account_id = ?",
+                    "SELECT category_group, category_group_source, category, notes FROM transactions WHERE account_id = ?",
                     aliceCard);
             assertThat(row)
-                    .containsEntry("category", "Other")
-                    .containsEntry("category_source", "RULE")
-                    .containsEntry("category_group", null)
+                    .containsEntry("category_group", "Other")
+                    .containsEntry("category_group_source", "RULE")
+                    .containsEntry("category", null)
                     .containsEntry("notes", null);
         }
 
         @Test
         void recordsTheImportBatch() throws Exception {
             upload(alice, "january.csv", HEADER + """
-                    Expense,2026-01-02 13:35:00,,La tiendita,100,,Food,Debit card,
-                    Expense,2026-01-03 13:35:00,,La tiendita,100,,Food,Debit card,
+                    Expense,2026-01-02 13:35:00,,La tiendita,100,Food,,Debit card,
+                    Expense,2026-01-03 13:35:00,,La tiendita,100,Food,,Debit card,
                     """)
                     .andExpect(status().isCreated());
 
@@ -127,7 +127,7 @@ class CsvImportTest extends ApiIntegrationTest {
         @Test
         void acceptsExcelByteOrderMarkAndCrlfLineEndings() throws Exception {
             String csv = "\uFEFF" + HEADER.replace("\n", "\r\n")
-                    + "Expense,2026-01-02 13:35:00,,La tiendita,100,,Food,Debit card,\r\n";
+                    + "Expense,2026-01-02 13:35:00,,La tiendita,100,Food,,Debit card,\r\n";
 
             upload(alice, csv).andExpect(status().isCreated()).andExpect(jsonPath("$.records_imported").value(1));
         }
@@ -153,9 +153,9 @@ class CsvImportTest extends ApiIntegrationTest {
     class Duplicates {
 
         private static final String FILE = HEADER + """
-                Expense,2026-01-02 13:35:00,,Coffee,45,,Drink,Debit card,
-                Expense,2026-01-02 13:35:00,,Coffee,45,,Drink,Debit card,
-                Expense,2026-01-02 18:00:00,,Taxi,80,,Car,Debit card,
+                Expense,2026-01-02 13:35:00,,Coffee,45,Drink,,Debit card,
+                Expense,2026-01-02 13:35:00,,Coffee,45,Drink,,Debit card,
+                Expense,2026-01-02 18:00:00,,Taxi,80,Car,,Debit card,
                 """;
 
         @Test
@@ -211,12 +211,12 @@ class CsvImportTest extends ApiIntegrationTest {
         @Test
         void listsEveryErrorAndImportsNothing() throws Exception {
             upload(alice, HEADER + """
-                    Expense,2026-01-02 13:35:00,,Valid row,100,,Food,New account,
-                    Transfer,2026-01-02 13:35:00,,Bad type,100,,Food,Debit card,
-                    Expense,2026-02-30 10:00:00,,Bad date,abc,,Food,Debit card,
-                    Income,2026-01-02 13:35:00,,Positive income,100,,Salary,Debit card,
-                    Expense,2026-01-02 13:35:00,,No account,100,,Food,,
-                    Expense,2026-01-02 13:35:00,,,0,,Groceries,Debit card,
+                    Expense,2026-01-02 13:35:00,,Valid row,100,Food,,New account,
+                    Transfer,2026-01-02 13:35:00,,Bad type,100,Food,,Debit card,
+                    Expense,2026-02-30 10:00:00,,Bad date,abc,Food,,Debit card,
+                    Income,2026-01-02 13:35:00,,Positive income,100,Salary,,Debit card,
+                    Expense,2026-01-02 13:35:00,,No account,100,Food,,,
+                    Expense,2026-01-02 13:35:00,,,0,Groceries,,Debit card,
                     """)
                     .andExpect(status().isBadRequest())
                     .andExpect(content().contentType(PROBLEM_JSON))
@@ -236,8 +236,8 @@ class CsvImportTest extends ApiIntegrationTest {
                     .andExpect(jsonPath("$.errors[5].field").value("Name"))
                     .andExpect(jsonPath("$.errors[6].field").value("Amount"))
                     .andExpect(jsonPath("$.errors[6].message").value("must not be zero"))
-                    .andExpect(jsonPath("$.errors[7].field").value("Category"))
-                    .andExpect(jsonPath("$.errors[7].message").value("Unknown category."));
+                    .andExpect(jsonPath("$.errors[7].field").value("Category Group"))
+                    .andExpect(jsonPath("$.errors[7].message").value("Unknown category group."));
 
             assertThat(jdbc.queryForObject("SELECT count(*) FROM transactions WHERE user_id = ?",
                     Integer.class, alice.id())).isZero();

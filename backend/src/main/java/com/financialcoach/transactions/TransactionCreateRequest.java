@@ -1,6 +1,6 @@
 package com.financialcoach.transactions;
 
-import com.financialcoach.categorization.Category;
+import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.shared.Money;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -30,11 +30,12 @@ record TransactionCreateRequest(
         @Pattern(regexp = Money.SIGNED_PATTERN, message = Money.SIGNED_MESSAGE)
         String amount,
 
-        @Size(max = 100)
-        String categoryGroup,
+        /* One of the closed list. Omitted: assigned automatically. */
+        CategoryGroup categoryGroup,
 
-        /* Omitted: categorized automatically. */
-        Category category,
+        /* Free text inside the group, e.g. "Gas". */
+        @Size(max = 100)
+        String category,
 
         @NotNull
         UUID accountId,

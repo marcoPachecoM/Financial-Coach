@@ -12,20 +12,20 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * The Category enum and the categories table (V3 migration) must list the same values.
- * If a migration adds a category, this test fails until the enum is updated too (and vice versa).
+ * The CategoryGroup enum and the category_groups table (V3, renamed in V7) must list the same values.
+ * If a migration adds a group, this test fails until the enum is updated too (and vice versa).
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
-class CategoryTableTest {
+class CategoryGroupTableTest {
 
     @Autowired
     private JdbcTemplate jdbc;
 
     @Test
-    void enumMatchesCategoriesTable() {
-        List<String> table = jdbc.queryForList("SELECT name FROM categories", String.class);
-        List<String> labels = Arrays.stream(Category.values()).map(Category::label).toList();
+    void enumMatchesCategoryGroupsTable() {
+        List<String> table = jdbc.queryForList("SELECT name FROM category_groups", String.class);
+        List<String> labels = Arrays.stream(CategoryGroup.values()).map(CategoryGroup::label).toList();
 
         assertThat(labels).containsExactlyInAnyOrderElementsOf(table);
     }

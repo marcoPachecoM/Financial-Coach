@@ -18,7 +18,7 @@ import org.springframework.test.web.servlet.ResultActions;
 class AnalyticsControllerTest extends ApiIntegrationTest {
 
     private static final String SUMMARY = "/api/v1/analytics/summary";
-    private static final String BY_CATEGORY = "/api/v1/analytics/by-category";
+    private static final String BY_CATEGORY_GROUP = "/api/v1/analytics/by-category-group";
 
     private AnalyticsTestData data;
     private TestUser alice;
@@ -127,18 +127,18 @@ class AnalyticsControllerTest extends ApiIntegrationTest {
     }
 
     @Nested
-    class ByCategory {
+    class ByCategoryGroup {
 
         @Test
         void expensesByDefaultLargestFirst() throws Exception {
-            byCategory(alice, "account_id=" + card)
+            byCategoryGroup(alice, "account_id=" + card)
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$", hasSize(2)))
-                    .andExpect(jsonPath("$[0].category").value("Entertainment"))
+                    .andExpect(jsonPath("$[0].category_group").value("Entertainment"))
                     .andExpect(jsonPath("$[0].amount").value("250.50"))
                     .andExpect(jsonPath("$[0].percentage").value("62.63"))
                     .andExpect(jsonPath("$[0].count").value(1))
-                    .andExpect(jsonPath("$[1].category").value("Food"))
+                    .andExpect(jsonPath("$[1].category_group").value("Food"))
                     .andExpect(jsonPath("$[1].amount").value("149.50"))
                     .andExpect(jsonPath("$[1].percentage").value("37.38"))
                     .andExpect(jsonPath("$[1].count").value(2));
@@ -146,34 +146,34 @@ class AnalyticsControllerTest extends ApiIntegrationTest {
 
         @Test
         void incomeAmountsArePositive() throws Exception {
-            byCategory(alice, "account_id=%s&type=INCOME".formatted(card))
+            byCategoryGroup(alice, "account_id=%s&type=INCOME".formatted(card))
                     .andExpect(jsonPath("$", hasSize(2)))
-                    .andExpect(jsonPath("$[0].category").value("Salary"))
+                    .andExpect(jsonPath("$[0].category_group").value("Salary"))
                     .andExpect(jsonPath("$[0].amount").value("20000.00"))
                     .andExpect(jsonPath("$[0].percentage").value("97.56"))
-                    .andExpect(jsonPath("$[1].category").value("Gift"))
+                    .andExpect(jsonPath("$[1].category_group").value("Gift"))
                     .andExpect(jsonPath("$[1].amount").value("500.00"));
         }
 
         @Test
         void filtersByDate() throws Exception {
-            byCategory(alice, "account_id=%s&start_date=2026-01-31&end_date=2026-01-31".formatted(card))
+            byCategoryGroup(alice, "account_id=%s&start_date=2026-01-31&end_date=2026-01-31".formatted(card))
                     .andExpect(jsonPath("$", hasSize(1)))
-                    .andExpect(jsonPath("$[0].category").value("Food"))
+                    .andExpect(jsonPath("$[0].category_group").value("Food"))
                     .andExpect(jsonPath("$[0].amount").value("49.50"))
                     .andExpect(jsonPath("$[0].percentage").value("100.00"));
         }
 
         @Test
         void emptyPeriodIsAnEmptyList() throws Exception {
-            byCategory(alice, "account_id=%s&start_date=2030-01-01".formatted(card))
+            byCategoryGroup(alice, "account_id=%s&start_date=2030-01-01".formatted(card))
                     .andExpect(status().isOk())
                     .andExpect(content().json("[]"));
         }
 
         @Test
         void invalidType() throws Exception {
-            byCategory(alice, "account_id=%s&type=TRANSFER".formatted(card))
+            byCategoryGroup(alice, "account_id=%s&type=TRANSFER".formatted(card))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
                     .andExpect(jsonPath("$.errors[0].field").value("type"));
@@ -181,7 +181,7 @@ class AnalyticsControllerTest extends ApiIntegrationTest {
 
         @Test
         void anotherUsersAccountIsNotFound() throws Exception {
-            byCategory(alice, "account_id=" + bobCard).andExpect(status().isNotFound());
+            byCategoryGroup(alice, "account_id=" + bobCard).andExpect(status().isNotFound());
         }
     }
 
@@ -189,7 +189,7 @@ class AnalyticsControllerTest extends ApiIntegrationTest {
         return mvc.perform(get(SUMMARY + "?" + query).with(as(user)));
     }
 
-    private ResultActions byCategory(TestUser user, String query) throws Exception {
-        return mvc.perform(get(BY_CATEGORY + "?" + query).with(as(user)));
+    private ResultActions byCategoryGroup(TestUser user, String query) throws Exception {
+        return mvc.perform(get(BY_CATEGORY_GROUP + "?" + query).with(as(user)));
     }
 }

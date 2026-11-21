@@ -52,16 +52,16 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
     List<TypeTotals> totalsByType(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
                                   @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
-    /** Amounts as positive values; largest first, ties by category name. */
+    /** Amounts as positive values; largest first, ties by group name. */
     @Query("""
-            select new com.financialcoach.transactions.CategoryTotal(t.category, count(t), abs(sum(t.amount)))
+            select new com.financialcoach.transactions.CategoryGroupTotal(t.categoryGroup, count(t), abs(sum(t.amount)))
             from Transaction t
             where t.userId = :userId and t.accountId = :accountId and t.type = :type
               and t.occurredAt >= :from and t.occurredAt < :to
-            group by t.category
-            order by abs(sum(t.amount)) desc, t.category
+            group by t.categoryGroup
+            order by abs(sum(t.amount)) desc, t.categoryGroup
             """)
-    List<CategoryTotal> totalsByCategory(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
+    List<CategoryGroupTotal> totalsByCategoryGroup(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
                                          @Param("type") TransactionType type,
                                          @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 }

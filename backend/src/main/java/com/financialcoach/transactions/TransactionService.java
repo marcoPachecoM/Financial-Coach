@@ -2,8 +2,8 @@ package com.financialcoach.transactions;
 
 import com.financialcoach.accounts.AccountService;
 import com.financialcoach.categorization.CategorizationService;
-import com.financialcoach.categorization.CategoryAssignment;
-import com.financialcoach.categorization.CategorySource;
+import com.financialcoach.categorization.CategoryGroupAssignment;
+import com.financialcoach.categorization.CategoryGroupSource;
 import com.financialcoach.shared.DateRange;
 import com.financialcoach.shared.Money;
 import com.financialcoach.shared.error.NotFoundException;
@@ -61,8 +61,8 @@ public class TransactionService {
         checkAmountSign(request.type(), amount);
 
         String name = request.name().strip();
-        CategoryAssignment category = request.category() != null
-                ? new CategoryAssignment(request.category(), CategorySource.USER)
+        CategoryGroupAssignment group = request.categoryGroup() != null
+                ? new CategoryGroupAssignment(request.categoryGroup(), CategoryGroupSource.USER)
                 : categorizationService.categorize(name);
 
         Transaction transaction = Transaction.manual(
@@ -72,9 +72,9 @@ public class TransactionService {
                 truncateToSeconds(request.datetime()),
                 name,
                 amount,
-                category.category(),
-                category.source(),
-                blankToNull(request.categoryGroup()),
+                group.group(),
+                group.source(),
+                blankToNull(request.category()),
                 blankToNull(request.notes()));
         return transactions.saveAndFlush(transaction);
     }
@@ -104,11 +104,11 @@ public class TransactionService {
         if (request.nameProvided()) {
             transaction.rename(required("name", request.name()).strip());
         }
-        if (request.categoryProvided()) {
-            transaction.changeCategoryByUser(required("category", request.category()));
-        }
         if (request.categoryGroupProvided()) {
-            transaction.changeCategoryGroup(blankToNull(request.categoryGroup()));
+            transaction.changeCategoryGroupByUser(required("category_group", request.categoryGroup()));
+        }
+        if (request.categoryProvided()) {
+            transaction.changeCategory(blankToNull(request.category()));
         }
         if (request.notesProvided()) {
             transaction.changeNotes(blankToNull(request.notes()));

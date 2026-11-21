@@ -31,8 +31,8 @@ record AnalyticsTestData(JdbcTemplate jdbc) {
     private void insert(TestUser owner, UUID accountId, String type, String datetime, String amount,
                         String category, boolean deleted) {
         jdbc.update("""
-                INSERT INTO transactions (user_id, account_id, type, datetime, name, amount, category,
-                                          source, category_source, deleted_at)
+                INSERT INTO transactions (user_id, account_id, type, datetime, name, amount, category_group,
+                                          source, category_group_source, deleted_at)
                 VALUES (?, ?, ?, ?, 'Test', ?, ?, 'MANUAL', 'USER', CASE WHEN ? THEN now() END)
                 """, owner.id(), accountId, type, LocalDateTime.parse(datetime), new BigDecimal(amount),
                 category, deleted);

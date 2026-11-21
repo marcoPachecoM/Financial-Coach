@@ -7,13 +7,13 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Allowed transaction categories: the {@code Category} enum of openapi.yaml and the rows of the
- * {@code categories} table (V3 migration). CategoryTableTest fails if the two drift apart.
+ * Allowed transaction category groups: the {@code CategoryGroup} enum of openapi.yaml and the rows of the
+ * {@code category_groups} table (V3, renamed in V7). CategoryGroupTableTest fails if the two drift apart.
  *
  * <p>The label (e.g. "Higiene personal") is what the API and the database use; the constant
  * name is only for Java code.
  */
-public enum Category {
+public enum CategoryGroup {
     UTILITIES("Utilities"),
     OTHERS("Others"),
     HOUSEHOLD("Household"),
@@ -41,12 +41,12 @@ public enum Category {
     HOME("Home"),
     SALARY("Salary");
 
-    private static final Map<String, Category> BY_LABEL = Arrays.stream(values())
-            .collect(Collectors.toUnmodifiableMap(Category::label, Function.identity()));
+    private static final Map<String, CategoryGroup> BY_LABEL = Arrays.stream(values())
+            .collect(Collectors.toUnmodifiableMap(CategoryGroup::label, Function.identity()));
 
     private final String label;
 
-    Category(String label) {
+    CategoryGroup(String label) {
         this.label = label;
     }
 
@@ -57,11 +57,11 @@ public enum Category {
     }
 
     /** Exact match on the label. */
-    public static Category fromLabel(String label) {
-        Category category = BY_LABEL.get(label);
-        if (category == null) {
-            throw new IllegalArgumentException("Unknown category: " + label);
+    public static CategoryGroup fromLabel(String label) {
+        CategoryGroup group = BY_LABEL.get(label);
+        if (group == null) {
+            throw new IllegalArgumentException("Unknown category group: " + label);
         }
-        return category;
+        return group;
     }
 }

@@ -1,7 +1,7 @@
 package com.financialcoach.transactions;
 
-import com.financialcoach.categorization.Category;
-import com.financialcoach.categorization.CategorySource;
+import com.financialcoach.categorization.CategoryGroup;
+import com.financialcoach.categorization.CategoryGroupSource;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -55,11 +55,13 @@ class Transaction {
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal amount;
 
+    /** One of the closed list; assigned automatically when not given. */
     @Column(nullable = false, length = 50)
-    private Category category;
+    private CategoryGroup categoryGroup;
 
+    /** Free text inside the group, e.g. "Gas" in "Utilities". */
     @Column(length = 100)
-    private String categoryGroup;
+    private String category;
 
     @Column(length = 1000)
     private String notes;
@@ -70,7 +72,7 @@ class Transaction {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private CategorySource categorySource;
+    private CategoryGroupSource categoryGroupSource;
 
     @Column(updatable = false)
     private UUID importBatchId;
@@ -96,8 +98,8 @@ class Transaction {
 
     /** A transaction entered by hand (form, later WhatsApp). */
     static Transaction manual(UUID userId, UUID accountId, TransactionType type, LocalDateTime occurredAt,
-                              String name, BigDecimal amount, Category category, CategorySource categorySource,
-                              String categoryGroup, String notes) {
+                              String name, BigDecimal amount, CategoryGroup categoryGroup,
+                              CategoryGroupSource categoryGroupSource, String category, String notes) {
         Transaction transaction = new Transaction();
         transaction.userId = userId;
         transaction.accountId = accountId;
@@ -105,9 +107,9 @@ class Transaction {
         transaction.occurredAt = occurredAt;
         transaction.name = name;
         transaction.amount = amount;
-        transaction.category = category;
-        transaction.categorySource = categorySource;
         transaction.categoryGroup = categoryGroup;
+        transaction.categoryGroupSource = categoryGroupSource;
+        transaction.category = category;
         transaction.notes = notes;
         transaction.source = TransactionSource.MANUAL;
         return transaction;
@@ -115,10 +117,11 @@ class Transaction {
 
     /** A transaction from a CSV import. The fingerprint prevents importing the same row twice. */
     static Transaction fromCsv(UUID userId, UUID accountId, TransactionType type, LocalDateTime occurredAt,
-                               String name, BigDecimal amount, Category category, CategorySource categorySource,
-                               String categoryGroup, String notes, UUID importBatchId, String fingerprint) {
+                               String name, BigDecimal amount, CategoryGroup categoryGroup,
+                               CategoryGroupSource categoryGroupSource, String category, String notes,
+                               UUID importBatchId, String fingerprint) {
         Transaction transaction = manual(userId, accountId, type, occurredAt, name, amount,
-                category, categorySource, categoryGroup, notes);
+                categoryGroup, categoryGroupSource, category, notes);
         transaction.source = TransactionSource.CSV;
         transaction.importBatchId = importBatchId;
         transaction.fingerprint = fingerprint;
@@ -141,14 +144,14 @@ class Transaction {
         this.amount = newAmount;
     }
 
-    /** A category chosen by the user always wins over automatic categorization. */
-    void changeCategoryByUser(Category newCategory) {
-        this.category = newCategory;
-        this.categorySource = CategorySource.USER;
+    /** A group chosen by the user always wins over automatic categorization. */
+    void changeCategoryGroupByUser(CategoryGroup newCategoryGroup) {
+        this.categoryGroup = newCategoryGroup;
+        this.categoryGroupSource = CategoryGroupSource.USER;
     }
 
-    void changeCategoryGroup(String newCategoryGroup) {
-        this.categoryGroup = newCategoryGroup;
+    void changeCategory(String newCategory) {
+        this.category = newCategory;
     }
 
     void changeNotes(String newNotes) {
@@ -191,12 +194,12 @@ class Transaction {
         return amount;
     }
 
-    Category getCategory() {
-        return category;
+    CategoryGroup getCategoryGroup() {
+        return categoryGroup;
     }
 
-    String getCategoryGroup() {
-        return categoryGroup;
+    String getCategory() {
+        return category;
     }
 
     String getNotes() {

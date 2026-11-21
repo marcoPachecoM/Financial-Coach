@@ -1,6 +1,6 @@
 package com.financialcoach.transactions;
 
-import com.financialcoach.categorization.Category;
+import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.shared.Money;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -15,8 +15,8 @@ record TransactionResponse(
         LocalDateTime datetime,
         String name,
         String amount,
-        String categoryGroup,
-        Category category,
+        CategoryGroup categoryGroup,
+        String category,
         String notes,
         Instant createdAt,
         Instant updatedAt

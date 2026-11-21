@@ -25,7 +25,7 @@ class CategorizationServiceTest {
     @BeforeEach
     void seedCache() {
         jdbc.update("""
-                INSERT INTO merchant_category_cache (merchant_name, category, source)
+                INSERT INTO merchant_category_cache (merchant_name, category_group, source)
                 VALUES ('la tiendita', 'Food', 'LLM'), ('oxxo centro', 'Snacks', 'RULE')
                 """);
     }
@@ -33,24 +33,24 @@ class CategorizationServiceTest {
     @Test
     void usesTheCachedCategory() {
         assertThat(categorization.categorize("La Tiendita"))
-                .isEqualTo(new CategoryAssignment(Category.FOOD, CategorySource.LLM));
+                .isEqualTo(new CategoryGroupAssignment(CategoryGroup.FOOD, CategoryGroupSource.LLM));
     }
 
     @Test
     void normalizesBeforeLookingUp() {
         assertThat(categorization.categorize("  OXXO #8812 - Centro "))
-                .isEqualTo(new CategoryAssignment(Category.SNACKS, CategorySource.RULE));
+                .isEqualTo(new CategoryGroupAssignment(CategoryGroup.SNACKS, CategoryGroupSource.RULE));
     }
 
     @Test
     void fallsBackToTheDefaultCategory() {
         assertThat(categorization.categorize("Unknown merchant"))
-                .isEqualTo(new CategoryAssignment(Category.OTHER, CategorySource.RULE));
+                .isEqualTo(new CategoryGroupAssignment(CategoryGroup.OTHER, CategoryGroupSource.RULE));
     }
 
     @Test
     void namesWithoutLettersGetTheDefaultCategory() {
         assertThat(categorization.categorize("12345"))
-                .isEqualTo(new CategoryAssignment(Category.OTHER, CategorySource.RULE));
+                .isEqualTo(new CategoryGroupAssignment(CategoryGroup.OTHER, CategoryGroupSource.RULE));
     }
 }

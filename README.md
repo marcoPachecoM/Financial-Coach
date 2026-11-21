@@ -111,25 +111,25 @@ In a second terminal:
 
 ```bash
 cd frontend
-cp .env.example .env     # VITE_API_URL=http://localhost:8000/api/v1
+cp .env.example .env     # VITE_API_URL=http://localhost:8080/api/v1 (Spring Boot backend)
 npm install              # first time only
 npm run dev
 ```
 
-Open http://localhost:5173. The frontend expects the API from 5.1 to be running.
+Open http://localhost:5173 and log in with the demo user (prefilled in development). The frontend talks to the **Spring Boot backend** of section 6, which must be running with the `dev` profile. The Flask API is no longer used by the frontend.
 
 ### 5.3 Troubleshooting
 
 - `command not found: python` inside the project: the venv is not activated (`source .venv/bin/activate`).
 - `python --version` shows 3.13 or older: run `uv venv` again, or use `uv run` commands.
 - Login fails: run `python -m scripts.seed_users` again.
-- CORS errors in the browser: `CORS_ALLOWED_ORIGINS` must include `http://localhost:5173`.
+- CORS errors in the browser: `CORS_ALLOWED_ORIGINS` of the backend must include the frontend origin (default `http://localhost:5173`).
 
 ## 6. Spring Boot Backend (migration in progress)
 
 The API is being migrated to Spring Boot in `backend/`, following the contract in [docs/openapi.yaml](docs/openapi.yaml). The Flask API above remains the working backend until the migration is complete.
 
-Current state: database schema (Flyway migrations), **JWT authentication** (`POST /api/v1/auth/login`, `/refresh` with rotation and reuse detection, `/logout`, `GET /api/v1/auth/me`), the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`), the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`), the **CSV import** (`POST /api/v1/transactions/upload-csv`: all or nothing, creates missing accounts, skips rows already imported), **analytics** (`GET /api/v1/analytics/summary`, `GET /api/v1/analytics/by-category`) and the **monthly budget** (`GET /api/v1/accounts/{id}/budget?month=YYYY-MM`). Automatic categorization currently uses the merchant cache and falls back to `Other`; the LLM step comes later. The copilot endpoint is not migrated yet, and the React frontend still points to the Flask API. See [docs/database.md](docs/database.md) for the data model.
+Current state: database schema (Flyway migrations), **JWT authentication** (`POST /api/v1/auth/login`, `/refresh` with rotation and reuse detection, `/logout`, `GET /api/v1/auth/me`), the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`), the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`), the **CSV import** (`POST /api/v1/transactions/upload-csv`: all or nothing, creates missing accounts, skips rows already imported), **analytics** (`GET /api/v1/analytics/summary`, `GET /api/v1/analytics/by-category-group`) and the **monthly budget** (`GET /api/v1/accounts/{id}/budget?month=YYYY-MM`). Transactions have a **category group** from a closed list of 26 (assigned automatically from the merchant cache when missing, falling back to `Other`) and an optional free-text **category** inside it (e.g. group `Utilities`, category `Gas`); the LLM step comes later. The React frontend (section 5.2) uses this backend; its copilot panel answers locally until the copilot endpoint is migrated. See [docs/database.md](docs/database.md) for the data model.
 
 Requirements: Java 25 and Docker running. If Java 25 is not your default JDK:
 
@@ -195,7 +195,7 @@ curl -H "$AUTH" -F 'file=@transactions.csv' $API/transactions/upload-csv
 
 # Analytics and budget
 curl -H "$AUTH" "$API/analytics/summary?account_id=$ACCOUNT&start_date=2026-11-01&end_date=2026-11-30"
-curl -H "$AUTH" "$API/analytics/by-category?account_id=$ACCOUNT&type=EXPENSE"
+curl -H "$AUTH" "$API/analytics/by-category-group?account_id=$ACCOUNT&type=EXPENSE"
 curl -H "$AUTH" "$API/accounts/$ACCOUNT/budget?month=2026-11"
 ```
 
@@ -207,6 +207,7 @@ Configuration (environment variables; the `dev` profile provides a development s
 | `JWT_ISSUER` / `JWT_AUDIENCE` | `financial-coach-api` / `financial-coach-clients` | Checked on every token. |
 | `JWT_ACCESS_TOKEN_TTL` / `JWT_REFRESH_TOKEN_TTL` | `15m` / `14d` | Spring durations (`30m`, `7d`...). |
 | `DB_URL`, `DB_USER`, `DB_PASSWORD` | dev: local Docker database | Required outside `dev`. |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | Comma-separated browser origins allowed to call the API (no `*`). |
 
 Login, refresh and logout are rate limited per client IP (5, 10 and 20 per minute) and answer `429` with `Retry-After` when exceeded.
 

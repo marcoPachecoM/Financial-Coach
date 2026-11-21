@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { Transaction } from '../../types/transaction';
 import { CategoryBadge } from '../common/Badge';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -17,41 +17,26 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   onOpenUpload,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-
-  // Reset pagination to page 1 whenever category or search query changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [selectedCategory, searchQuery]);
+  // The page belongs to a filter: changing the category or the search goes back to page 1.
+  const filterKey = `${selectedCategory}|${searchQuery}`;
+  const [pageState, setPageState] = useState({ filterKey, page: 1 });
+  const requestedPage = pageState.filterKey === filterKey ? pageState.page : 1;
+  const setCurrentPage = (update: (page: number) => number) =>
+    setPageState({ filterKey, page: update(requestedPage) });
 
   // Filter transactions based on selected category & search query
   const filteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
-      const categoryName = tx.category;
-
-      // 1. Category Filter Dropdown
-      if (selectedCategory !== 'all') {
-        if (categoryName.toLowerCase() !== selectedCategory.toLowerCase()) {
-          return false;
-        }
+      // 1. Category filter
+      if (selectedCategory !== 'all' && tx.categoryGroup !== selectedCategory) {
+        return false;
       }
 
-      // 2. Search Query Filter (Safe String Casting for numeric IDs & MCCs)
+      // 2. Search: merchant, category, group, notes or amount
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const provider = (tx.provider_name || '').toLowerCase();
-        const mccStr = String(tx.mcc);
-        const idStr = String(tx.id || '').toLowerCase();
-        const amountStr = String(tx.amount || '');
-        const catStr = categoryName.toLowerCase();
-
-        return (
-          provider.includes(q) ||
-          mccStr.includes(q) ||
-          idStr.includes(q) ||
-          amountStr.includes(q) ||
-          catStr.includes(q)
-        );
+        return [tx.name, tx.categoryGroup, tx.category, tx.notes, Math.abs(tx.amount).toFixed(2)]
+          .some((value) => value?.toLowerCase().includes(q));
       }
 
       return true;
@@ -59,6 +44,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   }, [transactions, selectedCategory, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE));
+  // Also stays valid when the data shrinks (e.g. another account is selected).
+  const currentPage = Math.min(requestedPage, totalPages);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const displayedTransactions = filteredTransactions.slice(
     startIndex,
@@ -85,7 +72,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Schema: <span className="font-mono text-slate-600">id, date, provider_name, amount, mcc</span>
+            Newest first · expenses and income of the selected account
           </p>
         </div>
 
@@ -99,7 +86,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search merchant or MCC..."
+              placeholder="Search merchant, category, notes..."
               className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-hidden w-48 sm:w-56 transition-all"
             />
             {searchQuery && (
@@ -120,8 +107,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           <thead>
             <tr className="bg-slate-50/75 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase font-mono tracking-wider">
               <th className="py-3 px-5">Date</th>
-              <th className="py-3 px-5">Provider / Merchant</th>
-              <th className="py-3 px-5">Category & MCC</th>
+              <th className="py-3 px-5">Merchant</th>
+              <th className="py-3 px-5">Category</th>
               <th className="py-3 px-5 text-right">Amount</th>
             </tr>
           </thead>
@@ -147,7 +134,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               </tr>
             ) : (
               displayedTransactions.map((tx) => {
-                const isExpense = tx.amount < 0;
+                const isExpense = tx.type === 'EXPENSE';
                 return (
                   <tr
                     key={tx.id}
@@ -155,29 +142,35 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   >
                     {/* Date */}
                     <td className="py-3.5 px-5 text-xs font-medium text-slate-500 whitespace-nowrap">
-                      {formatDate(tx.date)}
+                      {formatDate(tx.datetime)}
+                      <span className="block text-[11px] font-mono text-slate-400">{tx.datetime.slice(11, 16)}</span>
                     </td>
 
-                    {/* Provider Name & ID */}
+                    {/* Merchant & notes */}
                     <td className="py-3.5 px-5">
                       <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200/60 flex items-center justify-center text-slate-700 font-semibold text-xs shrink-0 group-hover:bg-white group-hover:border-emerald-200 transition-colors">
-                          {(tx.provider_name || 'U').charAt(0).toUpperCase()}
+                          {tx.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
                           <p className="font-semibold text-slate-900 leading-tight">
-                            {tx.provider_name || 'Unknown'}
+                            {tx.name}
                           </p>
-                          <span className="text-[11px] font-mono text-slate-400">
-                            ID: {tx.id}
-                          </span>
+                          {tx.notes && (
+                            <span className="text-[11px] text-slate-400" title={tx.notes}>
+                              {tx.notes}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </td>
 
-                    {/* Category & MCC */}
+                    {/* Category */}
                     <td className="py-3.5 px-5 whitespace-nowrap">
-                      <CategoryBadge mcc={tx.mcc ?? 0} category={tx.category} />
+                      <CategoryBadge group={tx.categoryGroup} />
+                      {tx.category && (
+                        <span className="block text-[11px] text-slate-500 mt-1 pl-1">{tx.category}</span>
+                      )}
                     </td>
 
                     {/* Amount */}
@@ -187,7 +180,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                           isExpense ? 'text-slate-900' : 'text-emerald-600'
                         }`}
                       >
-                        {formatCurrency(tx.amount)}
+                        {isExpense ? '' : '+'}{formatCurrency(tx.amount)}
                       </span>
                     </td>
                   </tr>

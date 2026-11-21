@@ -1,35 +1,33 @@
 import React, { useState } from "react";
-import type { Connection } from "../../types/connection";
+import { formatCurrency } from "../../utils/formatters";
+import type { Account } from "../../types/account";
 
 interface HeaderProps {
   onOpenUpload: () => void;
   onLogout: () => void;
-  connections?: Connection[];
-  activeConnectionId?: number | null;
-  onSelectConnection?: (connectionId: number) => void;
-  loadingConnections?: boolean;
+  accounts?: Account[];
+  activeAccountId?: string | null;
+  onSelectAccount?: (accountId: string) => void;
+  loadingAccounts?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenUpload,
   onLogout,
-  connections = [],
-  activeConnectionId = null,
-  onSelectConnection,
-  loadingConnections = false,
+  accounts = [],
+  activeAccountId = null,
+  onSelectAccount,
+  loadingAccounts = false,
 }) => {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
-  const activeConnection =
-    connections.find((c) => c.id === activeConnectionId) ||
-    connections[0] ||
-    null;
+  const activeAccount = accounts.find((a) => a.id === activeAccountId) ?? null;
 
-  const currentProfileName = activeConnection
-    ? activeConnection.name
-    : loadingConnections
+  const currentAccountName = activeAccount
+    ? activeAccount.name
+    : loadingAccounts
     ? "Loading..."
-    : "Primary Connection";
+    : "No accounts yet";
 
   return (
     <header className="w-full bg-white border-b border-[#E2E8F0] px-4 md:px-8 py-3.5 flex items-center justify-between sticky top-0 z-40 shadow-xs">
@@ -55,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Divider */}
         <div className="h-7 w-px bg-slate-200 mx-2 hidden md:block" />
 
-        {/* Database Connections / Profile Selector */}
+        {/* Account selector */}
         <div className="relative hidden md:block">
           <button
             onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
@@ -63,9 +61,9 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-100 animate-pulse" />
             <span className="text-sm font-medium text-slate-800">
-              Active Connection:{" "}
+              Account:{" "}
               <strong className="font-semibold text-slate-900">
-                {currentProfileName}
+                {currentAccountName}
               </strong>
             </span>
             <span className="material-symbols-outlined !text-[18px] text-slate-500 transition-transform duration-200">
@@ -81,25 +79,18 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <div className="px-2 py-1.5 border-b border-slate-100 mb-1 flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 font-mono">
-                  Database Connections
+                  Your Accounts
                 </p>
-                <span className="text-[10px] font-mono bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
-                  SQL Table
-                </span>
               </div>
               <div className="space-y-1 max-h-64 overflow-y-auto">
-                {connections.length > 0 ? (
-                  connections.map((c) => {
-                    const isSelected = activeConnection?.id === c.id;
-                    const fileName = c.external_id
-                      ? c.external_id.split(/[\\/]/).pop()
-                      : `Dataset #${c.id}`;
-
+                {accounts.length > 0 ? (
+                  accounts.map((account) => {
+                    const isSelected = activeAccount?.id === account.id;
                     return (
                       <button
-                        key={c.id}
+                        key={account.id}
                         onClick={() => {
-                          onSelectConnection?.(c.id);
+                          onSelectAccount?.(account.id);
                           setProfileDropdownOpen(false);
                         }}
                         className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all flex items-start justify-between cursor-pointer ${
@@ -111,17 +102,16 @@ export const Header: React.FC<HeaderProps> = ({
                         <div className="truncate mr-2">
                           <div className="flex items-center gap-1.5">
                             <span className="material-symbols-outlined !text-[16px] text-emerald-600">
-                              storage
+                              account_balance
                             </span>
                             <p className="font-semibold text-slate-900 truncate">
-                              {c.name}
+                              {account.name}
                             </p>
                           </div>
-                          <p
-                            className="text-xs text-slate-400 font-mono truncate mt-0.5"
-                            title={c.external_id}
-                          >
-                            {fileName}
+                          <p className="text-xs text-slate-400 font-mono truncate mt-0.5">
+                            {account.monthlyBudget !== null
+                              ? `Budget ${formatCurrency(account.monthlyBudget)} / month`
+                              : "No monthly budget"}
                           </p>
                         </div>
                         {isSelected && (
@@ -134,18 +124,11 @@ export const Header: React.FC<HeaderProps> = ({
                   })
                 ) : (
                   <div className="p-3 text-center text-xs text-slate-400">
-                    {loadingConnections
-                      ? "Loading database connections..."
-                      : "No connections found in database."}
+                    {loadingAccounts
+                      ? "Loading accounts..."
+                      : "No accounts yet. Import a CSV to create them."}
                   </div>
                 )}
-              </div>
-              <div className="mt-2 pt-2 border-t border-slate-100 px-2 flex items-center justify-between text-[11px] text-slate-400">
-                <span>SQL Server (SQLite)</span>
-                <span className="font-mono">
-                  {connections.length}{" "}
-                  {connections.length === 1 ? "record" : "records"}
-                </span>
               </div>
             </div>
           )}
@@ -161,8 +144,8 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="material-symbols-outlined !text-[18px]">
             add_circle
           </span>
-          <span className="hidden sm:inline">Add Connection (Dataset)</span>
-          <span className="sm:hidden">Add Connection</span>
+          <span className="hidden sm:inline">Import CSV</span>
+          <span className="sm:hidden">Import</span>
         </button>
         <button
           onClick={onLogout}

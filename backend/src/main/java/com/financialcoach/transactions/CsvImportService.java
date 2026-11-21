@@ -3,8 +3,8 @@ package com.financialcoach.transactions;
 import com.financialcoach.accounts.AccountService;
 import com.financialcoach.accounts.ResolvedAccounts;
 import com.financialcoach.categorization.CategorizationService;
-import com.financialcoach.categorization.CategoryAssignment;
-import com.financialcoach.categorization.CategorySource;
+import com.financialcoach.categorization.CategoryGroupAssignment;
+import com.financialcoach.categorization.CategoryGroupSource;
 import com.financialcoach.shared.error.ConflictException;
 import com.financialcoach.shared.error.ValidationException;
 import java.util.ArrayList;
@@ -57,7 +57,7 @@ class CsvImportService {
         Set<String> alreadyImported = findExisting(accounts.idsByKey().values(), fingerprints);
 
         ImportBatch batch = importBatches.save(new ImportBatch(userId, filename));
-        Map<String, CategoryAssignment> categoryByName = new HashMap<>();
+        Map<String, CategoryGroupAssignment> groupByName = new HashMap<>();
         List<Transaction> newTransactions = new ArrayList<>();
 
         for (int i = 0; i < rows.size(); i++) {
@@ -66,12 +66,12 @@ class CsvImportService {
             if (alreadyImported.contains(fingerprint)) {
                 continue;
             }
-            CategoryAssignment category = row.category() != null
-                    ? new CategoryAssignment(row.category(), CategorySource.CSV)
-                    : categoryByName.computeIfAbsent(row.name(), categorizationService::categorize);
+            CategoryGroupAssignment group = row.categoryGroup() != null
+                    ? new CategoryGroupAssignment(row.categoryGroup(), CategoryGroupSource.CSV)
+                    : groupByName.computeIfAbsent(row.name(), categorizationService::categorize);
             newTransactions.add(Transaction.fromCsv(
                     userId, accounts.idFor(row.account()), row.type(), row.occurredAt(), row.name(), row.amount(),
-                    category.category(), category.source(), row.categoryGroup(), row.notes(),
+                    group.group(), group.source(), row.category(), row.notes(),
                     batch.getId(), fingerprint));
         }
 

@@ -1,11 +1,14 @@
 package com.financialcoach.auth;
 
 import com.financialcoach.shared.web.ProblemResponseWriter;
+import java.time.Duration;
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
@@ -19,6 +22,9 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
  * JWT bearer authentication: every request except the public ones needs a valid access token
@@ -40,6 +46,8 @@ class SecurityConfig {
         http
                 // Stateless API: tokens travel in a header, not in cookies, so CSRF does not apply.
                 .csrf(csrf -> csrf.disable())
+                // Uses the CorsConfigurationSource bean below; preflight requests need no token.
+                .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .bearerTokenResolver(bearerTokenResolver())
@@ -67,6 +75,27 @@ class SecurityConfig {
     private static BearerTokenResolver bearerTokenResolver() {
         DefaultBearerTokenResolver standard = new DefaultBearerTokenResolver();
         return request -> TOKEN_ENDPOINTS.matches(request) ? null : standard.resolve(request);
+    }
+
+    /**
+     * The React frontend runs on another origin (Vite: http://localhost:5173), so the browser
+     * only lets it call the API if these headers allow it. Origins come from configuration.
+     */
+    @Bean
+    CorsConfigurationSource corsConfigurationSource(CorsProperties properties) {
+        CorsConfiguration cors = new CorsConfiguration();
+        cors.setAllowedOrigins(properties.allowedOrigins());
+        cors.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
+        cors.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE));
+        // Readable by the frontend: where a created resource lives, and how long to wait after a 429.
+        cors.setExposedHeaders(List.of(HttpHeaders.LOCATION, HttpHeaders.RETRY_AFTER));
+        // Tokens travel in the Authorization header, never in cookies.
+        cors.setAllowCredentials(false);
+        cors.setMaxAge(Duration.ofHours(1));
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", cors);
+        return source;
     }
 
     /**

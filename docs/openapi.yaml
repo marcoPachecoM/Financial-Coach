@@ -369,7 +369,8 @@ paths:
         WhatsApp integration) convert their input into this same shape and
         reuse the same creation logic.
 
-        If `category` is omitted, the transaction is categorized automatically.
+        If `category_group` is omitted, it is assigned automatically. `category`
+        is free text (e.g. "Gas" inside the "Utilities" group) and is never guessed.
       operationId: createTransaction
       x-status: planned
       requestBody:
@@ -544,12 +545,12 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/AccountNotFound" }
 
-  /api/v1/analytics/by-category:
+  /api/v1/analytics/by-category-group:
     get:
       tags: [Analytics]
-      summary: Breakdown by category
+      summary: Breakdown by category group
       description: Amounts are positive. By default only expenses are included.
-      operationId: getAnalyticsByCategory
+      operationId: getAnalyticsByCategoryGroup
       parameters:
         - $ref: "#/components/parameters/AccountId"
         - name: type
@@ -562,12 +563,12 @@ paths:
         - $ref: "#/components/parameters/EndDate"
       responses:
         "200":
-          description: One entry per category, sorted by amount (descending).
+          description: One entry per category group, sorted by amount (descending).
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/CategoryBreakdown" }
+                items: { $ref: "#/components/schemas/CategoryGroupBreakdown" }
         "400": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/AccountNotFound" }
@@ -764,8 +765,11 @@ components:
       type: string
       enum: [ADMIN, CLIENT]
 
-    Category:
+    CategoryGroup:
       type: string
+      description: |
+        Closed list of category groups (table category_groups). The category
+        inside a group is free text.
       enum:
         - Utilities
         - Others
@@ -1017,10 +1021,11 @@ components:
           allOf: [{ $ref: "#/components/schemas/Money" }]
           description: Signed by type (EXPENSE positive, INCOME negative).
           example: "100.00"
-        category_group:
+        category_group: { $ref: "#/components/schemas/CategoryGroup" }
+        category:
           type: [string, "null"]
-          example: Food
-        category: { $ref: "#/components/schemas/Category" }
+          description: Free text inside the group.
+          example: Gas
         notes:
           type: [string, "null"]
         created_at:
@@ -1079,13 +1084,14 @@ components:
           description: Signed by type (EXPENSE positive, INCOME negative). Zero is not allowed.
           example: "100.00"
         category_group:
+          allOf: [{ $ref: "#/components/schemas/CategoryGroup" }]
+          description: Omit to let the backend assign the group.
+          example: Utilities
+        category:
           type: string
           maxLength: 100
-          example: Food
-        category:
-          allOf: [{ $ref: "#/components/schemas/Category" }]
-          description: Omit to let the backend categorize the transaction.
-          example: Food
+          description: Free text inside the group.
+          example: Gas
         account_id: { type: string, format: uuid }
         notes:
           type: string
@@ -1097,14 +1103,15 @@ components:
       minProperties: 1
       description: |
         Partial update; same fields and rules as `TransactionCreateRequest`.
-        Send `null` to clear an optional field (`category_group`, `notes`).
+        Send `null` to clear an optional field (`category`, `notes`). Setting
+        `category_group` records it as chosen by the user.
       properties:
         type: { $ref: "#/components/schemas/TransactionType" }
         datetime: { $ref: "#/components/schemas/LocalDateTime" }
         name: { type: string, minLength: 1, maxLength: 255 }
         amount: { $ref: "#/components/schemas/Money" }
-        category_group: { type: [string, "null"], maxLength: 100 }
-        category: { $ref: "#/components/schemas/Category" }
+        category_group: { $ref: "#/components/schemas/CategoryGroup" }
+        category: { type: [string, "null"], maxLength: 100 }
         account_id: { type: string, format: uuid }
         notes: { type: [string, "null"], maxLength: 1000 }
 
@@ -1113,7 +1120,7 @@ components:
       description: |
         One data row of the uploaded CSV (input format, not an API response).
         Property names are the exact CSV header names. The file is cleaned
-        before upload, so Category values already match the `Category` enum.
+        before upload, so Category Group values already match the `CategoryGroup` enum.
       required: [Type, Date, Name, Amount, Account]
       properties:
         Type:
@@ -1142,16 +1149,18 @@ components:
           description: Signed by type, same rule as the API (EXPENSE positive, INCOME negative).
           example: "100.00"
         Category Group:
-          type: [string, "null"]
-          example: Food
-        Category:
           oneOf:
-            - $ref: "#/components/schemas/Category"
+            - $ref: "#/components/schemas/CategoryGroup"
             - type: "null"
           description: |
-            Exact category label. When empty, the category is assigned automatically
-            (same as a form transaction without `category`).
-          example: Food
+            Exact group label. When empty, the group is assigned automatically
+            (same as a form transaction without `category_group`).
+          example: Utilities
+        Category:
+          type: [string, "null"]
+          maxLength: 100
+          description: Free text inside the group.
+          example: Gas
         Account:
           type: string
           minLength: 1
@@ -1200,17 +1209,17 @@ components:
           allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
           example: "1721.94"
 
-    CategoryBreakdown:
+    CategoryGroupBreakdown:
       type: object
-      required: [category, amount, percentage, count]
+      required: [category_group, amount, percentage, count]
       properties:
-        category: { $ref: "#/components/schemas/Category" }
+        category_group: { $ref: "#/components/schemas/CategoryGroup" }
         amount: { $ref: "#/components/schemas/PositiveMoney" }
         percentage:
           allOf: [{ $ref: "#/components/schemas/Percentage" }]
           description: |
             Share of the total for the selected type, rounded half-up. After rounding,
-            the percentages of all categories may add up to slightly more or less than 100.
+            the percentages of all groups may add up to slightly more or less than 100.
           example: "22.62"
         count: { type: integer, example: 154 }
 

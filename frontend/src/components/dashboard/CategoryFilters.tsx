@@ -1,33 +1,32 @@
 import React from 'react';
-
-export interface CategoryFilterItem {
-  id: string;
-  label: string;
-  icon: string;
-}
-
-const CATEGORY_FILTERS: CategoryFilterItem[] = [
-  { id: 'all', label: 'All', icon: 'apps' },
-  { id: 'Groceries', label: 'Groceries', icon: 'shopping_basket' },
-  { id: 'Food & Dining', label: 'Food & Dining', icon: 'restaurant' },
-  { id: 'Entertainment', label: 'Entertainment', icon: 'movie' },
-  { id: 'Subscriptions', label: 'Subscriptions', icon: 'laptop_mac' },
-  { id: 'Transport', label: 'Transportation', icon: 'local_taxi' },
-  { id: 'Utilities', label: 'Utilities', icon: 'bolt' },
-];
+import { getCategoryStyle } from '../../utils/categoryHelper';
 
 interface CategoryFiltersProps {
+  /** Category groups with spending in the period, largest first (from /analytics/by-category-group). */
+  categories: string[];
   selectedCategory: string;
   onSelectCategory: (category: string) => void;
 }
 
+const MAX_FILTERS = 8;
+
 export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
+  categories,
   selectedCategory,
   onSelectCategory,
 }) => {
+  const filters = [
+    { id: 'all', label: 'All', icon: 'apps' },
+    ...categories.slice(0, MAX_FILTERS).map((category) => ({
+      id: category,
+      label: category,
+      icon: getCategoryStyle(category).icon,
+    })),
+  ];
+
   return (
     <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none no-scrollbar">
-      {CATEGORY_FILTERS.map((cat) => {
+      {filters.map((cat) => {
         const isSelected = selectedCategory === cat.id;
         return (
           <button

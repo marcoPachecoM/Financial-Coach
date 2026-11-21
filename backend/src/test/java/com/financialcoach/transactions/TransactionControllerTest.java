@@ -55,7 +55,8 @@ class TransactionControllerTest extends ApiIntegrationTest {
                       "datetime": "2026-01-02T13:35",
                       "name": "  La tiendita  ",
                       "amount": "100",
-                      "category": "Food",
+                      "category_group": "Utilities",
+                      "category": "  Gas  ",
                       "account_id": "%s"
                     }
                     """.formatted(aliceCard))
@@ -67,8 +68,8 @@ class TransactionControllerTest extends ApiIntegrationTest {
                     .andExpect(jsonPath("$.datetime").value("2026-01-02T13:35:00"))
                     .andExpect(jsonPath("$.name").value("La tiendita"))
                     .andExpect(jsonPath("$.amount").value("100.00"))
-                    .andExpect(jsonPath("$.category").value("Food"))
-                    .andExpect(jsonPath("$.category_group").value(nullValue()))
+                    .andExpect(jsonPath("$.category_group").value("Utilities"))
+                    .andExpect(jsonPath("$.category").value("Gas"))
                     .andExpect(jsonPath("$.notes").value(nullValue()))
                     .andExpect(jsonPath("$.created_at").exists());
         }
@@ -78,17 +79,18 @@ class TransactionControllerTest extends ApiIntegrationTest {
             String id = createTransaction(alice, aliceCard, "EXPENSE", "100", "Food");
 
             Map<String, Object> row = jdbc.queryForMap(
-                    "SELECT source, category_source, fingerprint FROM transactions WHERE id = ?::uuid", id);
-            assertThat(row).containsEntry("source", "MANUAL").containsEntry("category_source", "USER");
+                    "SELECT source, category_group_source, fingerprint FROM transactions WHERE id = ?::uuid", id);
+            assertThat(row).containsEntry("source", "MANUAL").containsEntry("category_group_source", "USER");
             assertThat(row.get("fingerprint")).isNull();
         }
 
         @Test
-        void acceptsIncomeWithNegativeAmountAndCategoryWithSpaces() throws Exception {
+        void acceptsIncomeWithNegativeAmountAndGroupWithSpaces() throws Exception {
             postTransaction(alice, body("INCOME", "-20000.50", "Higiene personal", aliceCard))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.amount").value("-20000.50"))
-                    .andExpect(jsonPath("$.category").value("Higiene personal"));
+                    .andExpect(jsonPath("$.category_group").value("Higiene personal"))
+                    .andExpect(jsonPath("$.category").value(nullValue()));
         }
 
         @Test
@@ -116,27 +118,37 @@ class TransactionControllerTest extends ApiIntegrationTest {
 
         @Test
         void categorizesAutomaticallyFromTheMerchantCache() throws Exception {
-            jdbc.update("INSERT INTO merchant_category_cache (merchant_name, category, source) VALUES ('la tiendita', 'Snacks', 'LLM')");
+            jdbc.update("INSERT INTO merchant_category_cache (merchant_name, category_group, source) VALUES ('la tiendita', 'Snacks', 'LLM')");
 
             String id = createTransaction(alice, aliceCard, "EXPENSE", "35", null);
 
             mvc.perform(get(TRANSACTIONS + "/" + id).with(as(alice)))
-                    .andExpect(jsonPath("$.category").value("Snacks"));
-            assertThat(jdbc.queryForObject("SELECT category_source FROM transactions WHERE id = ?::uuid", String.class, id))
+                    .andExpect(jsonPath("$.category_group").value("Snacks"));
+            assertThat(jdbc.queryForObject("SELECT category_group_source FROM transactions WHERE id = ?::uuid", String.class, id))
                     .isEqualTo("LLM");
         }
 
         @Test
-        void unknownMerchantGetsTheDefaultCategory() throws Exception {
+        void unknownMerchantGetsTheDefaultGroup() throws Exception {
             String id = createTransaction(alice, aliceCard, "EXPENSE", "35", null);
 
             mvc.perform(get(TRANSACTIONS + "/" + id).with(as(alice)))
-                    .andExpect(jsonPath("$.category").value("Other"));
+                    .andExpect(jsonPath("$.category_group").value("Other"));
         }
 
         @Test
-        void rejectsUnknownCategory() throws Exception {
+        void rejectsUnknownCategoryGroup() throws Exception {
             postTransaction(alice, body("EXPENSE", "10", "Groceries", aliceCard))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errors[0].field").value("category_group"));
+        }
+
+        @Test
+        void categoryIsFreeTextUpTo100Characters() throws Exception {
+            postTransaction(alice, """
+                    {"type": "EXPENSE", "datetime": "2026-01-02T13:35", "name": "Shop", "amount": "10",
+                     "category": "%s", "account_id": "%s"}
+                    """.formatted("x".repeat(101), aliceCard))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.errors[0].field").value("category"));
         }
@@ -261,7 +273,7 @@ class TransactionControllerTest extends ApiIntegrationTest {
         private String at(String datetime) {
             return """
                     {"type": "EXPENSE", "datetime": "%s", "name": "Shop", "amount": "10",
-                     "category": "Shopping", "account_id": "%s"}
+                     "category_group": "Shopping", "account_id": "%s"}
                     """.formatted(datetime, aliceCard);
         }
 
@@ -303,15 +315,15 @@ class TransactionControllerTest extends ApiIntegrationTest {
         }
 
         @Test
-        void userChosenCategoryIsRecorded() throws Exception {
+        void userChosenGroupIsRecorded() throws Exception {
             patchTransaction(alice, id, """
-                    {"category": "Health"}
+                    {"category_group": "Health"}
                     """)
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.category").value("Health"))
+                    .andExpect(jsonPath("$.category_group").value("Health"))
                     .andExpect(jsonPath("$.amount").value("100.00"));
 
-            assertThat(jdbc.queryForObject("SELECT category_source FROM transactions WHERE id = ?::uuid", String.class, id))
+            assertThat(jdbc.queryForObject("SELECT category_group_source FROM transactions WHERE id = ?::uuid", String.class, id))
                     .isEqualTo("USER");
         }
 
@@ -337,17 +349,17 @@ class TransactionControllerTest extends ApiIntegrationTest {
         @Test
         void setsAndClearsOptionalFields() throws Exception {
             patchTransaction(alice, id, """
-                    {"notes": "Birthday", "category_group": "Gifts"}
+                    {"notes": "Birthday", "category": "Flowers"}
                     """)
                     .andExpect(jsonPath("$.notes").value("Birthday"))
-                    .andExpect(jsonPath("$.category_group").value("Gifts"));
+                    .andExpect(jsonPath("$.category").value("Flowers"));
 
             patchTransaction(alice, id, """
                     {"notes": null}
                     """)
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.notes").value(nullValue()))
-                    .andExpect(jsonPath("$.category_group").value("Gifts"));
+                    .andExpect(jsonPath("$.category").value("Flowers"));
         }
 
         @Test
@@ -445,12 +457,12 @@ class TransactionControllerTest extends ApiIntegrationTest {
                 UUID.class, owner.id(), name);
     }
 
-    private static String body(String type, String amount, String category, UUID accountId) {
-        String categoryField = category == null ? "" : "\"category\": \"%s\",".formatted(category);
+    private static String body(String type, String amount, String categoryGroup, UUID accountId) {
+        String groupField = categoryGroup == null ? "" : "\"category_group\": \"%s\",".formatted(categoryGroup);
         return """
                 {"type": "%s", "datetime": "2026-01-02T13:35", "name": "La tiendita",
                  "amount": "%s", %s "account_id": "%s"}
-                """.formatted(type, amount, categoryField, accountId);
+                """.formatted(type, amount, groupField, accountId);
     }
 
     private ResultActions postTransaction(TestUser user, String json) throws Exception {
@@ -461,9 +473,9 @@ class TransactionControllerTest extends ApiIntegrationTest {
         return mvc.perform(patch(TRANSACTIONS + "/" + id).with(as(user)).contentType(MediaType.APPLICATION_JSON).content(json));
     }
 
-    private String createTransaction(TestUser user, UUID accountId, String type, String amount, String category)
+    private String createTransaction(TestUser user, UUID accountId, String type, String amount, String categoryGroup)
             throws Exception {
-        String response = postTransaction(user, body(type, amount, category, accountId))
+        String response = postTransaction(user, body(type, amount, categoryGroup, accountId))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return JsonPath.read(response, "$.id");
