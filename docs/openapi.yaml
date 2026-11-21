@@ -706,14 +706,14 @@ components:
   schemas:
     Money:
       type: string
-      pattern: '^-?\d+(\.\d{1,2})?$'
-      description: Signed decimal amount serialized as a string, up to 2 decimals.
+      pattern: '^-?\d{1,12}(\.\d{1,2})?$'
+      description: Signed decimal amount serialized as a string, up to 12 digits and 2 decimals (numeric(14,2)).
       example: "147.06"
 
     PositiveMoney:
       type: string
-      pattern: '^\d+(\.\d{1,2})?$'
-      description: Non-negative decimal amount serialized as a string, up to 2 decimals.
+      pattern: '^\d{1,12}(\.\d{1,2})?$'
+      description: Non-negative decimal amount serialized as a string, up to 12 digits and 2 decimals (numeric(14,2)).
       example: "5000.00"
 
     Percentage:
@@ -778,12 +778,13 @@ components:
       description: |
         RFC 9457 Problem Details, as produced by Spring's `ProblemDetail`,
         extended with `code` and `errors`.
-      required: [type, title, status, code]
+      required: [title, status, code]
       properties:
         type:
           type: string
           format: uri-reference
           default: about:blank
+          description: Omitted when it is `about:blank` (RFC 9457 default).
         title:
           type: string
           description: Short summary of the HTTP status.

@@ -29,8 +29,8 @@ public class ProblemResponseWriter {
 
     public void write(HttpServletRequest request, HttpServletResponse response,
                       HttpStatus status, String code, String detail) throws IOException {
+        // "type" is omitted: it means about:blank (RFC 9457), same as Spring's ProblemDetail.
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("type", "about:blank");
         body.put("title", status.getReasonPhrase());
         body.put("status", status.value());
         body.put("detail", detail);

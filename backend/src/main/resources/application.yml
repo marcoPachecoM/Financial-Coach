@@ -16,3 +16,10 @@ spring:
 
   flyway:
     locations: classpath:db/migration
+
+  # JSON conventions of docs/openapi.yaml.
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    deserialization:
+      # Unknown fields in a request body are rejected with VALIDATION_ERROR.
+      fail-on-unknown-properties: true

@@ -129,7 +129,7 @@ Open http://localhost:5173. The frontend expects the API from 5.1 to be running.
 
 The API is being migrated to Spring Boot in `backend/`, following the contract in [docs/openapi.yaml](docs/openapi.yaml). The Flask API above remains the working backend until the migration is complete.
 
-Current state: database schema (Flyway migrations) and temporary HTTP Basic authentication against the `users` table. JWT login comes last; until then, the React frontend keeps using the Flask API. See [docs/database.md](docs/database.md) for the data model.
+Current state: database schema (Flyway migrations), temporary HTTP Basic authentication against the `users` table, the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`) and the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`). Automatic categorization currently uses the merchant cache and falls back to `Other`; the LLM step comes later. JWT login comes last; until then, the React frontend keeps using the Flask API. See [docs/database.md](docs/database.md) for the data model.
 
 Requirements: Java 25 and Docker running. If Java 25 is not your default JDK:
 
@@ -165,6 +165,19 @@ Until JWT login exists, authenticate with HTTP Basic (email + password):
 ```bash
 curl -u 'client1@example.local:ClientPass123!' http://localhost:8080/api/v1/health/protected
 curl -u 'admin@example.local:AdminPass123!' http://localhost:8080/api/v1/health/admin
+
+# Accounts
+curl -u 'client1@example.local:ClientPass123!' http://localhost:8080/api/v1/accounts
+curl -u 'client1@example.local:ClientPass123!' -H 'Content-Type: application/json' \
+     -d '{"name": "Cash", "monthly_budget": "800"}' http://localhost:8080/api/v1/accounts
+
+# Transactions (account id of the demo "Debit card" account)
+curl -u 'client1@example.local:ClientPass123!' -H 'Content-Type: application/json' \
+     -d '{"type": "EXPENSE", "datetime": "2026-11-20T10:15", "name": "Oxxo", "amount": "45.50",
+          "account_id": "019a0000-0000-7000-8000-000000000101"}' \
+     http://localhost:8080/api/v1/transactions
+curl -u 'client1@example.local:ClientPass123!' \
+     'http://localhost:8080/api/v1/transactions?account_id=019a0000-0000-7000-8000-000000000101&size=20'
 ```
 
 Inspect the database with:

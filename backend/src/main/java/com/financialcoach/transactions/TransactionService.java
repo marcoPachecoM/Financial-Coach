@@ -1,0 +1,170 @@
+package com.financialcoach.transactions;
+
+import com.financialcoach.accounts.AccountService;
+import com.financialcoach.categorization.CategorizationService;
+import com.financialcoach.categorization.CategoryAssignment;
+import com.financialcoach.categorization.CategorySource;
+import com.financialcoach.shared.Money;
+import com.financialcoach.shared.error.NotFoundException;
+import com.financialcoach.shared.error.ValidationException;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Transaction use cases. Form today; CSV import and WhatsApp will reuse the same rules
+ * (sign check, categorization, ownership).
+ */
+@Service
+public class TransactionService {
+
+    /** Bounds used when a date filter is not given (PostgreSQL timestamp range is wider). */
+    private static final LocalDateTime EARLIEST = LocalDateTime.of(1, 1, 1, 0, 0);
+    private static final LocalDateTime LATEST = LocalDateTime.of(9999, 12, 31, 23, 59, 59);
+
+    /** Newest first; id breaks ties so pages are stable when several share a datetime. */
+    private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("occurredAt"), Sort.Order.desc("id"));
+
+    private final TransactionRepository transactions;
+    private final AccountService accountService;
+    private final CategorizationService categorizationService;
+
+    TransactionService(TransactionRepository transactions, AccountService accountService,
+                       CategorizationService categorizationService) {
+        this.transactions = transactions;
+        this.accountService = accountService;
+        this.categorizationService = categorizationService;
+    }
+
+    @Transactional(readOnly = true)
+    Page<Transaction> list(UUID userId, UUID accountId, int page, int size, LocalDate startDate, LocalDate endDate) {
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new ValidationException("end_date", "must be on or after start_date");
+        }
+        accountService.requireOwned(userId, accountId);
+
+        // Both dates are inclusive: end_date covers the whole day.
+        LocalDateTime from = startDate == null ? EARLIEST : startDate.atStartOfDay();
+        LocalDateTime to = endDate == null ? LATEST : endDate.plusDays(1).atStartOfDay();
+        return transactions.findPage(userId, accountId, from, to, PageRequest.of(page - 1, size, NEWEST_FIRST));
+    }
+
+    @Transactional(readOnly = true)
+    Transaction get(UUID userId, UUID transactionId) {
+        return transactions.findOwned(transactionId, userId)
+                .orElseThrow(() -> new NotFoundException("Transaction not found."));
+    }
+
+    @Transactional
+    Transaction create(UUID userId, TransactionCreateRequest request) {
+        accountService.requireOwned(userId, request.accountId());
+
+        BigDecimal amount = Money.parse(request.amount());
+        checkAmountSign(request.type(), amount);
+
+        String name = request.name().strip();
+        CategoryAssignment category = request.category() != null
+                ? new CategoryAssignment(request.category(), CategorySource.USER)
+                : categorizationService.categorize(name);
+
+        Transaction transaction = Transaction.manual(
+                userId,
+                request.accountId(),
+                request.type(),
+                truncateToSeconds(request.datetime()),
+                name,
+                amount,
+                category.category(),
+                category.source(),
+                blankToNull(request.categoryGroup()),
+                blankToNull(request.notes()));
+        return transactions.saveAndFlush(transaction);
+    }
+
+    @Transactional
+    Transaction update(UUID userId, UUID transactionId, TransactionUpdateRequest request) {
+        if (request.hasNoChanges()) {
+            throw new ValidationException("At least one field must be provided.");
+        }
+        Transaction transaction = get(userId, transactionId);
+
+        // Queries first, changes after: no query may run while the entity is half-updated,
+        // because Hibernate could flush an intermediate state that violates a constraint.
+        if (request.accountIdProvided()) {
+            accountService.requireOwned(userId, required("account_id", request.accountId()));
+        }
+
+        if (request.typeProvided()) {
+            transaction.changeType(required("type", request.type()));
+        }
+        if (request.amountProvided()) {
+            transaction.changeAmount(Money.parse(required("amount", request.amount())));
+        }
+        if (request.datetimeProvided()) {
+            transaction.changeOccurredAt(truncateToSeconds(required("datetime", request.datetime())));
+        }
+        if (request.nameProvided()) {
+            transaction.rename(required("name", request.name()).strip());
+        }
+        if (request.categoryProvided()) {
+            transaction.changeCategoryByUser(required("category", request.category()));
+        }
+        if (request.categoryGroupProvided()) {
+            transaction.changeCategoryGroup(blankToNull(request.categoryGroup()));
+        }
+        if (request.notesProvided()) {
+            transaction.changeNotes(blankToNull(request.notes()));
+        }
+        if (request.accountIdProvided()) {
+            transaction.moveTo(request.accountId());
+        }
+
+        // Checked on the final state: changing only the type can break the sign rule.
+        checkAmountSign(transaction.getType(), transaction.getAmount());
+        return transactions.saveAndFlush(transaction);
+    }
+
+    @Transactional
+    void delete(UUID userId, UUID transactionId) {
+        Transaction transaction = get(userId, transactionId);
+        transaction.markDeleted(Instant.now());
+        transactions.saveAndFlush(transaction);
+    }
+
+    /** Same rule as the ck_transactions_amount_sign constraint, reported as a 400 instead of a 500. */
+    private static void checkAmountSign(TransactionType type, BigDecimal amount) {
+        if (amount.signum() == 0) {
+            throw new ValidationException("amount", "must not be zero");
+        }
+        if (type == TransactionType.EXPENSE && amount.signum() < 0) {
+            throw new ValidationException("amount", "EXPENSE amounts must be positive.");
+        }
+        if (type == TransactionType.INCOME && amount.signum() > 0) {
+            throw new ValidationException("amount", "INCOME amounts must be negative.");
+        }
+    }
+
+    private static <T> T required(String field, T value) {
+        if (value == null) {
+            throw new ValidationException(field, "must not be null");
+        }
+        return value;
+    }
+
+    /** The contract format has no fractional seconds. */
+    private static LocalDateTime truncateToSeconds(LocalDateTime value) {
+        return value.truncatedTo(ChronoUnit.SECONDS);
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
+    }
+}
