@@ -40,4 +40,28 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
             """, nativeQuery = true)
     List<String> findExistingFingerprints(@Param("accountIds") Collection<UUID> accountIds,
                                           @Param("fingerprints") Collection<String> fingerprints);
+
+    /** One row per type that has transactions in the period. {@code largest} is by absolute value. */
+    @Query("""
+            select new com.financialcoach.transactions.TypeTotals(t.type, count(t), sum(t.amount), max(abs(t.amount)))
+            from Transaction t
+            where t.userId = :userId and t.accountId = :accountId
+              and t.occurredAt >= :from and t.occurredAt < :to
+            group by t.type
+            """)
+    List<TypeTotals> totalsByType(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
+                                  @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    /** Amounts as positive values; largest first, ties by category name. */
+    @Query("""
+            select new com.financialcoach.transactions.CategoryTotal(t.category, count(t), abs(sum(t.amount)))
+            from Transaction t
+            where t.userId = :userId and t.accountId = :accountId and t.type = :type
+              and t.occurredAt >= :from and t.occurredAt < :to
+            group by t.category
+            order by abs(sum(t.amount)) desc, t.category
+            """)
+    List<CategoryTotal> totalsByCategory(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
+                                         @Param("type") TransactionType type,
+                                         @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 }

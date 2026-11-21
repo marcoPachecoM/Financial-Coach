@@ -1,6 +1,7 @@
 package com.financialcoach.transactions;
 
 import com.financialcoach.auth.AuthenticatedUser;
+import com.financialcoach.shared.DateRange;
 import com.financialcoach.shared.error.PayloadTooLargeException;
 import com.financialcoach.shared.web.QueryParameters;
 import jakarta.servlet.http.HttpServletRequest;
@@ -59,7 +60,7 @@ class TransactionController {
                                  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         QueryParameters.requireOnly(request, LIST_PARAMETERS);
         return TransactionPageResponse.from(
-                transactionService.list(user.id(), accountId, page, size, startDate, endDate));
+                transactionService.list(user.id(), accountId, page, size, DateRange.between(startDate, endDate)));
     }
 
     @PostMapping

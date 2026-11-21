@@ -10,6 +10,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -63,6 +64,12 @@ public class AccountService {
             }
         }
         return new ResolvedAccounts(idsByKey, created);
+    }
+
+    /** For other modules: the account's monthly budget, empty when it has none. 404 unless owned. */
+    @Transactional(readOnly = true)
+    public Optional<BigDecimal> monthlyBudget(UUID userId, UUID accountId) {
+        return Optional.ofNullable(get(userId, accountId).getMonthlyBudget());
     }
 
     @Transactional(readOnly = true)

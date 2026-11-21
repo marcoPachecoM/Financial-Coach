@@ -4,12 +4,12 @@ import com.financialcoach.accounts.AccountService;
 import com.financialcoach.categorization.CategorizationService;
 import com.financialcoach.categorization.CategoryAssignment;
 import com.financialcoach.categorization.CategorySource;
+import com.financialcoach.shared.DateRange;
 import com.financialcoach.shared.Money;
 import com.financialcoach.shared.error.NotFoundException;
 import com.financialcoach.shared.error.ValidationException;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -26,10 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TransactionService {
 
-    /** Bounds used when a date filter is not given (PostgreSQL timestamp range is wider). */
-    private static final LocalDateTime EARLIEST = LocalDateTime.of(1, 1, 1, 0, 0);
-    private static final LocalDateTime LATEST = LocalDateTime.of(9999, 12, 31, 23, 59, 59);
-
     /** Newest first; id breaks ties so pages are stable when several share a datetime. */
     private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("occurredAt"), Sort.Order.desc("id"));
 
@@ -45,16 +41,10 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
-    Page<Transaction> list(UUID userId, UUID accountId, int page, int size, LocalDate startDate, LocalDate endDate) {
-        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
-            throw new ValidationException("end_date", "must be on or after start_date");
-        }
+    Page<Transaction> list(UUID userId, UUID accountId, int page, int size, DateRange range) {
         accountService.requireOwned(userId, accountId);
-
-        // Both dates are inclusive: end_date covers the whole day.
-        LocalDateTime from = startDate == null ? EARLIEST : startDate.atStartOfDay();
-        LocalDateTime to = endDate == null ? LATEST : endDate.plusDays(1).atStartOfDay();
-        return transactions.findPage(userId, accountId, from, to, PageRequest.of(page - 1, size, NEWEST_FIRST));
+        return transactions.findPage(userId, accountId, range.from(), range.to(),
+                PageRequest.of(page - 1, size, NEWEST_FIRST));
     }
 
     @Transactional(readOnly = true)
