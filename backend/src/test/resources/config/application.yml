@@ -1,0 +1,5 @@
+# Loaded in addition to src/main/resources/application.yml (Spring Boot also reads
+# classpath:/config/application.yml), so tests only override what they need.
+financial-coach:
+  jwt:
+    secret: test-only-jwt-secret-0123456789abcdef

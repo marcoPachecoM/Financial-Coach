@@ -1,14 +1,15 @@
 package com.financialcoach.support;
 
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 
 import com.financialcoach.TestcontainersConfiguration;
+import com.financialcoach.auth.TokenService;
 import com.financialcoach.support.TestUsers.TestUser;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -37,6 +38,9 @@ public abstract class ApiIntegrationTest {
     @Autowired
     protected PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private TokenService tokens;
+
     protected MockMvc mvc;
     protected TestUsers users;
 
@@ -46,8 +50,12 @@ public abstract class ApiIntegrationTest {
         users = new TestUsers(jdbc, passwordEncoder);
     }
 
-    /** Authenticates the request as the given user (HTTP Basic). */
-    protected static RequestPostProcessor as(TestUser user) {
-        return httpBasic(user.email(), user.password());
+    /** Authenticates the request as the given user with a real access token (no login request). */
+    protected RequestPostProcessor as(TestUser user) {
+        String token = tokens.createAccessToken(user.id(), user.role());
+        return request -> {
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            return request;
+        };
     }
 }

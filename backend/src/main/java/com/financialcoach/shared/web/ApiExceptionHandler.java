@@ -52,7 +52,12 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         if (!ex.errors().isEmpty()) {
             problem.setProperty("errors", ex.errors());
         }
-        return handleExceptionInternal(ex, problem, new HttpHeaders(), ex.status(), request);
+        HttpHeaders headers = new HttpHeaders();
+        if (ex.status() == HttpStatus.UNAUTHORIZED) {
+            // A 401 must say how to authenticate (RFC 9110).
+            headers.set(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+        }
+        return handleExceptionInternal(ex, problem, headers, ex.status(), request);
     }
 
     /** Anything unexpected: log it, never leak details to the client. */

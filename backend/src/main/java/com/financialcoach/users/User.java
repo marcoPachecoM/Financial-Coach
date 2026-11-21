@@ -55,6 +55,10 @@ class User {
         return id;
     }
 
+    String getUsername() {
+        return username;
+    }
+
     String getEmail() {
         return email;
     }

@@ -1,6 +1,7 @@
 package com.financialcoach.users;
 
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,5 +21,12 @@ public class UserService {
         return users.findByEmail(email)
                 .map(user -> new UserCredentials(
                         user.getId(), user.getEmail(), user.getPasswordHash(), user.getRole(), user.isActive()));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<UserProfile> findProfile(UUID id) {
+        return users.findById(id)
+                .map(user -> new UserProfile(
+                        user.getId(), user.getUsername(), user.getEmail(), user.getRole(), user.isActive()));
     }
 }

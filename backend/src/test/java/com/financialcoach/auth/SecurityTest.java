@@ -1,7 +1,6 @@
 package com.financialcoach.auth;
 
 import static org.hamcrest.Matchers.containsString;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -9,26 +8,41 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.financialcoach.support.ApiIntegrationTest;
-import com.financialcoach.support.TestUsers;
 import com.financialcoach.support.TestUsers.TestUser;
-import com.financialcoach.users.UserRole;
+import java.time.Instant;
+import java.util.List;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.test.web.servlet.ResultActions;
 
-/** HTTP Basic against the users table, roles, and the Problem Details error format. */
+/** Access-token authentication and role checks on regular endpoints. */
 class SecurityTest extends ApiIntegrationTest {
 
+    private static final String PROTECTED = "/api/v1/health/protected";
+
+    @Autowired
+    private JwtEncoder encoder;
+
+    @Autowired
+    private JwtProperties properties;
+
+    private TestJwts jwts;
     private TestUser admin;
     private TestUser client;
 
     @BeforeEach
     void createUsers() {
+        jwts = new TestJwts(encoder, properties);
         admin = users.admin();
         client = users.client();
     }
 
     @Test
-    void publicEndpointsNeedNoCredentials() throws Exception {
+    void publicEndpointsNeedNoToken() throws Exception {
         mvc.perform(get("/api/v1/health/public"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"));
@@ -39,52 +53,30 @@ class SecurityTest extends ApiIntegrationTest {
     }
 
     @Test
-    void protectedEndpointWithoutCredentialsReturns401Problem() throws Exception {
-        mvc.perform(get("/api/v1/health/protected"))
+    void withoutTokenReturns401Problem() throws Exception {
+        mvc.perform(get(PROTECTED))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
-                .andExpect(header().string("WWW-Authenticate", containsString("Basic")))
+                .andExpect(header().string("WWW-Authenticate", "Bearer"))
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
-                .andExpect(jsonPath("$.instance").value("/api/v1/health/protected"))
+                .andExpect(jsonPath("$.instance").value(PROTECTED))
                 // Same shape as errors from ApiExceptionHandler: "type" omitted (about:blank).
                 .andExpect(jsonPath("$.type").doesNotExist());
     }
 
     @Test
-    void wrongPasswordReturns401() throws Exception {
-        mvc.perform(get("/api/v1/health/protected").with(httpBasic(client.email(), "wrong-password")))
+    void httpBasicIsNoLongerAccepted() throws Exception {
+        mvc.perform(get(PROTECTED).header("Authorization", "Basic Y2xpZW50QGV4YW1wbGUudGVzdDpUZXN0UGFzczEyMyE="))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
 
     @Test
-    void unknownUserGetsTheSame401AsWrongPassword() throws Exception {
-        mvc.perform(get("/api/v1/health/protected").with(httpBasic("nobody@example.test", TestUsers.PASSWORD)))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
-                .andExpect(jsonPath("$.detail").value("Authentication is required."));
-    }
-
-    @Test
     void clientCanAccessProtectedEndpoint() throws Exception {
-        mvc.perform(get("/api/v1/health/protected").with(as(client)))
+        mvc.perform(get(PROTECTED).with(as(client)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("CLIENT"));
-    }
-
-    @Test
-    void loginEmailIsCaseInsensitive() throws Exception {
-        mvc.perform(get("/api/v1/health/protected").with(httpBasic(client.email().toUpperCase(), client.password())))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    void inactiveUserIsRejected() throws Exception {
-        TestUser inactive = users.create("inactive", UserRole.CLIENT, false);
-
-        mvc.perform(get("/api/v1/health/protected").with(as(inactive)))
-                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -104,8 +96,86 @@ class SecurityTest extends ApiIntegrationTest {
 
     @Test
     void adminIsAlsoAuthenticatedForRegularEndpoints() throws Exception {
-        mvc.perform(get("/api/v1/health/protected").with(as(admin)))
+        mvc.perform(get(PROTECTED).with(as(admin)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("ADMIN"));
+    }
+
+    /** Guards the tests below: with no changes, the helper's token is accepted. */
+    @Test
+    void helperTokenIsValid() throws Exception {
+        withToken(jwts.access(client.id(), "CLIENT", claims -> { })).andExpect(status().isOk());
+    }
+
+    @Test
+    void garbageToken() throws Exception {
+        expectInvalidToken(withToken("not-a-jwt"));
+    }
+
+    @Test
+    void expiredToken() throws Exception {
+        Instant past = Instant.now().minusSeconds(3600);
+        // More than the 60 s of clock skew that the validator tolerates.
+        expectInvalidToken(withToken(access(c -> c.issuedAt(past).notBefore(past).expiresAt(Instant.now().minusSeconds(120)))));
+    }
+
+    @Test
+    void tokenNotValidYet() throws Exception {
+        expectInvalidToken(withToken(access(c -> c.notBefore(Instant.now().plusSeconds(300)))));
+    }
+
+    @Test
+    void refreshTokenIsNotAnAccessToken() throws Exception {
+        expectInvalidToken(withToken(jwts.refresh(client.id(), c -> { })));
+    }
+
+    @Test
+    void wrongIssuer() throws Exception {
+        expectInvalidToken(withToken(access(c -> c.issuer("someone-else"))));
+    }
+
+    @Test
+    void wrongAudience() throws Exception {
+        expectInvalidToken(withToken(access(c -> c.audience(List.of("another-app")))));
+    }
+
+    @Test
+    void missingRequiredClaim() throws Exception {
+        expectInvalidToken(withToken(access(c -> c.claims(all -> all.remove("jti")))));
+    }
+
+    @Test
+    void unknownRole() throws Exception {
+        expectInvalidToken(withToken(jwts.access(client.id(), "SUPERUSER", c -> { })));
+    }
+
+    @Test
+    void subjectMustBeAUserId() throws Exception {
+        expectInvalidToken(withToken(access(c -> c.subject("client@example.test"))));
+    }
+
+    @Test
+    void signedWithAnotherKey() throws Exception {
+        expectInvalidToken(withToken(jwts.signedWithAnotherKey(client.id())));
+    }
+
+    @Test
+    void unsignedTokenIsRejected() throws Exception {
+        expectInvalidToken(withToken(jwts.unsigned(admin.id())));
+    }
+
+    private String access(Consumer<JwtClaimsSet.Builder> customize) {
+        return jwts.access(client.id(), "CLIENT", customize);
+    }
+
+    private ResultActions withToken(String token) throws Exception {
+        return mvc.perform(get(PROTECTED).header("Authorization", "Bearer " + token));
+    }
+
+    private static void expectInvalidToken(ResultActions result) throws Exception {
+        result.andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", containsString("invalid_token")))
+                .andExpect(jsonPath("$.code").value("INVALID_TOKEN"))
+                .andExpect(jsonPath("$.detail").value("The access token is invalid or expired."));
     }
 }

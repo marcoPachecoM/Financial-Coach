@@ -129,7 +129,7 @@ Open http://localhost:5173. The frontend expects the API from 5.1 to be running.
 
 The API is being migrated to Spring Boot in `backend/`, following the contract in [docs/openapi.yaml](docs/openapi.yaml). The Flask API above remains the working backend until the migration is complete.
 
-Current state: database schema (Flyway migrations), temporary HTTP Basic authentication against the `users` table, the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`) the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`) the **CSV import** (`POST /api/v1/transactions/upload-csv`: all or nothing, creates missing accounts, skips rows already imported), **analytics** (`GET /api/v1/analytics/summary`, `GET /api/v1/analytics/by-category`) and the **monthly budget** (`GET /api/v1/accounts/{id}/budget?month=YYYY-MM`). Automatic categorization currently uses the merchant cache and falls back to `Other`; the LLM step comes later. JWT login comes last; until then, the React frontend keeps using the Flask API. See [docs/database.md](docs/database.md) for the data model.
+Current state: database schema (Flyway migrations), **JWT authentication** (`POST /api/v1/auth/login`, `/refresh` with rotation and reuse detection, `/logout`, `GET /api/v1/auth/me`), the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`), the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`), the **CSV import** (`POST /api/v1/transactions/upload-csv`: all or nothing, creates missing accounts, skips rows already imported), **analytics** (`GET /api/v1/analytics/summary`, `GET /api/v1/analytics/by-category`) and the **monthly budget** (`GET /api/v1/accounts/{id}/budget?month=YYYY-MM`). Automatic categorization currently uses the merchant cache and falls back to `Other`; the LLM step comes later. The copilot endpoint is not migrated yet, and the React frontend still points to the Flask API. See [docs/database.md](docs/database.md) for the data model.
 
 Requirements: Java 25 and Docker running. If Java 25 is not your default JDK:
 
@@ -160,38 +160,55 @@ The `dev` profile also loads demo data:
 | `client1@example.local` | `ClientPass123!` | CLIENT (owns a "Debit card" account) |
 | `admin@example.local` | `AdminPass123!` | ADMIN |
 
-Until JWT login exists, authenticate with HTTP Basic (email + password):
+Log in to get a token pair, then send the **access token** in the `Authorization` header (examples use [jq](https://jqlang.org/) to read the JSON: `brew install jq`):
 
 ```bash
-curl -u 'client1@example.local:ClientPass123!' http://localhost:8080/api/v1/health/protected
-curl -u 'admin@example.local:AdminPass123!' http://localhost:8080/api/v1/health/admin
+API=http://localhost:8080/api/v1
+LOGIN=$(curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
+             -d '{"email": "client1@example.local", "password": "ClientPass123!"}')
+TOKEN=$(echo "$LOGIN" | jq -r .access_token)      # valid 15 minutes
+REFRESH=$(echo "$LOGIN" | jq -r .refresh_token)   # valid 14 days, single use
+AUTH="Authorization: Bearer $TOKEN"
+
+curl -H "$AUTH" $API/auth/me
+
+# New pair when the access token expires. The old refresh token stops working;
+# using it again is treated as theft and closes every session of the user.
+curl -X POST -H "Authorization: Bearer $REFRESH" $API/auth/refresh
+curl -X POST -H "Authorization: Bearer $REFRESH" $API/auth/logout
 
 # Accounts
-curl -u 'client1@example.local:ClientPass123!' http://localhost:8080/api/v1/accounts
-curl -u 'client1@example.local:ClientPass123!' -H 'Content-Type: application/json' \
-     -d '{"name": "Cash", "monthly_budget": "800"}' http://localhost:8080/api/v1/accounts
+curl -H "$AUTH" $API/accounts
+curl -H "$AUTH" -H 'Content-Type: application/json' \
+     -d '{"name": "Cash", "monthly_budget": "800"}' $API/accounts
 
 # Transactions (account id of the demo "Debit card" account)
-curl -u 'client1@example.local:ClientPass123!' -H 'Content-Type: application/json' \
+ACCOUNT=019a0000-0000-7000-8000-000000000101
+curl -H "$AUTH" -H 'Content-Type: application/json' \
      -d '{"type": "EXPENSE", "datetime": "2026-11-20T10:15", "name": "Oxxo", "amount": "45.50",
-          "account_id": "019a0000-0000-7000-8000-000000000101"}' \
-     http://localhost:8080/api/v1/transactions
-curl -u 'client1@example.local:ClientPass123!' \
-     'http://localhost:8080/api/v1/transactions?account_id=019a0000-0000-7000-8000-000000000101&size=20'
+          "account_id": "'$ACCOUNT'"}' \
+     $API/transactions
+curl -H "$AUTH" "$API/transactions?account_id=$ACCOUNT&size=20"
 
 # CSV import (header: Type,Date,Time,Name,Amount,Category Group,Category,Account,Notes)
-curl -u 'client1@example.local:ClientPass123!' -F 'file=@transactions.csv' \
-     http://localhost:8080/api/v1/transactions/upload-csv
+curl -H "$AUTH" -F 'file=@transactions.csv' $API/transactions/upload-csv
 
 # Analytics and budget
-ACCOUNT=019a0000-0000-7000-8000-000000000101
-curl -u 'client1@example.local:ClientPass123!' \
-     "http://localhost:8080/api/v1/analytics/summary?account_id=$ACCOUNT&start_date=2026-11-01&end_date=2026-11-30"
-curl -u 'client1@example.local:ClientPass123!' \
-     "http://localhost:8080/api/v1/analytics/by-category?account_id=$ACCOUNT&type=EXPENSE"
-curl -u 'client1@example.local:ClientPass123!' \
-     "http://localhost:8080/api/v1/accounts/$ACCOUNT/budget?month=2026-11"
+curl -H "$AUTH" "$API/analytics/summary?account_id=$ACCOUNT&start_date=2026-11-01&end_date=2026-11-30"
+curl -H "$AUTH" "$API/analytics/by-category?account_id=$ACCOUNT&type=EXPENSE"
+curl -H "$AUTH" "$API/accounts/$ACCOUNT/budget?month=2026-11"
 ```
+
+Configuration (environment variables; the `dev` profile provides a development secret):
+
+| Variable | Default | Notes |
+|---|---|---|
+| `JWT_SECRET_KEY` | none (required) | HS256 key, at least 32 bytes. The app does not start without it outside `dev`. |
+| `JWT_ISSUER` / `JWT_AUDIENCE` | `financial-coach-api` / `financial-coach-clients` | Checked on every token. |
+| `JWT_ACCESS_TOKEN_TTL` / `JWT_REFRESH_TOKEN_TTL` | `15m` / `14d` | Spring durations (`30m`, `7d`...). |
+| `DB_URL`, `DB_USER`, `DB_PASSWORD` | dev: local Docker database | Required outside `dev`. |
+
+Login, refresh and logout are rate limited per client IP (5, 10 and 20 per minute) and answer `429` with `Retry-After` when exceeded.
 
 Inspect the database with:
 

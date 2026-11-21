@@ -128,7 +128,10 @@ paths:
     post:
       tags: [Auth]
       summary: Log in with email and password
-      description: Rate limited to 5 requests per minute.
+      description: |
+        Rate limited to 5 requests per minute per client IP. Unknown email,
+        wrong password and inactive user all return the same 401. An
+        `Authorization` header, if sent, is ignored.
       operationId: login
       security: []
       requestBody:
@@ -156,9 +159,13 @@ paths:
       summary: Rotate the refresh token
       description: |
         Send the **refresh** token as `Authorization: Bearer <refresh_token>`.
-        Returns a new token pair and revokes the old refresh token. Reusing a
-        revoked refresh token is detected and rejected (`REFRESH_TOKEN_REUSE`).
-        Rate limited to 10 requests per minute.
+        Returns a new token pair and revokes the old refresh token (rotation:
+        each refresh token works once). Using an already rotated token again is
+        treated as theft (`REFRESH_TOKEN_REUSE`): every refresh token of the user
+        is revoked and all sessions must log in again. A token revoked by logout
+        is just invalid (`INVALID_REFRESH_TOKEN`). Clients should not refresh
+        concurrently with the same token. Rate limited to 10 requests per minute
+        per client IP.
       operationId: refreshTokens
       security:
         - refreshToken: []
@@ -170,8 +177,9 @@ paths:
               schema: { $ref: "#/components/schemas/TokenPair" }
         "401":
           description: |
-            Token missing, invalid, of the wrong type (`INVALID_TOKEN`), unknown
-            (`INVALID_REFRESH_TOKEN`) or reused (`REFRESH_TOKEN_REUSE`).
+            Token missing (`UNAUTHORIZED`); malformed, expired, badly signed or not a
+            refresh token (`INVALID_TOKEN`); unknown, revoked or of an inactive user
+            (`INVALID_REFRESH_TOKEN`); or reused after rotation (`REFRESH_TOKEN_REUSE`).
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetail" }
@@ -189,7 +197,9 @@ paths:
       summary: Revoke the refresh token
       description: |
         Send the **refresh** token as `Authorization: Bearer <refresh_token>`.
-        Rate limited to 20 requests per minute.
+        Revokes only that session. Idempotent: an already revoked token also gets
+        200. The access token stays valid until it expires. Rate limited to 20
+        requests per minute per client IP.
       operationId: logout
       security:
         - refreshToken: []
@@ -602,12 +612,18 @@ components:
       bearerFormat: JWT
       description: |
         Access token from /auth/login or /auth/refresh (HS256, 15 min by default).
-        Claims: sub (user public id), role, type=access, iss, aud, jti, iat, nbf, exp.
+        Claims: sub (user id, UUID), role, type=access, iss, aud, jti, iat, nbf, exp.
+        Stateless: validated without a database lookup, so a role change or a
+        deactivation applies when the token is next refreshed. A missing token is
+        `UNAUTHORIZED`; an invalid, expired or wrong-type token is `INVALID_TOKEN`.
     refreshToken:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Refresh token (type=refresh, 14 days by default). Only for /auth/refresh and /auth/logout.
+      description: |
+        Refresh token (type=refresh, 14 days by default, single use). Only for
+        /auth/refresh and /auth/logout. Claims: sub, type=refresh, iss, aud, jti,
+        iat, nbf, exp. The server stores only its jti.
 
   parameters:
     AccountId:
@@ -673,7 +689,10 @@ components:
                 errors:
                   - { field: foo, message: Unknown field. }
     RateLimited:
-      description: Too many requests (`RATE_LIMIT_EXCEEDED`).
+      description: Too many requests (`RATE_LIMIT_EXCEEDED`). `Retry-After` gives the seconds to wait.
+      headers:
+        Retry-After:
+          schema: { type: integer }
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }
