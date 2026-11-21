@@ -1146,8 +1146,12 @@ components:
           example: La tiendita de la esquina
         Amount:
           type: string
-          description: Signed by type, same rule as the API (EXPENSE positive, INCOME negative).
-          example: "100.00"
+          description: |
+            Up to 12 digits and 2 decimals, never zero. The sign is ignored: `Type`
+            decides it, so bank exports (expenses negative) and API-style files
+            (expenses positive) both work. Stored with the API rule (EXPENSE
+            positive, INCOME negative); the same row with either sign is a duplicate.
+          example: "-232.50"
         Category Group:
           oneOf:
             - $ref: "#/components/schemas/CategoryGroup"

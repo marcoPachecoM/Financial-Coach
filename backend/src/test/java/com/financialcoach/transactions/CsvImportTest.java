@@ -1,6 +1,7 @@
 package com.financialcoach.transactions;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -21,6 +22,7 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.ResultActions;
@@ -104,6 +106,55 @@ class CsvImportTest extends ApiIntegrationTest {
                     .containsEntry("category_group_source", "RULE")
                     .containsEntry("category", null)
                     .containsEntry("notes", null);
+        }
+
+        /** Bank exports use cash-flow signs; Type decides, so both conventions give the same result. */
+        @Test
+        void typeDecidesTheSignNotTheAmount() throws Exception {
+            upload(alice, HEADER + """
+                    Expense,2026-09-25 15:58:12,15:58,Engigas,-232.5,Utilities,Gas,Debit card,
+                    Income,2026-09-24 06:55:57,6:55,Banorte iva,301.92,Others,Awards,Debit card,
+                    Expense,2026-09-26 10:00:00,,Oxxo,45,Food,Snacks,Debit card,
+                    Income,2026-09-27 10:00:00,,Refund,-10,Others,,Debit card,
+                    """)
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.records_imported").value(4));
+
+            assertThat(jdbc.queryForList("SELECT amount::text FROM transactions WHERE account_id = ? ORDER BY datetime",
+                    String.class, aliceCard))
+                    .containsExactly("-301.92", "232.50", "45.00", "-10.00");
+        }
+
+        @Test
+        void theSameRowWithTheOtherSignIsADuplicate() throws Exception {
+            upload(alice, HEADER + "Expense,2026-09-25 15:58:12,15:58,Engigas,-232.5,Utilities,Gas,Debit card,\n")
+                    .andExpect(jsonPath("$.records_imported").value(1));
+
+            upload(alice, HEADER + "Expense,2026-09-25 15:58:12,15:58,Engigas,232.50,Utilities,Gas,Debit card,\n")
+                    .andExpect(jsonPath("$.records_imported").value(0))
+                    .andExpect(jsonPath("$.records_duplicated").value(1));
+        }
+
+        /** A real export (bank-style signs, free-text categories); see src/test/resources/csv. */
+        @Test
+        void importsARealExport() throws Exception {
+            byte[] file = new ClassPathResource("csv/mock_transactions.csv").getContentAsByteArray();
+
+            upload(alice, "mock_transactions.csv", file)
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.records_imported").value(24))
+                    .andExpect(jsonPath("$.accounts_created[*].name", containsInAnyOrder("Malu", "Credit Card")));
+
+            Map<String, Object> totals = jdbc.queryForMap("""
+                    SELECT sum(amount) FILTER (WHERE type = 'EXPENSE') AS expenses,
+                           sum(amount) FILTER (WHERE type = 'INCOME')  AS income,
+                           count(*) FILTER (WHERE category_group = 'Utilities' AND category = 'Gas') AS gas
+                    FROM transactions WHERE user_id = ?
+                    """, alice.id());
+            assertThat(totals)
+                    .containsEntry("expenses", new java.math.BigDecimal("12936.24"))
+                    .containsEntry("income", new java.math.BigDecimal("-1382.92"))
+                    .containsEntry("gas", 2L);
         }
 
         @Test
@@ -214,15 +265,14 @@ class CsvImportTest extends ApiIntegrationTest {
                     Expense,2026-01-02 13:35:00,,Valid row,100,Food,,New account,
                     Transfer,2026-01-02 13:35:00,,Bad type,100,Food,,Debit card,
                     Expense,2026-02-30 10:00:00,,Bad date,abc,Food,,Debit card,
-                    Income,2026-01-02 13:35:00,,Positive income,100,Salary,,Debit card,
                     Expense,2026-01-02 13:35:00,,No account,100,Food,,,
                     Expense,2026-01-02 13:35:00,,,0,Groceries,,Debit card,
                     """)
                     .andExpect(status().isBadRequest())
                     .andExpect(content().contentType(PROBLEM_JSON))
                     .andExpect(jsonPath("$.code").value("CSV_INVALID_ROWS"))
-                    .andExpect(jsonPath("$.detail").value("5 rows have errors. Nothing was imported."))
-                    .andExpect(jsonPath("$.errors", hasSize(8)))
+                    .andExpect(jsonPath("$.detail").value("4 rows have errors. Nothing was imported."))
+                    .andExpect(jsonPath("$.errors", hasSize(7)))
                     .andExpect(jsonPath("$.errors[0].row").value(2))
                     .andExpect(jsonPath("$.errors[0].field").value("Type"))
                     .andExpect(jsonPath("$.errors[1].row").value(3))
@@ -230,14 +280,13 @@ class CsvImportTest extends ApiIntegrationTest {
                     .andExpect(jsonPath("$.errors[2].row").value(3))
                     .andExpect(jsonPath("$.errors[2].field").value("Amount"))
                     .andExpect(jsonPath("$.errors[3].row").value(4))
-                    .andExpect(jsonPath("$.errors[3].message").value("INCOME amounts must be negative."))
+                    .andExpect(jsonPath("$.errors[3].message").value("Account is required."))
                     .andExpect(jsonPath("$.errors[4].row").value(5))
-                    .andExpect(jsonPath("$.errors[4].message").value("Account is required."))
-                    .andExpect(jsonPath("$.errors[5].field").value("Name"))
-                    .andExpect(jsonPath("$.errors[6].field").value("Amount"))
-                    .andExpect(jsonPath("$.errors[6].message").value("must not be zero"))
-                    .andExpect(jsonPath("$.errors[7].field").value("Category Group"))
-                    .andExpect(jsonPath("$.errors[7].message").value("Unknown category group."));
+                    .andExpect(jsonPath("$.errors[4].field").value("Name"))
+                    .andExpect(jsonPath("$.errors[5].field").value("Amount"))
+                    .andExpect(jsonPath("$.errors[5].message").value("must not be zero"))
+                    .andExpect(jsonPath("$.errors[6].field").value("Category Group"))
+                    .andExpect(jsonPath("$.errors[6].message").value("Unknown category group."));
 
             assertThat(jdbc.queryForObject("SELECT count(*) FROM transactions WHERE user_id = ?",
                     Integer.class, alice.id())).isZero();

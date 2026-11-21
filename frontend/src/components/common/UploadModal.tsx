@@ -154,7 +154,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onImp
                 ))}
               </div>
               <p className="mt-2 text-slate-500">
-                Date as <span className="font-mono">yyyy-MM-dd HH:mm:ss</span>. Expenses positive, income negative.{' '}
+                Date as <span className="font-mono">yyyy-MM-dd HH:mm:ss</span>. The sign of Amount is ignored: Type decides it.{' '}
                 <span className="font-mono">Category Group</span> must be one of the 26 groups (empty = automatic);{' '}
                 <span className="font-mono">Category</span> is free text. UTF-8, up to 1 MB.
               </p>

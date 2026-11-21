@@ -135,13 +135,13 @@ final class CsvTransactionReader {
         String account = required(row, "Account", text(record, "Account"), 100, errors);
         String notes = optional(row, "Notes", text(record, "Notes"), 1000, errors);
 
-        if (type != null && amount != null) {
-            AmountRules.signViolation(type, amount)
-                    .ifPresent(message -> errors.add(new ApiFieldError(row, "Amount", message)));
+        if (amount != null && amount.signum() == 0) {
+            fail(row, "Amount", "must not be zero", errors);
         }
-        // Same order as the columns, so the sign error sits next to the other Amount errors.
+        // Same order as the columns, so the zero error sits next to the other Amount errors.
         errors.sort(Comparator.comparingInt(error -> HEADER.indexOf(error.field())));
-        return new CsvRow(row, type, occurredAt, name, amount, categoryGroup, category, account, notes);
+        return new CsvRow(row, type, occurredAt, name, signedByType(type, amount), categoryGroup, category,
+                account, notes);
     }
 
     /** The stripped value of a column; empty string when blank. */
@@ -167,6 +167,18 @@ final class CsvTransactionReader {
         } catch (DateTimeParseException e) {
             return fail(row, "Date", "must be a valid date in yyyy-MM-dd HH:mm:ss format.", errors);
         }
+    }
+
+    /**
+     * Type is the source of truth in a CSV: the sign of Amount is ignored. Bank exports use the
+     * opposite convention (expenses negative), so both "-232.5" and "232.5" are a 232.50 expense.
+     * The result follows the API rule: EXPENSE positive, INCOME negative.
+     */
+    private static BigDecimal signedByType(TransactionType type, BigDecimal amount) {
+        if (type == null || amount == null) {
+            return amount;
+        }
+        return type == TransactionType.EXPENSE ? amount.abs() : amount.abs().negate();
     }
 
     private static BigDecimal parseAmount(int row, String value, List<ApiFieldError> errors) {
