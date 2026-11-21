@@ -5,6 +5,7 @@ import { getAnalyticsByCategoryGroup, getAnalyticsSummary } from "../services/an
 import { getAllTransactions, type TransactionFilters } from "../services/transactions";
 import { getCurrentUser } from "../services/users";
 import { useAsync } from "./useAsync";
+import type { BudgetUsage } from "../types/budget";
 
 /** Stable cache key for a set of filters (null until an account is selected). */
 const filtersKey = (filters: TransactionFilters | null) =>
@@ -33,3 +34,30 @@ export const useRecurringTransactions = (accountId: string | null) =>
 
 /** Current month's alerts of the account, most severe first. */
 export const useAlerts = (accountId: string | null) => useAsync(() => getAlerts(accountId!), accountId);
+
+/** "YYYY-MM" of the month before the current one (local time). */
+const previousMonth = () => {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+export interface AccountSpending {
+  current: BudgetUsage;
+  /** Spent in the previous month. */
+  previousSpent: number;
+}
+
+/** For the sidebar: this month's budget usage and last month's spending of every account. */
+export const useAccountsSpending = (accountIds: string[]) =>
+  useAsync(async () => {
+    const month = previousMonth();
+    const entries = await Promise.all(
+      accountIds.map(async (id) => {
+        const [current, previous] = await Promise.all([getBudgetUsage(id), getBudgetUsage(id, month)]);
+        return [id, { current, previousSpent: previous.spent }] as const;
+      }),
+    );
+    return Object.fromEntries(entries) as Record<string, AccountSpending>;
+  }, accountIds.length ? `spending|${accountIds.join(",")}` : null);

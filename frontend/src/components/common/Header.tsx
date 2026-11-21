@@ -1,40 +1,32 @@
-import React, { useState } from "react";
-import { formatCurrency } from "../../utils/formatters";
-import type { Account } from "../../types/account";
+import React from "react";
 
 interface HeaderProps {
   onOpenUpload: () => void;
+  onLogout: () => void;
+  /** Opens/closes the sidebar (drawer on mobile, icon bar on desktop). */
+  onToggleSidebar: () => void;
   /** Opens the "Add transaction" form; hidden when there is no account yet. */
   onOpenNewTransaction?: () => void;
-  onLogout: () => void;
-  accounts?: Account[];
-  activeAccountId?: string | null;
-  onSelectAccount?: (accountId: string) => void;
-  loadingAccounts?: boolean;
+  activeAccountName?: string | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenUpload,
-  onOpenNewTransaction,
   onLogout,
-  accounts = [],
-  activeAccountId = null,
-  onSelectAccount,
-  loadingAccounts = false,
+  onToggleSidebar,
+  onOpenNewTransaction,
+  activeAccountName = null,
 }) => {
-  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
-
-  const activeAccount = accounts.find((a) => a.id === activeAccountId) ?? null;
-
-  const currentAccountName = activeAccount
-    ? activeAccount.name
-    : loadingAccounts
-    ? "Loading..."
-    : "No accounts yet";
-
   return (
     <header className="w-full bg-white border-b border-[#E2E8F0] px-4 md:px-8 py-3.5 flex items-center justify-between sticky top-0 z-40 shadow-xs">
       <div className="flex items-center gap-4">
+        <button
+          onClick={onToggleSidebar}
+          title="Menu"
+          className="p-2 -ml-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 cursor-pointer"
+        >
+          <span className="material-symbols-outlined !text-[22px]">menu</span>
+        </button>
         {/* Brand Logo */}
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-sm shadow-emerald-200 ring-2 ring-emerald-100">
@@ -53,94 +45,20 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Divider */}
-        <div className="h-7 w-px bg-slate-200 mx-2 hidden md:block" />
-
-        {/* Account selector */}
-        <div className="relative hidden md:block">
-          <button
-            onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors border border-transparent hover:border-slate-200 cursor-pointer"
-          >
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-100 animate-pulse" />
-            <span className="text-sm font-medium text-slate-800">
-              Account:{" "}
-              <strong className="font-semibold text-slate-900">
-                {currentAccountName}
-              </strong>
+        {activeAccountName && (
+          <>
+            <div className="h-7 w-px bg-slate-200 mx-2 hidden md:block" />
+            <span className="hidden md:flex items-center gap-2 text-sm text-slate-600">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-100" />
+              <strong className="font-semibold text-slate-900">{activeAccountName}</strong>
             </span>
-            <span className="material-symbols-outlined !text-[18px] text-slate-500 transition-transform duration-200">
-              {profileDropdownOpen ? "expand_less" : "expand_more"}
-            </span>
-          </button>
-
-          {/* Profile Dropdown */}
-          {profileDropdownOpen && (
-            <div
-              className="absolute left-0 top-full mt-1.5 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2 animate-in fade-in slide-in-from-top-1"
-              onMouseLeave={() => setProfileDropdownOpen(false)}
-            >
-              <div className="px-2 py-1.5 border-b border-slate-100 mb-1 flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 font-mono">
-                  Your Accounts
-                </p>
-              </div>
-              <div className="space-y-1 max-h-64 overflow-y-auto">
-                {accounts.length > 0 ? (
-                  accounts.map((account) => {
-                    const isSelected = activeAccount?.id === account.id;
-                    return (
-                      <button
-                        key={account.id}
-                        onClick={() => {
-                          onSelectAccount?.(account.id);
-                          setProfileDropdownOpen(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all flex items-start justify-between cursor-pointer ${
-                          isSelected
-                            ? "bg-emerald-50 text-emerald-900 font-medium"
-                            : "hover:bg-slate-50 text-slate-700"
-                        }`}
-                      >
-                        <div className="truncate mr-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="material-symbols-outlined !text-[16px] text-emerald-600">
-                              account_balance
-                            </span>
-                            <p className="font-semibold text-slate-900 truncate">
-                              {account.name}
-                            </p>
-                          </div>
-                          <p className="text-xs text-slate-400 font-mono truncate mt-0.5">
-                            {account.monthlyBudget !== null
-                              ? `Budget ${formatCurrency(account.monthlyBudget)} / month`
-                              : "No monthly budget"}
-                          </p>
-                        </div>
-                        {isSelected && (
-                          <span className="material-symbols-outlined !text-[16px] text-emerald-600 mt-0.5 shrink-0">
-                            check
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="p-3 text-center text-xs text-slate-400">
-                    {loadingAccounts
-                      ? "Loading accounts..."
-                      : "No accounts yet. Import a CSV to create them."}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
       {/* Action CTA Buttons */}
       <div className="flex items-center gap-3">
-        {onOpenNewTransaction && activeAccount && (
+        {onOpenNewTransaction && activeAccountName && (
           <button
             onClick={onOpenNewTransaction}
             className="bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 hover:border-emerald-300 px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 shadow-2xs cursor-pointer"

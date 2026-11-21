@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { createTransaction } from '../../services/transactions';
+import { createTransaction, updateTransaction } from '../../services/transactions';
 import { getErrorMessage, getFieldErrors } from '../../services/errors';
 import type { ApiFieldError, RecurrenceFrequency, TransactionType } from '../../types/api';
 import type { Transaction } from '../../types/transaction';
@@ -10,9 +10,11 @@ interface TransactionFormModalProps {
   isOpen: boolean;
   accountId: string | null;
   accountName: string;
+  /** Edit mode: the form starts with its values and saves with PATCH. Mount with a `key` per transaction. */
+  transaction?: Transaction | null;
   onClose: () => void;
-  /** Called after the transaction (and its recurrence, if any) was created. */
-  onCreated: (transaction: Transaction, repeated: RecurrenceFrequency | null) => void;
+  /** Called after the transaction (and its recurrence, if any) was created or updated. */
+  onSaved: (transaction: Transaction, repeated: RecurrenceFrequency | null) => void;
 }
 
 const GROUPS = Object.keys(CATEGORY_STYLES);
@@ -36,6 +38,16 @@ const EMPTY = {
   endDate: '',
 };
 
+const fromTransaction = (tx: Transaction): typeof EMPTY => ({
+  ...EMPTY,
+  type: tx.type,
+  name: tx.name,
+  amount: Math.abs(tx.amount).toFixed(2),
+  categoryGroup: tx.categoryGroup,
+  category: tx.category ?? '',
+  notes: tx.notes ?? '',
+});
+
 const inputClass =
   'w-full text-sm px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-hidden bg-white';
 const labelClass = 'block text-xs font-semibold text-slate-700 mb-1 uppercase font-mono tracking-wider';
@@ -44,11 +56,13 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
   isOpen,
   accountId,
   accountName,
+  transaction = null,
   onClose,
-  onCreated,
+  onSaved,
 }) => {
-  const [form, setForm] = useState(EMPTY);
-  const [datetime, setDatetime] = useState(nowForInput);
+  const isEdit = transaction !== null;
+  const [form, setForm] = useState(() => (transaction ? fromTransaction(transaction) : EMPTY));
+  const [datetime, setDatetime] = useState(() => (transaction ? transaction.datetime.slice(0, 16) : nowForInput()));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<ApiFieldError[]>([]);
@@ -72,13 +86,14 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!accountId) return;
+    const targetAccount = transaction?.accountId ?? accountId;
+    if (!targetAccount) return;
     setSaving(true);
     setError(null);
     setFieldErrors([]);
     try {
-      const created = await createTransaction({
-        accountId,
+      const input = {
+        accountId: targetAccount,
         type: form.type,
         datetime,
         name: form.name.trim(),
@@ -87,11 +102,12 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
         category: form.category,
         notes: form.notes,
         recurrence: form.repeat ? { frequency: form.repeat, endDate: form.endDate || undefined } : undefined,
-      });
-      onCreated(created, form.repeat || null);
+      };
+      const saved = transaction ? await updateTransaction(transaction.id, input) : await createTransaction(input);
+      onSaved(saved, isEdit ? null : form.repeat || null);
       close();
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Could not create the transaction.'));
+      setError(getErrorMessage(err, isEdit ? 'Could not save the transaction.' : 'Could not create the transaction.'));
       setFieldErrors(getFieldErrors(err));
     } finally {
       setSaving(false);
@@ -110,10 +126,10 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
-              <span className="material-symbols-outlined !text-[24px]">add_card</span>
+              <span className="material-symbols-outlined !text-[24px]">{isEdit ? 'edit' : 'add_card'}</span>
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900 font-sans">Add Transaction</h2>
+              <h2 className="text-lg font-bold text-slate-900 font-sans">{isEdit ? 'Edit Transaction' : 'Add Transaction'}</h2>
               <p className="text-xs text-slate-500">
                 Account: <strong className="text-slate-700">{accountName}</strong>
               </p>
@@ -219,7 +235,8 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
             </div>
           </div>
 
-          {/* Recurrence */}
+          {/* Recurrence (only when creating: an existing rule is managed in the Recurring card) */}
+          {!isEdit && (
           <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-3">
             <div>
               <label className={labelClass} htmlFor="tx-repeat">
@@ -261,6 +278,7 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
               </div>
             )}
           </div>
+          )}
 
           <div>
             <label className={labelClass} htmlFor="tx-notes">Notes</label>
@@ -301,11 +319,17 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={saving || !accountId}
+              disabled={saving || !(transaction?.accountId ?? accountId)}
               className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-xl text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <span className="material-symbols-outlined !text-[16px]">{saving ? 'hourglass_top' : 'check'}</span>
-              {saving ? 'Saving...' : form.repeat ? 'Add recurring transaction' : 'Add transaction'}
+              {saving
+                ? 'Saving...'
+                : isEdit
+                  ? 'Save changes'
+                  : form.repeat
+                    ? 'Add recurring transaction'
+                    : 'Add transaction'}
             </button>
           </div>
         </form>

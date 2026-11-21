@@ -79,6 +79,21 @@ export const createTransaction = async (input: NewTransaction): Promise<Transact
   return toTransaction(res.data);
 };
 
+/** PATCH with every field of the form; empty category/notes are cleared. Recurrence is not editable here. */
+export const updateTransaction = async (id: string, input: NewTransaction): Promise<Transaction> => {
+  const res = await api.patch<ApiTransaction>(`/transactions/${id}`, {
+    type: input.type,
+    datetime: input.datetime,
+    name: input.name,
+    amount: signedAmount(input.type, input.amount),
+    account_id: input.accountId,
+    ...(input.categoryGroup ? { category_group: input.categoryGroup } : {}),
+    category: input.category?.trim() || null,
+    notes: input.notes?.trim() || null,
+  });
+  return toTransaction(res.data);
+};
+
 /** Soft delete: an occurrence of a recurring transaction is not created again. */
 export const deleteTransaction = async (id: string): Promise<void> => {
   await api.delete(`/transactions/${id}`);

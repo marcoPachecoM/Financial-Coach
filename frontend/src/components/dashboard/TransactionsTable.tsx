@@ -6,28 +6,42 @@ import { CategoryBadge } from '../common/Badge';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
 interface TransactionsTableProps {
+  /** Heading, e.g. the day or month shown. */
+  title?: string;
   transactions: Transaction[];
+  loading?: boolean;
   selectedCategory: string;
   onOpenUpload: () => void;
+  onView: (transaction: Transaction) => void;
+  onEdit: (transaction: Transaction) => void;
+  onDelete: (transaction: Transaction) => void;
   /** Makes a transaction occurrence 0 of a new recurring transaction. */
   onMakeRecurring: (transaction: Transaction, frequency: RecurrenceFrequency) => void;
 }
 
 const FREQUENCIES = Object.keys(FREQUENCY_LABELS) as RecurrenceFrequency[];
 
-const ITEMS_PER_PAGE = 6;
+const ITEMS_PER_PAGE = 10;
+
+const actionButton =
+  'p-1.5 rounded-lg text-slate-400 transition-colors cursor-pointer';
 
 export const TransactionsTable: React.FC<TransactionsTableProps> = ({
+  title = 'Transactions',
   transactions,
+  loading = false,
   selectedCategory,
   onOpenUpload,
+  onView,
+  onEdit,
+  onDelete,
   onMakeRecurring,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   /** Transaction whose "Make recurring" menu is open. */
   const [menuFor, setMenuFor] = useState<string | null>(null);
   // The page belongs to a filter: changing the category or the search goes back to page 1.
-  const filterKey = `${selectedCategory}|${searchQuery}`;
+  const filterKey = `${title}|${selectedCategory}|${searchQuery}`;
   const [pageState, setPageState] = useState({ filterKey, page: 1 });
   const requestedPage = pageState.filterKey === filterKey ? pageState.page : 1;
   const setCurrentPage = (update: (page: number) => number) =>
@@ -75,7 +89,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       <div className="p-5 md:p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-slate-900 font-sans">Recent Transactions</h3>
+            <h3 className="text-lg font-bold text-slate-900 font-sans">{title}</h3>
             <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono">
               {filteredTransactions.length} records
             </span>
@@ -119,7 +133,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               <th className="py-3 px-5">Merchant</th>
               <th className="py-3 px-5">Category</th>
               <th className="py-3 px-5 text-right">Amount</th>
-              <th className="py-3 pr-4 w-10"><span className="sr-only">Actions</span></th>
+              <th className="py-3 pr-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-sm">
@@ -130,7 +144,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                     <span className="material-symbols-outlined !text-[36px] text-slate-300 mb-2">
                       receipt_long
                     </span>
-                    <p className="text-sm font-medium text-slate-600">No transactions match your criteria</p>
+                    <p className="text-sm font-medium text-slate-600">
+                      {loading ? 'Loading transactions...' : 'No transactions match your criteria'}
+                    </p>
                     <p className="text-xs text-slate-400 mt-1">Try clearing your filters or upload a new dataset.</p>
                     <button
                       onClick={onOpenUpload}
@@ -203,16 +219,43 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                     </td>
 
                     {/* Actions */}
-                    <td className="py-3.5 pr-4 text-right relative">
-                      {!tx.recurringTransactionId && (
+                    <td className="py-3.5 pr-4 text-right relative whitespace-nowrap">
+                      <div className="inline-flex items-center gap-0.5">
                         <button
-                          onClick={() => setMenuFor(menuFor === tx.id ? null : tx.id)}
-                          title="Make recurring"
-                          className="p-1 rounded-lg text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
+                          onClick={() => onView(tx)}
+                          title="View"
+                          className={`${actionButton} hover:text-slate-700 hover:bg-slate-100`}
                         >
-                          <span className="material-symbols-outlined !text-[18px]">event_repeat</span>
+                          <span className="material-symbols-outlined !text-[18px]">visibility</span>
                         </button>
-                      )}
+                        <button
+                          onClick={() => onEdit(tx)}
+                          title="Edit"
+                          className={`${actionButton} hover:text-emerald-700 hover:bg-emerald-50`}
+                        >
+                          <span className="material-symbols-outlined !text-[18px]">edit</span>
+                        </button>
+                        <button
+                          onClick={() => onDelete(tx)}
+                          title="Delete"
+                          className={`${actionButton} hover:text-rose-600 hover:bg-rose-50`}
+                        >
+                          <span className="material-symbols-outlined !text-[18px]">delete</span>
+                        </button>
+                        {tx.recurringTransactionId ? (
+                          <span className="p-1.5 text-emerald-600" title="Already recurring">
+                            <span className="material-symbols-outlined !text-[18px]">event_repeat</span>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setMenuFor(menuFor === tx.id ? null : tx.id)}
+                            title="Make recurring"
+                            className={`${actionButton} hover:text-emerald-700 hover:bg-emerald-50`}
+                          >
+                            <span className="material-symbols-outlined !text-[18px]">event_repeat</span>
+                          </button>
+                        )}
+                      </div>
                       {menuFor === tx.id && (
                         <div
                           className="absolute right-4 top-full -mt-2 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-1.5 text-left"
