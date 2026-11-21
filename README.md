@@ -129,7 +129,7 @@ Open http://localhost:5173. The frontend expects the API from 5.1 to be running.
 
 The API is being migrated to Spring Boot in `backend/`, following the contract in [docs/openapi.yaml](docs/openapi.yaml). The Flask API above remains the working backend until the migration is complete.
 
-Current state: database schema (Flyway migrations), temporary HTTP Basic authentication against the `users` table, the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`) and the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`). Automatic categorization currently uses the merchant cache and falls back to `Other`; the LLM step comes later. JWT login comes last; until then, the React frontend keeps using the Flask API. See [docs/database.md](docs/database.md) for the data model.
+Current state: database schema (Flyway migrations), temporary HTTP Basic authentication against the `users` table, the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`) the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`) and the **CSV import** (`POST /api/v1/transactions/upload-csv`: all or nothing, creates missing accounts, skips rows already imported). Automatic categorization currently uses the merchant cache and falls back to `Other`; the LLM step comes later. JWT login comes last; until then, the React frontend keeps using the Flask API. See [docs/database.md](docs/database.md) for the data model.
 
 Requirements: Java 25 and Docker running. If Java 25 is not your default JDK:
 
@@ -178,6 +178,10 @@ curl -u 'client1@example.local:ClientPass123!' -H 'Content-Type: application/jso
      http://localhost:8080/api/v1/transactions
 curl -u 'client1@example.local:ClientPass123!' \
      'http://localhost:8080/api/v1/transactions?account_id=019a0000-0000-7000-8000-000000000101&size=20'
+
+# CSV import (header: Type,Date,Time,Name,Amount,Category Group,Category,Account,Notes)
+curl -u 'client1@example.local:ClientPass123!' -F 'file=@transactions.csv' \
+     http://localhost:8080/api/v1/transactions/upload-csv
 ```
 
 Inspect the database with:

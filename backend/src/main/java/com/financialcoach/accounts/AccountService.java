@@ -5,7 +5,11 @@ import com.financialcoach.shared.error.ConflictException;
 import com.financialcoach.shared.error.NotFoundException;
 import com.financialcoach.shared.error.ValidationException;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -34,6 +38,31 @@ public class AccountService {
     @Transactional(readOnly = true)
     public void requireOwned(UUID userId, UUID accountId) {
         get(userId, accountId);
+    }
+
+    /**
+     * For the CSV import: maps each name to the caller's account with that name (case-insensitive)
+     * and creates the missing ones, without a budget. When the same new name appears with different
+     * capitalization, the first spelling is used. Names must already be valid (not blank, at most
+     * 100 characters). Runs in the caller's transaction, so a failed import also undoes the accounts.
+     */
+    @Transactional
+    public ResolvedAccounts resolveOrCreate(UUID userId, Collection<String> names) {
+        Map<String, UUID> idsByKey = new HashMap<>();
+        for (Account account : accounts.findAllOwnedBy(userId)) {
+            idsByKey.putIfAbsent(ResolvedAccounts.key(account.getName()), account.getId());
+        }
+
+        List<AccountResponse> created = new ArrayList<>();
+        for (String name : names) {
+            String key = ResolvedAccounts.key(name);
+            if (!idsByKey.containsKey(key)) {
+                Account account = saveCheckingNameConflict(new Account(userId, name.strip(), null));
+                idsByKey.put(key, account.getId());
+                created.add(AccountResponse.from(account));
+            }
+        }
+        return new ResolvedAccounts(idsByKey, created);
     }
 
     @Transactional(readOnly = true)

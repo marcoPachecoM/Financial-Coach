@@ -17,6 +17,8 @@
 		<java.version>25</java.version>
 		<!-- Not managed by Spring Boot. Required by Argon2PasswordEncoder. -->
 		<bouncycastle.version>1.86</bouncycastle.version>
+		<!-- Not managed by Spring Boot. Parses uploaded CSV files. -->
+		<commons-csv.version>1.14.1</commons-csv.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -39,6 +41,11 @@
 			<groupId>org.bouncycastle</groupId>
 			<artifactId>bcprov-jdk18on</artifactId>
 			<version>${bouncycastle.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-csv</artifactId>
+			<version>${commons-csv.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

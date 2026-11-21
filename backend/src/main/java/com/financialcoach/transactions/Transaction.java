@@ -113,6 +113,18 @@ class Transaction {
         return transaction;
     }
 
+    /** A transaction from a CSV import. The fingerprint prevents importing the same row twice. */
+    static Transaction fromCsv(UUID userId, UUID accountId, TransactionType type, LocalDateTime occurredAt,
+                               String name, BigDecimal amount, Category category, CategorySource categorySource,
+                               String categoryGroup, String notes, UUID importBatchId, String fingerprint) {
+        Transaction transaction = manual(userId, accountId, type, occurredAt, name, amount,
+                category, categorySource, categoryGroup, notes);
+        transaction.source = TransactionSource.CSV;
+        transaction.importBatchId = importBatchId;
+        transaction.fingerprint = fingerprint;
+        return transaction;
+    }
+
     void changeType(TransactionType newType) {
         this.type = newType;
     }

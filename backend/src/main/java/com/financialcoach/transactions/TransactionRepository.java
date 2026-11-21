@@ -1,6 +1,8 @@
 package com.financialcoach.transactions;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -26,4 +28,16 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
 
     @Query("select t from Transaction t where t.id = :id and t.userId = :userId")
     Optional<Transaction> findOwned(@Param("id") UUID id, @Param("userId") UUID userId);
+
+    /**
+     * Fingerprints that already exist in these accounts. Native SQL on purpose: it must include
+     * soft-deleted rows (which @SQLRestriction would hide), so re-importing a file does not
+     * bring back transactions the user deleted. Uses the ux_transactions_account_fingerprint index.
+     */
+    @Query(value = """
+            SELECT fingerprint FROM transactions
+            WHERE account_id IN (:accountIds) AND fingerprint IN (:fingerprints)
+            """, nativeQuery = true)
+    List<String> findExistingFingerprints(@Param("accountIds") Collection<UUID> accountIds,
+                                          @Param("fingerprints") Collection<String> fingerprints);
 }

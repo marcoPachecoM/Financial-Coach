@@ -440,15 +440,18 @@ paths:
       tags: [Transactions]
       summary: Import transactions from a CSV file
       description: |
-        The file must have a header row with these columns, in this order:
+        The file must be UTF-8 (a leading byte order mark is accepted) and have a
+        header row with these columns, in this order (case-insensitive):
         `Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes`.
-        Each data row is described by the `CsvTransactionRow` schema.
-        Maximum request size is 1 MiB.
+        Each data row is described by the `CsvTransactionRow` schema. Values are
+        trimmed; empty optional values are stored as null. Maximum file size is 1 MiB.
 
         Import rules:
         - **All or nothing.** Every row is validated first. If any row is
-          invalid, nothing is imported and the response lists all row errors
-          (`CSV_INVALID_ROWS`).
+          invalid, nothing is imported (no transactions, no accounts) and the
+          response lists the row errors (`CSV_INVALID_ROWS`), at most 100;
+          `detail` gives the total number of invalid rows. A row with the wrong
+          number of columns is reported with `field: row`.
         - **Accounts.** Each row goes to the caller's account whose name
           matches the `Account` column (case-insensitive). Missing accounts
           are created. An empty `Account` is a row error.
@@ -483,8 +486,9 @@ paths:
               schema: { $ref: "#/components/schemas/CsvUploadResponse" }
         "400":
           description: |
-            Missing file or wrong extension (`VALIDATION_ERROR`), or one or more
-            invalid rows (`CSV_INVALID_ROWS`, with `row` set in each error).
+            Problem with the file as a whole (`VALIDATION_ERROR` on field `file`:
+            missing, empty, not `.csv`, not UTF-8, wrong header or broken quoting),
+            or one or more invalid rows (`CSV_INVALID_ROWS`, with `row` set in each error).
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetail" }
@@ -498,6 +502,11 @@ paths:
                   - { row: 14, field: Amount, message: INCOME amounts must be negative. }
                   - { row: 27, field: Account, message: Account is required. }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: The same file is being imported at the same time by another request (`CONFLICT`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
         "413":
           description: File larger than 1 MiB (`PAYLOAD_TOO_LARGE`).
           content:
@@ -1118,6 +1127,9 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Category"
             - type: "null"
+          description: |
+            Exact category label. When empty, the category is assigned automatically
+            (same as a form transaction without `category`).
           example: Food
         Account:
           type: string

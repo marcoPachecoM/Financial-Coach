@@ -1,16 +1,20 @@
 package com.financialcoach.transactions;
 
 import com.financialcoach.auth.AuthenticatedUser;
+import com.financialcoach.shared.error.PayloadTooLargeException;
 import com.financialcoach.shared.web.QueryParameters;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.io.IOException;
 import java.net.URI;
 import java.time.LocalDate;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,19 +26,25 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriComponentsBuilder;
 
-/** Transactions endpoints of openapi.yaml (CSV upload comes with the import module). */
+/** Transactions endpoints of openapi.yaml. */
 @RestController
 @RequestMapping("/api/v1/transactions")
 class TransactionController {
 
     private static final Set<String> LIST_PARAMETERS = Set.of("account_id", "page", "size", "start_date", "end_date");
 
-    private final TransactionService transactionService;
+    /** 1 MiB, as in the contract. spring.servlet.multipart enforces it too, before the file is read. */
+    static final long MAX_CSV_BYTES = 1024 * 1024;
 
-    TransactionController(TransactionService transactionService) {
+    private final TransactionService transactionService;
+    private final CsvImportService csvImportService;
+
+    TransactionController(TransactionService transactionService, CsvImportService csvImportService) {
         this.transactionService = transactionService;
+        this.csvImportService = csvImportService;
     }
 
     @GetMapping
@@ -59,6 +69,16 @@ class TransactionController {
         Transaction transaction = transactionService.create(user.id(), request);
         URI location = uriBuilder.path("/api/v1/transactions/{id}").buildAndExpand(transaction.getId()).toUri();
         return ResponseEntity.created(location).body(TransactionResponse.from(transaction));
+    }
+
+    @PostMapping(path = "/upload-csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    ResponseEntity<CsvUploadResponse> uploadCsv(@AuthenticationPrincipal AuthenticatedUser user,
+                                                @RequestParam("file") MultipartFile file) throws IOException {
+        if (file.getSize() > MAX_CSV_BYTES) {
+            throw new PayloadTooLargeException("The file must be at most 1 MiB.");
+        }
+        CsvUploadResponse result = csvImportService.importFile(user.id(), file.getOriginalFilename(), file.getBytes());
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
 
     @GetMapping("/{transactionId}")

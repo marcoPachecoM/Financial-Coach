@@ -13,6 +13,16 @@ spring:
       ddl-auto: validate
     # Avoid lazy-loading queries during view rendering (hidden N+1 queries).
     open-in-view: false
+    properties:
+      # CSV imports insert hundreds of rows: send them to PostgreSQL in batches.
+      hibernate.jdbc.batch_size: 100
+      hibernate.order_inserts: true
+
+  # CSV upload limit of the contract (1 MiB file); larger requests get 413 PAYLOAD_TOO_LARGE.
+  servlet:
+    multipart:
+      max-file-size: 1MB
+      max-request-size: 1100KB
 
   flyway:
     locations: classpath:db/migration

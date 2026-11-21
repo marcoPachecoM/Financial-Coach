@@ -20,8 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Transaction use cases. Form today; CSV import and WhatsApp will reuse the same rules
- * (sign check, categorization, ownership).
+ * Transaction use cases for the form (and later WhatsApp). The CSV import lives in
+ * CsvImportService and shares the same rules (AmountRules, categorization, ownership).
  */
 @Service
 public class TransactionService {
@@ -139,17 +139,10 @@ public class TransactionService {
         transactions.saveAndFlush(transaction);
     }
 
-    /** Same rule as the ck_transactions_amount_sign constraint, reported as a 400 instead of a 500. */
     private static void checkAmountSign(TransactionType type, BigDecimal amount) {
-        if (amount.signum() == 0) {
-            throw new ValidationException("amount", "must not be zero");
-        }
-        if (type == TransactionType.EXPENSE && amount.signum() < 0) {
-            throw new ValidationException("amount", "EXPENSE amounts must be positive.");
-        }
-        if (type == TransactionType.INCOME && amount.signum() > 0) {
-            throw new ValidationException("amount", "INCOME amounts must be negative.");
-        }
+        AmountRules.signViolation(type, amount).ifPresent(message -> {
+            throw new ValidationException("amount", message);
+        });
     }
 
     private static <T> T required(String field, T value) {
