@@ -1,17 +1,14 @@
-import type {
-  LoginPayload,
-  LoginResponse,
-  RefreshResponse,
-} from "../types/auth";
+import type { LoginPayload, TokenPair } from "../types/auth";
 import authApi from "./instance";
 
-export const login = async (data: LoginPayload) => {
-  const res = await authApi.post<LoginResponse>("/login", data);
+export const login = async (data: LoginPayload): Promise<TokenPair> => {
+  const res = await authApi.post<TokenPair>("/login", data);
   return res.data;
 };
 
-export const refreshToken = async () => {
-  const res = await authApi.post<RefreshResponse>("/refresh");
+/** Rotation: the refresh token sent stops working; the response carries a new one. */
+export const refreshTokens = async (): Promise<TokenPair> => {
+  const res = await authApi.post<TokenPair>("/refresh");
   return res.data;
 };
 

@@ -1,0 +1,22 @@
+# Local PostgreSQL for development: docker compose up -d   (from backend/)
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: financial_coach
+      POSTGRES_USER: financial_coach
+      POSTGRES_PASSWORD: financial_coach
+    ports:
+      - "5432:5432"
+    volumes:
+      # PostgreSQL 18 images store data under /var/lib/postgresql/<major>/,
+      # so the volume is mounted on the parent directory.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U financial_coach -d financial_coach"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:

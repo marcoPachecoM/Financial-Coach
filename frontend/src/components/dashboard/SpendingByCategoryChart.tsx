@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
-import type { CategorySummaryItem } from "../../types/transaction";
+import type { CategoryGroupSummaryItem } from "../../types/transaction";
 import { formatCurrency } from "../../utils/formatters";
+import { getCategoryStyle } from "../../utils/categoryHelper";
 
 interface CategoryColorConfig {
   hex: string;
@@ -9,86 +10,21 @@ interface CategoryColorConfig {
   badgeBg: string;
 }
 
-const CATEGORY_COLOR_MAP: Record<string, CategoryColorConfig> = {
-  Shopping: {
-    hex: "#ec4899",
-    bg: "bg-pink-500",
-    text: "text-pink-700",
-    badgeBg: "bg-pink-50 border-pink-200",
-  },
-  Insurance: {
-    hex: "#6366f1",
-    bg: "bg-indigo-500",
-    text: "text-indigo-700",
-    badgeBg: "bg-indigo-50 border-indigo-200",
-  },
-  "Automotive & Fuel": {
-    hex: "#ef4444",
-    bg: "bg-red-500",
-    text: "text-red-700",
-    badgeBg: "bg-red-50 border-red-200",
-  },
-  "Food & Dining": {
-    hex: "#f97316",
-    bg: "bg-orange-500",
-    text: "text-orange-700",
-    badgeBg: "bg-orange-50 border-orange-200",
-  },
-  Healthcare: {
-    hex: "#14b8a6",
-    bg: "bg-teal-500",
-    text: "text-teal-700",
-    badgeBg: "bg-teal-50 border-teal-200",
-  },
-  Utilities: {
-    hex: "#06b6d4",
-    bg: "bg-cyan-500",
-    text: "text-cyan-700",
-    badgeBg: "bg-cyan-50 border-cyan-200",
-  },
-  Other: {
-    hex: "#94a3b8",
-    bg: "bg-slate-400",
-    text: "text-slate-600",
-    badgeBg: "bg-slate-100 border-slate-200",
-  },
-  Transport: {
-    hex: "#f59e0b",
-    bg: "bg-amber-500",
-    text: "text-amber-700",
-    badgeBg: "bg-amber-50 border-amber-200",
-  },
-  "Home & Hardware": {
-    hex: "#a855f7",
-    bg: "bg-purple-500",
-    text: "text-purple-700",
-    badgeBg: "bg-purple-50 border-purple-200",
-  },
-  Telecom: {
-    hex: "#0ea5e9",
-    bg: "bg-sky-500",
-    text: "text-sky-700",
-    badgeBg: "bg-sky-50 border-sky-200",
-  },
-  Entertainment: {
-    hex: "#8b5cf6",
-    bg: "bg-purple-500",
-    text: "text-purple-700",
-    badgeBg: "bg-purple-50 border-purple-200",
-  },
-  "Personal & Business": {
-    hex: "#f43f5e",
-    bg: "bg-rose-500",
-    text: "text-rose-700",
-    badgeBg: "bg-rose-50 border-rose-200",
-  },
-  Government: {
-    hex: "#64748b",
-    bg: "bg-slate-500",
-    text: "text-slate-700",
-    badgeBg: "bg-slate-100 border-slate-200",
-  },
-};
+/**
+ * Colors by position: categories come largest first, so the biggest slices always get the
+ * most distinct colors. Full class names, because Tailwind only keeps classes it can see.
+ */
+const PALETTE: CategoryColorConfig[] = [
+  { hex: "#10b981", bg: "bg-emerald-500", text: "text-emerald-700", badgeBg: "bg-emerald-50 border-emerald-200" },
+  { hex: "#3b82f6", bg: "bg-blue-500", text: "text-blue-700", badgeBg: "bg-blue-50 border-blue-200" },
+  { hex: "#f97316", bg: "bg-orange-500", text: "text-orange-700", badgeBg: "bg-orange-50 border-orange-200" },
+  { hex: "#8b5cf6", bg: "bg-violet-500", text: "text-violet-700", badgeBg: "bg-violet-50 border-violet-200" },
+  { hex: "#ec4899", bg: "bg-pink-500", text: "text-pink-700", badgeBg: "bg-pink-50 border-pink-200" },
+  { hex: "#06b6d4", bg: "bg-cyan-500", text: "text-cyan-700", badgeBg: "bg-cyan-50 border-cyan-200" },
+  { hex: "#f59e0b", bg: "bg-amber-500", text: "text-amber-700", badgeBg: "bg-amber-50 border-amber-200" },
+  { hex: "#ef4444", bg: "bg-red-500", text: "text-red-700", badgeBg: "bg-red-50 border-red-200" },
+  { hex: "#84cc16", bg: "bg-lime-500", text: "text-lime-700", badgeBg: "bg-lime-50 border-lime-200" },
+];
 
 const DEFAULT_CATEGORY_COLOR: CategoryColorConfig = {
   hex: "#64748b",
@@ -107,7 +43,7 @@ interface CategoryChartItem {
 }
 
 export interface SpendingByCategoryChartProps {
-  categorySummary?: CategorySummaryItem[];
+  categorySummary?: CategoryGroupSummaryItem[];
   loading?: boolean;
   selectedCategory?: string;
   onSelectCategory?: (category: string) => void;
@@ -124,13 +60,15 @@ export const SpendingByCategoryChart: React.FC<
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
 
   const categoryList = useMemo<CategoryChartItem[]>(() => {
-    return (categorySummary || []).map((item) => ({
-      category: item.category,
-      total: Number(item.amount) || 0,
-      count: Number(item.count) || 0,
-      percentage: Number(item.percentage) || 0,
-      icon: "payments",
-      colorConfig: CATEGORY_COLOR_MAP[item.category] ?? DEFAULT_CATEGORY_COLOR,
+    return (categorySummary || []).map((item, index) => ({
+      // "category" in this chart is the group label.
+      category: item.categoryGroup,
+      total: item.amount,
+      count: item.count,
+      percentage: item.percentage,
+      icon: getCategoryStyle(item.categoryGroup).icon,
+      // Everything after the palette shares the neutral color.
+      colorConfig: PALETTE[index] ?? DEFAULT_CATEGORY_COLOR,
     }));
   }, [categorySummary]);
 
@@ -146,20 +84,16 @@ export const SpendingByCategoryChart: React.FC<
   const circumference = 2 * Math.PI * radius;
 
   const donutSegments = useMemo(() => {
-    let offset = 0;
+    const gap = categoryList.length > 1 ? 2.5 : 0;
+    const lengths = categoryList.map((item) => (item.percentage / 100) * circumference);
 
-    return categoryList.map((item) => {
-      const segmentLength = (item.percentage / 100) * circumference;
-      const strokeDashoffset = -offset;
-      offset += segmentLength;
-
-      const gap = categoryList.length > 1 ? 2.5 : 0;
-      const dashLength = Math.max(0, segmentLength - gap);
-
+    // Each segment starts where the previous ones end.
+    return categoryList.map((item, index) => {
+      const start = lengths.slice(0, index).reduce((sum, length) => sum + length, 0);
       return {
         ...item,
-        dashLength,
-        strokeDashoffset,
+        dashLength: Math.max(0, lengths[index] - gap),
+        strokeDashoffset: -start,
       };
     });
   }, [categoryList, circumference]);

@@ -92,7 +92,7 @@ export function calculateDateRangeLimits(transactions: Transaction[]): DateRange
   let maxTimestamp = -Infinity;
 
   transactions.forEach((tx) => {
-    const d = parseDateOnly(tx.date);
+    const d = parseDateOnly(tx.datetime);
     if (d) {
       const time = d.getTime();
       if (time < minTimestamp) minTimestamp = time;

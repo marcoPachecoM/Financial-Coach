@@ -1,110 +1,77 @@
-import {
-  AxiosError,
-  create,
-  type AxiosRequestConfig,
-  type InternalAxiosRequestConfig,
-} from "axios";
+import { AxiosError, AxiosHeaders, create, type InternalAxiosRequestConfig } from "axios";
 
-import { refreshToken } from "../auth/services";
-import type { RefreshResponse } from "../types/auth";
-import { authStorage } from "../auth/storage";
+import { refreshTokens } from "../auth/services";
+import { authStorage, SESSION_EXPIRED_EVENT } from "../auth/storage";
+import type { ProblemDetail } from "../types/api";
 
-interface AxiosRetryConfig extends AxiosRequestConfig {
-  _retry?: boolean;
-}
-
-let isRefreshing = false;
-
-let failedQueue: {
-  resolve: (token: string) => void;
-  reject: (error: unknown) => void;
-}[] = [];
-
-const processQueue = (error: unknown, token: string | null = null) => {
-  failedQueue.forEach((promise) => {
-    if (error) {
-      promise.reject(error);
-    } else {
-      promise.resolve(token!);
-    }
-  });
-
-  failedQueue = [];
-};
-
+/**
+ * Client for every endpoint except /auth. Adds the access token and, when it has expired
+ * (401 INVALID_TOKEN), refreshes the pair once and retries the request.
+ */
 const api = create({
   baseURL: `${import.meta.env.VITE_API_URL}`,
-  headers: {
-    "Content-Type": "application/json",
-  },
 });
 
-api.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    const token = authStorage.getAccessToken();
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  const token = authStorage.getAccessToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+/** Shared by every request that fails at the same time: only one refresh call per tab. */
+let refreshInFlight: Promise<string> | null = null;
 
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
+/**
+ * Each refresh token works once, and reusing one makes the server close every session. So
+ * refreshes are serialized across tabs (Web Locks API) and, if another tab already rotated the
+ * tokens while this one waited, its new access token is used instead of refreshing again.
+ */
+const refreshAccessToken = (): Promise<string> => {
+  if (!refreshInFlight) {
+    const tokenBeforeWaiting = authStorage.getRefreshToken();
+    const doRefresh = async (): Promise<string> => {
+      const current = authStorage.getRefreshToken();
+      if (current && current !== tokenBeforeWaiting) {
+        return authStorage.getAccessToken()!;
+      }
+      const { access_token, refresh_token } = await refreshTokens();
+      authStorage.updateTokens(access_token, refresh_token);
+      return access_token;
+    };
+
+    const locked = navigator.locks
+      ? navigator.locks.request("financial-coach-token-refresh", doRefresh)
+      : doRefresh();
+    refreshInFlight = locked.finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+};
 
 api.interceptors.response.use(
   (response) => response,
-  async (error: AxiosError) => {
-    const originalRequest = error.config as AxiosRetryConfig | undefined;
+  async (error: AxiosError<ProblemDetail>) => {
+    const request = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+    const expired = error.response?.status === 401 && error.response.data?.code === "INVALID_TOKEN";
 
-    if (
-      !originalRequest ||
-      error.response?.status !== 401 ||
-      originalRequest._retry
-    ) {
+    if (!request || !expired || request._retry || !authStorage.getRefreshToken()) {
       return Promise.reject(error);
     }
-
-    originalRequest._retry = true;
-
-    if (isRefreshing) {
-      return new Promise((resolve, reject) => {
-        failedQueue.push({
-          resolve: (token: string) => {
-            originalRequest.headers = {
-              ...originalRequest.headers,
-              Authorization: `Bearer ${token}`,
-            };
-            resolve(api(originalRequest));
-          },
-          reject,
-        });
-      });
-    }
-
-    isRefreshing = true;
+    request._retry = true;
 
     try {
-      const { access_token, refresh_token }: RefreshResponse =
-        await refreshToken();
-
-      authStorage.updateTokens(access_token, refresh_token);
-
-      processQueue(null, access_token);
-
-      originalRequest.headers = {
-        ...originalRequest.headers,
-        Authorization: `Bearer ${access_token}`,
-      };
-
-      return api(originalRequest);
+      const accessToken = await refreshAccessToken();
+      request.headers = AxiosHeaders.from(request.headers);
+      request.headers.Authorization = `Bearer ${accessToken}`;
+      return api(request);
     } catch (refreshError) {
-      processQueue(refreshError, null);
+      // The refresh token is expired, revoked or was reused: the user must log in again.
       authStorage.clear();
-
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
       return Promise.reject(refreshError);
-    } finally {
-      isRefreshing = false;
     }
   },
 );

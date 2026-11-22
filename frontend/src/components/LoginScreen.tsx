@@ -1,15 +1,16 @@
 import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { getErrorMessage } from "../services/errors";
 
 interface LoginScreenProps {
   onLogin?: () => void;
   onForgotPassword?: () => void;
   onCreateAccount?: () => void;
 }
-const DEMO_CREDENTIALS = {
-  email: "client1@example.local",
-  password: "ClientPass123!",
-} as const;
+/** Demo user loaded by the backend's dev profile. Prefilled only in development builds. */
+const DEMO_CREDENTIALS = import.meta.env.DEV
+  ? { email: "client1@example.local", password: "ClientPass123!" }
+  : { email: "", password: "" };
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
   onLogin,
@@ -17,8 +18,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   onCreateAccount,
 }) => {
   const { login, isLoading } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState<string>(DEMO_CREDENTIALS.email);
+  const [password, setPassword] = useState<string>(DEMO_CREDENTIALS.password);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,19 +29,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setError(null);
 
     try {
-      await login(
-        DEMO_CREDENTIALS.email,
-        DEMO_CREDENTIALS.password,
-        rememberMe,
-      );
+      await login(email, password, rememberMe);
 
       onLogin?.();
     } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : "An error occurred during login.",
-      );
+      // e.g. "Invalid email or password." or the rate-limit message from the API.
+      setError(getErrorMessage(error, "An error occurred during login."));
     }
   };
 

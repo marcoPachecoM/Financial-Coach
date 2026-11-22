@@ -1,6 +1,8 @@
 export interface MetricSummary {
-  totalBalance: number;
-  balanceChangePercentage: number;
+  totalIncome: number;
+  totalExpenses: number;
+  /** totalIncome - totalExpenses: positive means money was saved. */
+  net: number;
   avgDailySpend: number;
   transactionsPerDay: number;
   totalTransactionsCount: number;
@@ -9,4 +11,3 @@ export interface MetricSummary {
   topCategoryAmount: number;
   topCategoryPercentage: number;
 }
-

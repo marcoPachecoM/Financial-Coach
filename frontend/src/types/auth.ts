@@ -3,12 +3,8 @@ export type LoginPayload = {
   password: string;
 };
 
-export type LoginResponse = {
+/** TokenPair of openapi.yaml: returned by login and by every refresh. */
+export type TokenPair = {
   access_token: string;
   refresh_token: string;
-};
-
-export type RefreshResponse = {
-  access_token: string;
-  refresh_token?: string;
 };

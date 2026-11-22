@@ -1,33 +1,4 @@
-import type { Insight, ChatMessage } from '../types/copilot';
-
-export const INITIAL_INSIGHTS: Insight[] = [
-  {
-    id: 'ins-1',
-    type: 'optimization',
-    title: 'Optimization found: Move $200 to high-yield savings.',
-    description: "Based on your recent lower spending in 'Dining Out', you have a surplus.",
-    actionText: 'Execute',
-    status: 'active',
-    category: 'Savings',
-    amount: 200,
-  },
-  {
-    id: 'ins-2',
-    type: 'alert',
-    title: 'Budget Alert: You are nearing your Entertainment limit for May.',
-    description: 'Current: $350 / $400 (87.5% utilized)',
-    status: 'active',
-    category: 'Entertainment',
-  },
-  {
-    id: 'ins-3',
-    type: 'info',
-    title: 'Subscription audit completed.',
-    description: '2 recurring charges (Netflix & Spotify) verified with zero price increases.',
-    status: 'active',
-    category: 'Subscriptions',
-  },
-];
+import type { ChatMessage } from '../types/copilot';
 
 export const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
   {

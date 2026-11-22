@@ -1,0 +1,1575 @@
+openapi: 3.1.0
+
+info:
+  title: Financial Coach API
+  version: 1.0.0
+  description: |
+    Target contract for the Financial Coach backend (Spring Boot migration).
+    It started as a documentation of the current Flask API and now includes
+    planned changes. Operations marked `x-status: planned` do not exist in the
+    Flask backend yet.
+
+    Conventions:
+    - JSON field names are snake_case.
+    - IDs of users, accounts and transactions are UUIDs.
+    - Monetary values are serialized as **strings** with up to 2 decimals, e.g. `"147.06"`.
+    - Transaction amounts are signed by type: EXPENSE is positive, INCOME is
+      negative (spending perspective). Aggregates (analytics, budgets) are
+      always reported as positive values with explicit names.
+    - When a transaction happened is a local date-time with no timezone:
+      `datetime` (`"2026-01-02T13:35:00"`). Date filters are calendar dates
+      (`"2026-01-02"`) and months are `YYYY-MM`.
+    - System timestamps (`created_at`, `updated_at`) are UTC instants in
+      ISO 8601 with `Z`, e.g. `"2026-01-02T19:35:12Z"`.
+    - Transactions are soft-deleted: DELETE marks them as deleted and they
+      disappear from every read endpoint, analytics and budgets.
+    - Resources owned by another user respond 404 (never 403), so their
+      existence is not revealed.
+    - Errors use RFC 9457 Problem Details (`application/problem+json`), with
+      a machine-readable `code` and, for validation errors, an `errors` list.
+    - Unknown fields in a body or query string are rejected with `VALIDATION_ERROR`.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Accounts
+  - name: Transactions
+  - name: Recurring transactions
+    description: |
+      A rule ("Netflix, 199.00, every month") created from a transaction. The
+      application creates the next occurrences automatically every day (and at
+      startup). A charge imported from a CSV replaces the occurrence created
+      automatically, so the bank's charge and the automatic one are never both counted.
+  - name: Analytics
+  - name: Copilot
+
+security:
+  - accessToken: []
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [Health]
+      summary: Application health check
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, environment]
+                properties:
+                  status: { type: string, example: ok }
+                  environment: { type: string, example: development }
+
+  /api/v1/health/public:
+    get:
+      tags: [Health]
+      summary: Public health check
+      operationId: getHealthPublic
+      security: []
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /api/v1/health/protected:
+    get:
+      tags: [Health]
+      summary: Authenticated health check
+      operationId: getHealthProtected
+      responses:
+        "200":
+          description: OK, returns the caller's role.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, role]
+                properties:
+                  status: { type: string, example: ok }
+                  role: { $ref: "#/components/schemas/UserRole" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/health/admin:
+    get:
+      tags: [Health]
+      summary: Admin-only health check
+      operationId: getHealthAdmin
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, scope]
+                properties:
+                  status: { type: string, example: ok }
+                  scope: { type: string, example: admin }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is not ADMIN (code `ROLE_FORBIDDEN`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+              example:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                detail: Insufficient role permissions.
+                code: ROLE_FORBIDDEN
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      description: |
+        Rate limited to 5 requests per minute per client IP. Unknown email,
+        wrong password and inactive user all return the same 401. An
+        `Authorization` header, if sent, is ignored.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Credentials are valid.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401":
+          description: Invalid credentials (code `INVALID_CREDENTIALS`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the refresh token
+      description: |
+        Send the **refresh** token as `Authorization: Bearer <refresh_token>`.
+        Returns a new token pair and revokes the old refresh token (rotation:
+        each refresh token works once). Using an already rotated token again is
+        treated as theft (`REFRESH_TOKEN_REUSE`): every refresh token of the user
+        is revoked and all sessions must log in again. A token revoked by logout
+        is just invalid (`INVALID_REFRESH_TOKEN`). Clients should not refresh
+        concurrently with the same token. Rate limited to 10 requests per minute
+        per client IP.
+      operationId: refreshTokens
+      security:
+        - refreshToken: []
+      responses:
+        "200":
+          description: New token pair.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+        "401":
+          description: |
+            Token missing (`UNAUTHORIZED`); malformed, expired, badly signed or not a
+            refresh token (`INVALID_TOKEN`); unknown, revoked or of an inactive user
+            (`INVALID_REFRESH_TOKEN`); or reused after rotation (`REFRESH_TOKEN_REUSE`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+              example:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                detail: Refresh token reuse detected.
+                code: REFRESH_TOKEN_REUSE
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the refresh token
+      description: |
+        Send the **refresh** token as `Authorization: Bearer <refresh_token>`.
+        Revokes only that session. Idempotent: an already revoked token also gets
+        200. The access token stays valid until it expires. Rate limited to 20
+        requests per minute per client IP.
+      operationId: logout
+      security:
+        - refreshToken: []
+      responses:
+        "200":
+          description: Refresh token revoked.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageResponse" }
+              example: { message: Logged out. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: The authenticated user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/accounts:
+    get:
+      tags: [Accounts]
+      summary: List the caller's accounts
+      description: Replaces the former `GET /connections`.
+      operationId: listAccounts
+      responses:
+        "200":
+          description: Accounts owned by the caller, sorted by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Account" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Accounts]
+      summary: Create an account
+      operationId: createAccount
+      x-status: planned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccountCreateRequest" }
+      responses:
+        "201":
+          description: Account created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/AccountNameConflict" }
+
+  /api/v1/accounts/{account_id}:
+    parameters:
+      - $ref: "#/components/parameters/AccountIdPath"
+    get:
+      tags: [Accounts]
+      summary: Get one account
+      operationId: getAccount
+      x-status: planned
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+    patch:
+      tags: [Accounts]
+      summary: Edit an account (name, monthly budget)
+      description: Only the fields sent are changed.
+      operationId: updateAccount
+      x-status: planned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccountUpdateRequest" }
+      responses:
+        "200":
+          description: Updated account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+        "409": { $ref: "#/components/responses/AccountNameConflict" }
+
+  /api/v1/accounts/{account_id}/budget:
+    parameters:
+      - $ref: "#/components/parameters/AccountIdPath"
+    get:
+      tags: [Accounts]
+      summary: Monthly budget usage of an account
+      description: |
+        `spent` is the sum of EXPENSE transactions in the month. Income does not
+        offset spending. If the account has no budget, `budget`, `remaining`
+        and `percentage_used` are `null` and `status` is `NO_BUDGET`. With a
+        budget of 0, `percentage_used` is `null` and any spending is `EXCEEDED`.
+      operationId: getAccountBudget
+      x-status: planned
+      parameters:
+        - name: month
+          in: query
+          description: Calendar month. Defaults to the current month (server time zone).
+          schema:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+            example: "2026-01"
+      responses:
+        "200":
+          description: Budget usage for the month.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BudgetUsage" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+
+  /api/v1/accounts/{account_id}/alerts:
+    parameters:
+      - $ref: "#/components/parameters/AccountIdPath"
+    get:
+      tags: [Analytics]
+      summary: Alerts of an account for a month
+      description: |
+        Computed on every request from the monthly budget and the recurring
+        transactions (deterministic rules, nothing is stored). Sorted by
+        `severity` (CRITICAL, WARNING, INFO). See `AlertType` for the list and
+        the fields of `data` for each type.
+      operationId: listAccountAlerts
+      parameters:
+        - name: month
+          in: query
+          description: Calendar month. Defaults to the current month (server time zone).
+          schema:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+            example: "2026-11"
+      responses:
+        "200":
+          description: The alerts (an empty array when there are none).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Alert" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+
+  /api/v1/transactions:
+    get:
+      tags: [Transactions]
+      summary: List transactions of an account (paginated)
+      description: |
+        Soft-deleted transactions are never returned. Sorted by `datetime`,
+        newest first. `start_date` / `end_date` filter on the date part of `datetime`.
+      operationId: listTransactions
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+        - $ref: "#/components/parameters/StartDate"
+        - $ref: "#/components/parameters/EndDate"
+      responses:
+        "200":
+          description: One page of transactions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionPage" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+    post:
+      tags: [Transactions]
+      summary: Create a single transaction (manual entry)
+      description: |
+        Used by the frontend form. Other channels (CSV import, a future
+        WhatsApp integration) convert their input into this same shape and
+        reuse the same creation logic.
+
+        If `category_group` is omitted, it is assigned automatically. `category`
+        is free text (e.g. "Gas" inside the "Utilities" group) and is never guessed.
+
+        With `recurrence`, the transaction becomes occurrence 0 of a new recurring
+        transaction. If its date is in the past, the occurrences already due are
+        created at once (an existing charge of the same merchant close to a due
+        date is linked instead of creating another one).
+      operationId: createTransaction
+      x-status: planned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransactionCreateRequest" }
+      responses:
+        "201":
+          description: Transaction created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+
+  /api/v1/transactions/{transaction_id}:
+    parameters:
+      - $ref: "#/components/parameters/TransactionIdPath"
+    get:
+      tags: [Transactions]
+      summary: Get one transaction
+      operationId: getTransaction
+      x-status: planned
+      responses:
+        "200":
+          description: The transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/TransactionNotFound" }
+    patch:
+      tags: [Transactions]
+      summary: Edit a transaction
+      description: |
+        Only the fields sent are changed. The amount sign rule is checked
+        against the resulting `type` and `amount` (e.g. changing `type` to
+        INCOME while keeping a positive amount is rejected). Moving it to
+        another account is allowed if that account belongs to the caller; it
+        then stops being an occurrence of its recurring transaction.
+      operationId: updateTransaction
+      x-status: planned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransactionUpdateRequest" }
+      responses:
+        "200":
+          description: Updated transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Transaction not found, or the target `account_id` is not one of the caller's accounts.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+    delete:
+      tags: [Transactions]
+      summary: Delete a transaction (soft delete)
+      description: |
+        Marks the transaction as deleted (sets `deleted_at` internally). The row
+        is kept in the database but excluded from listings, analytics and
+        budgets. Deleting an already deleted transaction returns 404. Deleting an
+        occurrence of a recurring transaction does not create it again.
+      operationId: deleteTransaction
+      x-status: planned
+      responses:
+        "204":
+          description: Transaction deleted. No body.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/TransactionNotFound" }
+
+  /api/v1/transactions/upload-csv:
+    post:
+      tags: [Transactions]
+      summary: Import transactions from a CSV file
+      description: |
+        The file must be UTF-8 (a leading byte order mark is accepted) and have a
+        header row with these columns, in this order (case-insensitive):
+        `Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes`.
+        Each data row is described by the `CsvTransactionRow` schema. Values are
+        trimmed; empty optional values are stored as null. Maximum file size is 1 MiB.
+
+        Import rules:
+        - **All or nothing.** Every row is validated first. If any row is
+          invalid, nothing is imported (no transactions, no accounts) and the
+          response lists the row errors (`CSV_INVALID_ROWS`), at most 100;
+          `detail` gives the total number of invalid rows. A row with the wrong
+          number of columns is reported with `field: row`.
+        - **Accounts.** Each row goes to the caller's account whose name
+          matches the `Account` column (case-insensitive). Missing accounts
+          are created. An empty `Account` is a row error.
+        - **Duplicates.** Each row gets a fingerprint of
+          (account, datetime, name, amount, occurrence within the file).
+          Rows whose fingerprint already exists are skipped and counted in
+          `records_duplicated`, so uploading the same file twice is safe.
+      operationId: uploadTransactionsCsv
+      x-status: planned
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: CSV file (`.csv`). Rows follow `CsvTransactionRow`.
+                  x-csv-row-schema:
+                    $ref: "#/components/schemas/CsvTransactionRow"
+            encoding:
+              file:
+                contentType: text/csv
+      responses:
+        "201":
+          description: File processed. New rows imported, duplicates skipped.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CsvUploadResponse" }
+        "400":
+          description: |
+            Problem with the file as a whole (`VALIDATION_ERROR` on field `file`:
+            missing, empty, not `.csv`, not UTF-8, wrong header or broken quoting),
+            or one or more invalid rows (`CSV_INVALID_ROWS`, with `row` set in each error).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+              example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                detail: 2 rows have errors. Nothing was imported.
+                code: CSV_INVALID_ROWS
+                errors:
+                  - { row: 14, field: Amount, message: INCOME amounts must be negative. }
+                  - { row: 27, field: Account, message: Account is required. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: The same file is being imported at the same time by another request (`CONFLICT`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+        "413":
+          description: File larger than 1 MiB (`PAYLOAD_TOO_LARGE`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+
+  /api/v1/recurring-transactions:
+    get:
+      tags: [Recurring transactions]
+      summary: List the recurring transactions of an account
+      description: Sorted by name. Includes the ones that have ended (`next_due_date` null).
+      operationId: listRecurringTransactions
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: The recurring transactions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RecurringTransaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+    post:
+      tags: [Recurring transactions]
+      summary: Make an existing transaction recurring
+      description: |
+        The rule copies the transaction's account, type, name, amount, group,
+        category and notes; the transaction becomes occurrence 0. Occurrences
+        already due are created at once, as in `POST /transactions` with `recurrence`.
+      operationId: createRecurringTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecurringTransactionCreateRequest" }
+      responses:
+        "201":
+          description: Recurring transaction created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTransaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/TransactionNotFound" }
+        "409":
+          description: The transaction is already an occurrence of a recurring transaction (`ALREADY_RECURRING`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+              example:
+                type: about:blank
+                title: Conflict
+                status: 409
+                detail: This transaction is already part of a recurring transaction.
+                code: ALREADY_RECURRING
+
+  /api/v1/recurring-transactions/{recurring_transaction_id}:
+    parameters:
+      - $ref: "#/components/parameters/RecurringTransactionIdPath"
+    get:
+      tags: [Recurring transactions]
+      summary: Get one recurring transaction
+      operationId: getRecurringTransaction
+      responses:
+        "200":
+          description: The recurring transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTransaction" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/RecurringTransactionNotFound" }
+    patch:
+      tags: [Recurring transactions]
+      summary: Edit a recurring transaction
+      description: |
+        Only the fields sent are changed, and only the occurrences created from
+        now on use them: existing transactions are not modified.
+
+        `end_date` stops the rule (no occurrence after it is created); `null`
+        removes it. A rule that had ended resumes from the first occurrence
+        after today; the ones skipped meanwhile are not created.
+      operationId: updateRecurringTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecurringTransactionUpdateRequest" }
+      responses:
+        "200":
+          description: Updated recurring transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTransaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/RecurringTransactionNotFound" }
+    delete:
+      tags: [Recurring transactions]
+      summary: Delete a recurring transaction
+      description: |
+        No more occurrences are created. The transactions already created are
+        kept as ordinary transactions (their `recurring_transaction_id` becomes null).
+      operationId: deleteRecurringTransaction
+      responses:
+        "204":
+          description: Recurring transaction deleted. No body.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/RecurringTransactionNotFound" }
+
+  /api/v1/analytics/summary:
+    get:
+      tags: [Analytics]
+      summary: Income and expense summary for an account
+      description: All figures are positive. Soft-deleted transactions are excluded.
+      operationId: getAnalyticsSummary
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+        - $ref: "#/components/parameters/StartDate"
+        - $ref: "#/components/parameters/EndDate"
+      responses:
+        "200":
+          description: Aggregated figures.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnalyticsSummary" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+
+  /api/v1/analytics/by-category-group:
+    get:
+      tags: [Analytics]
+      summary: Breakdown by category group
+      description: Amounts are positive. By default only expenses are included.
+      operationId: getAnalyticsByCategoryGroup
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+        - name: type
+          in: query
+          description: Which transactions to break down.
+          schema:
+            allOf: [{ $ref: "#/components/schemas/TransactionType" }]
+            default: EXPENSE
+        - $ref: "#/components/parameters/StartDate"
+        - $ref: "#/components/parameters/EndDate"
+      responses:
+        "200":
+          description: One entry per category group, sorted by amount (descending).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CategoryGroupBreakdown" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+
+  /api/v1/copilot/chat:
+    post:
+      tags: [Copilot]
+      summary: Ask the AI copilot about an account's finances
+      description: Requires the Ollama provider (OLLAMA_BASE_URL) to be reachable.
+      operationId: copilotChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChatRequest" }
+      responses:
+        "200":
+          description: The model's answer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+        "503":
+          description: The AI provider is unreachable or timed out (`AI_UNAVAILABLE`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+              example:
+                type: about:blank
+                title: Service Unavailable
+                status: 503
+                detail: The AI assistant is not available right now. Try again later.
+                code: AI_UNAVAILABLE
+
+components:
+  securitySchemes:
+    accessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Access token from /auth/login or /auth/refresh (HS256, 15 min by default).
+        Claims: sub (user id, UUID), role, type=access, iss, aud, jti, iat, nbf, exp.
+        Stateless: validated without a database lookup, so a role change or a
+        deactivation applies when the token is next refreshed. A missing token is
+        `UNAUTHORIZED`; an invalid, expired or wrong-type token is `INVALID_TOKEN`.
+    refreshToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Refresh token (type=refresh, 14 days by default, single use). Only for
+        /auth/refresh and /auth/logout. Claims: sub, type=refresh, iss, aud, jti,
+        iat, nbf, exp. The server stores only its jti.
+
+  parameters:
+    AccountId:
+      name: account_id
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
+    AccountIdPath:
+      name: account_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RecurringTransactionIdPath:
+      name: recurring_transaction_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TransactionIdPath:
+      name: transaction_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    StartDate:
+      name: start_date
+      in: query
+      schema: { type: string, format: date, example: "2025-01-01" }
+    EndDate:
+      name: end_date
+      in: query
+      description: Must be on or after start_date, otherwise `VALIDATION_ERROR`.
+      schema: { type: string, format: date, example: "2025-12-31" }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid access token (`UNAUTHORIZED`, `INVALID_TOKEN`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+          example:
+            type: about:blank
+            title: Unauthorized
+            status: 401
+            detail: Authentication is required.
+            code: UNAUTHORIZED
+    ValidationError:
+      description: Invalid body or query (`VALIDATION_ERROR`). Each problem is listed in `errors`.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+          examples:
+            fieldErrors:
+              value:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                detail: 2 fields are invalid.
+                code: VALIDATION_ERROR
+                errors:
+                  - { field: account_id, message: Missing data for required field. }
+                  - { field: amount, message: INCOME amounts must be negative. }
+            unknownFields:
+              value:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                detail: Unknown fields.
+                code: VALIDATION_ERROR
+                errors:
+                  - { field: foo, message: Unknown field. }
+    RateLimited:
+      description: Too many requests (`RATE_LIMIT_EXCEEDED`). `Retry-After` gives the seconds to wait.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    AccountNotFound:
+      description: Account does not exist or belongs to another user (`NOT_FOUND`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: Account not found.
+            code: NOT_FOUND
+    AccountNameConflict:
+      description: The caller already has an account with that name (`CONFLICT`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            detail: An account with this name already exists.
+            code: CONFLICT
+    TransactionNotFound:
+      description: |
+        Transaction does not exist, is soft-deleted, or belongs to another user
+        (`NOT_FOUND`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: Transaction not found.
+            code: NOT_FOUND
+    RecurringTransactionNotFound:
+      description: Recurring transaction does not exist or belongs to another user (`NOT_FOUND`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: Recurring transaction not found.
+            code: NOT_FOUND
+
+  schemas:
+    Money:
+      type: string
+      pattern: '^-?\d{1,12}(\.\d{1,2})?$'
+      description: Signed decimal amount serialized as a string, up to 12 digits and 2 decimals (numeric(14,2)).
+      example: "147.06"
+
+    PositiveMoney:
+      type: string
+      pattern: '^\d{1,12}(\.\d{1,2})?$'
+      description: Non-negative decimal amount serialized as a string, up to 12 digits and 2 decimals (numeric(14,2)).
+      example: "5000.00"
+
+    Percentage:
+      type: string
+      pattern: '^\d+(\.\d{1,2})?$'
+      description: Percentage (0-100, may exceed 100 for budgets) with 2 decimals.
+      example: "75.00"
+
+    LocalDateTime:
+      type: string
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$'
+      description: |
+        Local date-time without timezone (ISO 8601), e.g. what the user saw on
+        the receipt. Responses always include seconds. Not to be confused with
+        `created_at` / `updated_at`, which are UTC instants ending in `Z`.
+      example: "2026-01-02T13:35:00"
+
+    UserRole:
+      type: string
+      enum: [ADMIN, CLIENT]
+
+    CategoryGroup:
+      type: string
+      description: |
+        Closed list of category groups (table category_groups). The category
+        inside a group is free text.
+      enum:
+        - Utilities
+        - Others
+        - Household
+        - Entertainment
+        - Services
+        - Electronics
+        - Food
+        - Education
+        - Pet
+        - Employer
+        - Travel
+        - Health
+        - Snacks
+        - Drink
+        - Shopping
+        - Personal
+        - House
+        - Bebida
+        - Other
+        - Higiene personal
+        - Gift
+        - Car
+        - Aseo personal
+        - Currencies
+        - Home
+        - Salary
+
+    TransactionType:
+      type: string
+      enum: [EXPENSE, INCOME]
+      description: |
+        Determines the amount sign: EXPENSE > 0, INCOME < 0.
+        TRANSFER is intentionally left out for now; it can be added later
+        (two linked rows plus `to_account_id`) without breaking clients.
+
+    ProblemDetail:
+      type: object
+      description: |
+        RFC 9457 Problem Details, as produced by Spring's `ProblemDetail`,
+        extended with `code` and `errors`.
+      required: [title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          default: about:blank
+          description: Omitted when it is `about:blank` (RFC 9457 default).
+        title:
+          type: string
+          description: Short summary of the HTTP status.
+          example: Bad Request
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          description: Human-readable explanation of this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: Request path that produced the error.
+          example: /api/v1/transactions
+        code:
+          type: string
+          description: Machine-readable error code. Clients should branch on this, not on `detail`.
+          examples:
+            - VALIDATION_ERROR
+            - CSV_INVALID_ROWS
+            - UNAUTHORIZED
+            - INVALID_TOKEN
+            - INVALID_CREDENTIALS
+            - INVALID_REFRESH_TOKEN
+            - REFRESH_TOKEN_REUSE
+            - ROLE_FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - RATE_LIMIT_EXCEEDED
+            - PAYLOAD_TOO_LARGE
+            - AI_UNAVAILABLE
+            - INTERNAL_SERVER_ERROR
+        errors:
+          type: array
+          description: Present for `VALIDATION_ERROR` and `CSV_INVALID_ROWS`.
+          items: { $ref: "#/components/schemas/FieldError" }
+
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        row:
+          type: integer
+          minimum: 1
+          description: CSV row number (header excluded). Only for `CSV_INVALID_ROWS`.
+        field:
+          type: string
+          description: JSON field or CSV column name.
+          example: amount
+        message:
+          type: string
+          example: INCOME amounts must be negative.
+
+    StatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, example: ok }
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 255, example: client1@example.local }
+        password: { type: string, minLength: 1, maxLength: 1024, example: ClientPass123! }
+
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+
+    User:
+      type: object
+      required: [id, username, email, role, is_active]
+      properties:
+        id: { type: string, format: uuid, description: Public user id (JWT `sub`). }
+        username: { type: string, example: client1 }
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/UserRole" }
+        is_active: { type: boolean }
+
+    Account:
+      type: object
+      description: |
+        A money container of the user (debit card, cash, savings...). Replaces
+        the former `Connection`. Transactions always belong to one account.
+      required: [id, name, monthly_budget, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        name:
+          type: string
+          description: Unique per user (case-insensitive). Matched against the CSV `Account` column.
+          example: Debit card
+        monthly_budget:
+          oneOf:
+            - $ref: "#/components/schemas/PositiveMoney"
+            - type: "null"
+          description: Spending limit per calendar month. `null` means no budget.
+          example: "5000.00"
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-01-02T19:35:12Z"
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-01-02T19:35:12Z"
+
+    AccountCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, example: Debit card }
+        monthly_budget:
+          oneOf:
+            - $ref: "#/components/schemas/PositiveMoney"
+            - type: "null"
+          description: Omit or send `null` for no budget.
+
+    AccountUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Partial update. Send `monthly_budget = null` to remove the budget.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        monthly_budget:
+          oneOf:
+            - $ref: "#/components/schemas/PositiveMoney"
+            - type: "null"
+
+    BudgetUsage:
+      type: object
+      required: [account_id, month, budget, spent, remaining, percentage_used, status]
+      properties:
+        account_id: { type: string, format: uuid }
+        month:
+          type: string
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          example: "2026-01"
+        budget:
+          oneOf:
+            - $ref: "#/components/schemas/PositiveMoney"
+            - type: "null"
+          example: "5000.00"
+        spent:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          description: Sum of EXPENSE amounts in the month.
+          example: "3750.00"
+        remaining:
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+          description: budget - spent. Negative when the budget is exceeded.
+          example: "1250.00"
+        percentage_used:
+          oneOf:
+            - $ref: "#/components/schemas/Percentage"
+            - type: "null"
+          example: "75.00"
+        status:
+          type: string
+          enum: [ON_TRACK, WARNING, EXCEEDED, NO_BUDGET]
+          description: |
+            ON_TRACK below 80 %, WARNING from 80 % to 100 %, EXCEEDED above 100 %,
+            NO_BUDGET when the account has no monthly budget. Compared on exact
+            amounts, not on the rounded `percentage_used` (79.999 % is ON_TRACK).
+
+    Transaction:
+      type: object
+      description: |
+        A stored transaction. Same fields as `TransactionCreateRequest`, plus
+        the server-assigned ones (`id`, `user_id`, timestamps).
+        Optional input fields are always present here, as `null` when not provided.
+        `deleted_at` is internal and never exposed: deleted transactions are not returned.
+      required: [id, user_id, account_id, type, datetime, name, amount, category_group, category, notes, recurring_transaction_id, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        account_id: { type: string, format: uuid }
+        type: { $ref: "#/components/schemas/TransactionType" }
+        datetime: { $ref: "#/components/schemas/LocalDateTime" }
+        name:
+          type: string
+          description: Merchant or payee name.
+          example: La tiendita de la esquina
+        amount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Signed by type (EXPENSE positive, INCOME negative).
+          example: "100.00"
+        category_group: { $ref: "#/components/schemas/CategoryGroup" }
+        category:
+          type: [string, "null"]
+          description: Free text inside the group.
+          example: Gas
+        notes:
+          type: [string, "null"]
+        recurring_transaction_id:
+          type: [string, "null"]
+          format: uuid
+          readOnly: true
+          description: The recurring transaction this one is an occurrence of; null when it is not recurring.
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: When the transaction was stored (UTC).
+          example: "2026-01-02T19:35:12Z"
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Last modification (UTC). Equals created_at until the first edit.
+          example: "2026-01-02T19:35:12Z"
+
+    TransactionPage:
+      type: object
+      required: [content, page, size, total_elements, total_pages, has_more]
+      properties:
+        content:
+          type: array
+          items: { $ref: "#/components/schemas/Transaction" }
+        page: { type: integer, example: 1 }
+        size:
+          type: integer
+          description: Number of items in this page (not the requested size).
+          example: 2
+        total_elements: { type: integer, example: 763 }
+        total_pages: { type: integer, example: 382 }
+        has_more: { type: boolean }
+
+    TransactionCreateRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        Input for creating one transaction. Field-by-field equivalent of a
+        `CsvTransactionRow`, in snake_case, with `account_id` instead of the
+        account name. The amount sign must match `type`; otherwise the request
+        fails with `VALIDATION_ERROR`.
+      required: [type, datetime, name, amount, account_id]
+      properties:
+        type: { $ref: "#/components/schemas/TransactionType" }
+        datetime:
+          allOf: [{ $ref: "#/components/schemas/LocalDateTime" }]
+          description: |
+            Value of the form's `<input type="datetime-local">`. Seconds are
+            optional on input (`"2026-01-02T13:35"` is accepted).
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Merchant or payee name.
+          example: La tiendita de la esquina
+        amount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Signed by type (EXPENSE positive, INCOME negative). Zero is not allowed.
+          example: "100.00"
+        category_group:
+          allOf: [{ $ref: "#/components/schemas/CategoryGroup" }]
+          description: Omit to let the backend assign the group.
+          example: Utilities
+        category:
+          type: string
+          maxLength: 100
+          description: Free text inside the group.
+          example: Gas
+        account_id: { type: string, format: uuid }
+        notes:
+          type: string
+          maxLength: 1000
+        recurrence:
+          $ref: "#/components/schemas/RecurrenceRequest"
+
+    RecurrenceFrequency:
+      type: string
+      enum: [WEEKLY, BIWEEKLY, MONTHLY, YEARLY]
+      description: |
+        Every due date is computed from `start_date`: a monthly rule that starts
+        on January 31 is due on February 28, then March 31. BIWEEKLY is every 2 weeks.
+
+    RecurrenceRequest:
+      type: object
+      additionalProperties: false
+      description: Repeat the transaction automatically.
+      required: [frequency]
+      properties:
+        frequency: { $ref: "#/components/schemas/RecurrenceFrequency" }
+        end_date:
+          type: string
+          format: date
+          description: Last day an occurrence may fall on. Not before the transaction's date. Omit for no end.
+          example: "2027-12-31"
+
+    RecurringTransaction:
+      type: object
+      description: |
+        A rule from which the next occurrences of a transaction are created.
+        Changes apply to the occurrences created afterwards.
+      required: [id, account_id, type, name, amount, category_group, category, notes, frequency,
+                 start_date, end_date, next_due_date, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        account_id: { type: string, format: uuid }
+        type: { $ref: "#/components/schemas/TransactionType" }
+        name: { type: string, example: Netflix }
+        amount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Expected amount, signed by type. Generated occurrences use it.
+          example: "199.00"
+        category_group: { $ref: "#/components/schemas/CategoryGroup" }
+        category: { type: [string, "null"], example: Streaming }
+        notes: { type: [string, "null"] }
+        frequency: { $ref: "#/components/schemas/RecurrenceFrequency" }
+        start_date:
+          type: string
+          format: date
+          description: Due date of occurrence 0 (the original transaction).
+          example: "2026-09-05"
+        end_date:
+          type: [string, "null"]
+          format: date
+          description: Last day an occurrence may fall on; null for no end.
+        next_due_date:
+          type: [string, "null"]
+          format: date
+          description: Next occurrence to be created; null once the rule has ended.
+          example: "2026-12-05"
+        created_at: { type: string, format: date-time, readOnly: true }
+        updated_at: { type: string, format: date-time, readOnly: true }
+
+    RecurringTransactionCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [transaction_id, frequency]
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+          description: The transaction that becomes occurrence 0.
+        frequency: { $ref: "#/components/schemas/RecurrenceFrequency" }
+        end_date:
+          type: string
+          format: date
+          description: Not before the transaction's date. Omit for no end.
+
+    RecurringTransactionUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: |
+        Partial update. Send `null` to clear `category`, `notes` or `end_date`.
+        `type`, `frequency` and the dates of the occurrences cannot change:
+        delete the rule and create another one instead.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        amount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Must keep the sign of the rule's type.
+        category_group: { $ref: "#/components/schemas/CategoryGroup" }
+        category: { type: [string, "null"], maxLength: 100 }
+        notes: { type: [string, "null"], maxLength: 1000 }
+        end_date:
+          type: [string, "null"]
+          format: date
+          description: Not before `start_date`. Setting it to today stops the rule.
+
+    AlertType:
+      type: string
+      enum: [BUDGET_EXCEEDED, BUDGET_WARNING, RECURRING_MISSING, RECURRING_PRICE_CHANGED,
+             RECURRING_UPCOMING, SUBSCRIPTION_AUDIT, RECURRING_SUGGESTED]
+      description: |
+        Fields of `data` per type (money as strings, dates as `yyyy-MM-dd`):
+
+        - `BUDGET_EXCEEDED` (CRITICAL) / `BUDGET_WARNING` (WARNING, from 80 %):
+          `month`, `budget`, `spent`, `remaining`, `percentage_used`.
+        - `RECURRING_MISSING` (WARNING): an occurrence created automatically
+          that the imported bank statements do not show, although they already
+          cover its date (maybe the subscription was cancelled).
+          `transaction_id`, `recurring_transaction_id`, `name`, `amount`, `due_date`.
+          Action `STOP_RECURRING`.
+        - `RECURRING_PRICE_CHANGED` (WARNING): a real charge of a recurring
+          transaction with another amount. `recurring_transaction_id`,
+          `transaction_id`, `name`, `expected_amount`, `charged_amount`,
+          `change_percentage` (by absolute value, positive = more), `due_date`.
+          Action `UPDATE_RECURRING_AMOUNT`.
+        - `RECURRING_UPCOMING` (INFO, current month only): an occurrence due in
+          the next 7 days. `recurring_transaction_id`, `name`, `amount`, `due_date`.
+        - `SUBSCRIPTION_AUDIT` (INFO): recurring expenses charged this month at
+          the expected amount, when there is no price change. `month`, `count`,
+          `names` (one per recurring transaction).
+        - `RECURRING_SUGGESTED` (INFO): at least 3 charges of the same merchant,
+          not recurring yet, at a regular interval and similar amounts (±10 %).
+          `transaction_id` (the latest charge), `name`, `amount`, `frequency`,
+          `occurrences`. Action `CREATE_RECURRING`.
+
+    Alert:
+      type: object
+      required: [id, type, severity, data, action]
+      properties:
+        id:
+          type: string
+          description: |
+            Stable identifier of the situation (the same alert keeps the same
+            id), so clients can remember which alerts the user dismissed.
+          example: BUDGET_WARNING:2026-11
+        type: { $ref: "#/components/schemas/AlertType" }
+        severity:
+          type: string
+          enum: [CRITICAL, WARNING, INFO]
+        data:
+          type: object
+          additionalProperties: true
+          description: Structured values; the fields depend on `type`. The client writes the text.
+          example: { month: "2026-11", budget: "400.00", spent: "350.00", remaining: "50.00", percentage_used: "87.50" }
+        action:
+          type: [string, "null"]
+          enum: [CREATE_RECURRING, UPDATE_RECURRING_AMOUNT, STOP_RECURRING, null]
+          description: |
+            What the client can offer: `CREATE_RECURRING` is `POST /recurring-transactions`
+            with `data.transaction_id` and `data.frequency`; `UPDATE_RECURRING_AMOUNT` is
+            `PATCH /recurring-transactions/{data.recurring_transaction_id}` with
+            `amount` = `data.charged_amount`; `STOP_RECURRING` is the same PATCH with an `end_date`.
+
+    TransactionUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: |
+        Partial update; same fields and rules as `TransactionCreateRequest`.
+        Send `null` to clear an optional field (`category`, `notes`). Setting
+        `category_group` records it as chosen by the user.
+      properties:
+        type: { $ref: "#/components/schemas/TransactionType" }
+        datetime: { $ref: "#/components/schemas/LocalDateTime" }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        amount: { $ref: "#/components/schemas/Money" }
+        category_group: { $ref: "#/components/schemas/CategoryGroup" }
+        category: { type: [string, "null"], maxLength: 100 }
+        account_id: { type: string, format: uuid }
+        notes: { type: [string, "null"], maxLength: 1000 }
+
+    CsvTransactionRow:
+      type: object
+      description: |
+        One data row of the uploaded CSV (input format, not an API response).
+        Property names are the exact CSV header names. The file is cleaned
+        before upload, so Category Group values already match the `CategoryGroup` enum.
+      required: [Type, Date, Name, Amount, Account]
+      properties:
+        Type:
+          type: string
+          enum: [Expense, Income]
+          description: Mapped to `TransactionType` (Expense → EXPENSE, Income → INCOME).
+        Date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$'
+          description: |
+            Datetime without timezone, `yyyy-MM-dd HH:mm:ss` (space separator).
+            Becomes the transaction `datetime` (the space is replaced by `T`).
+          example: "2026-01-02 13:35:00"
+        Time:
+          type: [string, "null"]
+          description: |
+            Ignored on import: `Date` already contains the time. Kept only
+            because the source file has the column.
+          example: "13:35"
+        Name:
+          type: string
+          description: Merchant or payee name.
+          example: La tiendita de la esquina
+        Amount:
+          type: string
+          description: |
+            Up to 12 digits and 2 decimals, never zero. The sign is ignored: `Type`
+            decides it, so bank exports (expenses negative) and API-style files
+            (expenses positive) both work. Stored with the API rule (EXPENSE
+            positive, INCOME negative); the same row with either sign is a duplicate.
+          example: "-232.50"
+        Category Group:
+          oneOf:
+            - $ref: "#/components/schemas/CategoryGroup"
+            - type: "null"
+          description: |
+            Exact group label. When empty, the group is assigned automatically
+            (same as a form transaction without `category_group`).
+          example: Utilities
+        Category:
+          type: [string, "null"]
+          maxLength: 100
+          description: Free text inside the group.
+          example: Gas
+        Account:
+          type: string
+          minLength: 1
+          description: Account name; matched against the caller's accounts (created if missing).
+          example: Debit card
+        Notes:
+          type: [string, "null"]
+
+    CsvUploadResponse:
+      type: object
+      required: [records_imported, records_duplicated, recurring_matched, accounts_created]
+      properties:
+        records_imported:
+          type: integer
+          description: New transactions stored.
+          example: 740
+        records_duplicated:
+          type: integer
+          description: Rows skipped because they were already imported.
+          example: 23
+        recurring_matched:
+          type: integer
+          description: |
+            Imported rows linked to a recurring transaction: same account, type and
+            merchant, dated close to a due date. Each one replaces the occurrence that
+            had been created automatically (which is deleted), or covers a future one.
+          example: 2
+        accounts_created:
+          type: array
+          description: Accounts created because the CSV referenced names that did not exist.
+          items: { $ref: "#/components/schemas/Account" }
+
+    AnalyticsSummary:
+      type: object
+      required: [total_expenses, total_income, net, expense_count, income_count, average_expense, largest_expense]
+      properties:
+        total_expenses:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          example: "12500.00"
+        total_income:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          example: "20000.00"
+        net:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: total_income - total_expenses. Positive means you saved money.
+          example: "7500.00"
+        expense_count: { type: integer, example: 140 }
+        income_count: { type: integer, example: 2 }
+        average_expense:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          example: "89.29"
+        largest_expense:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          example: "1721.94"
+
+    CategoryGroupBreakdown:
+      type: object
+      required: [category_group, amount, percentage, count]
+      properties:
+        category_group: { $ref: "#/components/schemas/CategoryGroup" }
+        amount: { $ref: "#/components/schemas/PositiveMoney" }
+        percentage:
+          allOf: [{ $ref: "#/components/schemas/Percentage" }]
+          description: |
+            Share of the total for the selected type, rounded half-up. After rounding,
+            the percentages of all groups may add up to slightly more or less than 100.
+          example: "22.62"
+        count: { type: integer, example: 154 }
+
+    ChatRequest:
+      type: object
+      additionalProperties: false
+      required: [message, account_id]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 1000 }
+        account_id: { type: string, format: uuid }
+
+    ChatResponse:
+      type: object
+      required: [response, provider, model]
+      properties:
+        response: { type: string }
+        provider: { type: string, example: ollama }
+        model: { type: string, example: "expense_llama3.2:latest" }

@@ -1,0 +1,60 @@
+spring:
+  application:
+    name: financial-coach
+
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    # Flyway owns the schema. Hibernate only checks that entities match it.
+    hibernate:
+      ddl-auto: validate
+    # Avoid lazy-loading queries during view rendering (hidden N+1 queries).
+    open-in-view: false
+    properties:
+      # CSV imports insert hundreds of rows: send them to PostgreSQL in batches.
+      hibernate.jdbc.batch_size: 100
+      hibernate.order_inserts: true
+
+  # CSV upload limit of the contract (1 MiB file); larger requests get 413 PAYLOAD_TOO_LARGE.
+  servlet:
+    multipart:
+      max-file-size: 1MB
+      max-request-size: 1100KB
+
+  flyway:
+    locations: classpath:db/migration
+
+  # JSON conventions of docs/openapi.yaml.
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    deserialization:
+      # Unknown fields in a request body are rejected with VALIDATION_ERROR.
+      fail-on-unknown-properties: true
+
+financial-coach:
+  jwt:
+    # HS256 key, at least 32 bytes. Required: the app does not start without it.
+    secret: ${JWT_SECRET_KEY}
+    issuer: ${JWT_ISSUER:financial-coach-api}
+    audience: ${JWT_AUDIENCE:financial-coach-clients}
+    access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:15m}
+    refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:14d}
+  # Browser origins allowed to call the API (comma separated). Default: the Vite dev server.
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  # Requests per minute and client IP on the token endpoints (openapi.yaml).
+  rate-limit:
+    login: 5
+    refresh: 10
+    logout: 20
+  # Generator of recurring transactions: daily (server time) and once at startup.
+  recurring:
+    scheduler-enabled: ${RECURRING_SCHEDULER_ENABLED:true}
+    cron: ${RECURRING_CRON:0 5 0 * * *}
+  # Daily deletion of expired refresh tokens.
+  refresh-token-cleanup:
+    enabled: true
+    cron: ${REFRESH_TOKEN_CLEANUP_CRON:0 30 3 * * *}

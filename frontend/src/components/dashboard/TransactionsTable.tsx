@@ -1,57 +1,65 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { Transaction } from '../../types/transaction';
+import type { RecurrenceFrequency } from '../../types/api';
+import { FREQUENCY_LABELS } from '../../types/recurring';
 import { CategoryBadge } from '../common/Badge';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
 interface TransactionsTableProps {
+  /** Heading, e.g. the day or month shown. */
+  title?: string;
   transactions: Transaction[];
+  loading?: boolean;
   selectedCategory: string;
   onOpenUpload: () => void;
+  onView: (transaction: Transaction) => void;
+  onEdit: (transaction: Transaction) => void;
+  onDelete: (transaction: Transaction) => void;
+  /** Makes a transaction occurrence 0 of a new recurring transaction. */
+  onMakeRecurring: (transaction: Transaction, frequency: RecurrenceFrequency) => void;
 }
 
-const ITEMS_PER_PAGE = 6;
+const FREQUENCIES = Object.keys(FREQUENCY_LABELS) as RecurrenceFrequency[];
+
+const ITEMS_PER_PAGE = 10;
+
+const actionButton =
+  'p-1.5 rounded-lg text-slate-400 transition-colors cursor-pointer';
 
 export const TransactionsTable: React.FC<TransactionsTableProps> = ({
+  title = 'Transactions',
   transactions,
+  loading = false,
   selectedCategory,
   onOpenUpload,
+  onView,
+  onEdit,
+  onDelete,
+  onMakeRecurring,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-
-  // Reset pagination to page 1 whenever category or search query changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [selectedCategory, searchQuery]);
+  /** Transaction whose "Make recurring" menu is open. */
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  // The page belongs to a filter: changing the category or the search goes back to page 1.
+  const filterKey = `${title}|${selectedCategory}|${searchQuery}`;
+  const [pageState, setPageState] = useState({ filterKey, page: 1 });
+  const requestedPage = pageState.filterKey === filterKey ? pageState.page : 1;
+  const setCurrentPage = (update: (page: number) => number) =>
+    setPageState({ filterKey, page: update(requestedPage) });
 
   // Filter transactions based on selected category & search query
   const filteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
-      const categoryName = tx.category;
-
-      // 1. Category Filter Dropdown
-      if (selectedCategory !== 'all') {
-        if (categoryName.toLowerCase() !== selectedCategory.toLowerCase()) {
-          return false;
-        }
+      // 1. Category filter
+      if (selectedCategory !== 'all' && tx.categoryGroup !== selectedCategory) {
+        return false;
       }
 
-      // 2. Search Query Filter (Safe String Casting for numeric IDs & MCCs)
+      // 2. Search: merchant, category, group, notes or amount
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const provider = (tx.provider_name || '').toLowerCase();
-        const mccStr = String(tx.mcc);
-        const idStr = String(tx.id || '').toLowerCase();
-        const amountStr = String(tx.amount || '');
-        const catStr = categoryName.toLowerCase();
-
-        return (
-          provider.includes(q) ||
-          mccStr.includes(q) ||
-          idStr.includes(q) ||
-          amountStr.includes(q) ||
-          catStr.includes(q)
-        );
+        return [tx.name, tx.categoryGroup, tx.category, tx.notes, Math.abs(tx.amount).toFixed(2)]
+          .some((value) => value?.toLowerCase().includes(q));
       }
 
       return true;
@@ -59,6 +67,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   }, [transactions, selectedCategory, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE));
+  // Also stays valid when the data shrinks (e.g. another account is selected).
+  const currentPage = Math.min(requestedPage, totalPages);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const displayedTransactions = filteredTransactions.slice(
     startIndex,
@@ -79,13 +89,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       <div className="p-5 md:p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-slate-900 font-sans">Recent Transactions</h3>
+            <h3 className="text-lg font-bold text-slate-900 font-sans">{title}</h3>
             <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono">
               {filteredTransactions.length} records
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Schema: <span className="font-mono text-slate-600">id, date, provider_name, amount, mcc</span>
+            Newest first · expenses and income of the selected account
           </p>
         </div>
 
@@ -99,7 +109,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search merchant or MCC..."
+              placeholder="Search merchant, category, notes..."
               className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-hidden w-48 sm:w-56 transition-all"
             />
             {searchQuery && (
@@ -120,20 +130,23 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           <thead>
             <tr className="bg-slate-50/75 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase font-mono tracking-wider">
               <th className="py-3 px-5">Date</th>
-              <th className="py-3 px-5">Provider / Merchant</th>
-              <th className="py-3 px-5">Category & MCC</th>
+              <th className="py-3 px-5">Merchant</th>
+              <th className="py-3 px-5">Category</th>
               <th className="py-3 px-5 text-right">Amount</th>
+              <th className="py-3 pr-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-sm">
             {displayedTransactions.length === 0 ? (
               <tr>
-                <td colSpan={4} className="py-12 text-center text-slate-400">
+                <td colSpan={5} className="py-12 text-center text-slate-400">
                   <div className="flex flex-col items-center justify-center">
                     <span className="material-symbols-outlined !text-[36px] text-slate-300 mb-2">
                       receipt_long
                     </span>
-                    <p className="text-sm font-medium text-slate-600">No transactions match your criteria</p>
+                    <p className="text-sm font-medium text-slate-600">
+                      {loading ? 'Loading transactions...' : 'No transactions match your criteria'}
+                    </p>
                     <p className="text-xs text-slate-400 mt-1">Try clearing your filters or upload a new dataset.</p>
                     <button
                       onClick={onOpenUpload}
@@ -147,7 +160,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               </tr>
             ) : (
               displayedTransactions.map((tx) => {
-                const isExpense = tx.amount < 0;
+                const isExpense = tx.type === 'EXPENSE';
                 return (
                   <tr
                     key={tx.id}
@@ -155,29 +168,43 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   >
                     {/* Date */}
                     <td className="py-3.5 px-5 text-xs font-medium text-slate-500 whitespace-nowrap">
-                      {formatDate(tx.date)}
+                      {formatDate(tx.datetime)}
+                      <span className="block text-[11px] font-mono text-slate-400">{tx.datetime.slice(11, 16)}</span>
                     </td>
 
-                    {/* Provider Name & ID */}
+                    {/* Merchant & notes */}
                     <td className="py-3.5 px-5">
                       <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200/60 flex items-center justify-center text-slate-700 font-semibold text-xs shrink-0 group-hover:bg-white group-hover:border-emerald-200 transition-colors">
-                          {(tx.provider_name || 'U').charAt(0).toUpperCase()}
+                          {tx.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <p className="font-semibold text-slate-900 leading-tight">
-                            {tx.provider_name || 'Unknown'}
+                          <p className="font-semibold text-slate-900 leading-tight flex items-center gap-1">
+                            {tx.name}
+                            {tx.recurringTransactionId && (
+                              <span
+                                className="material-symbols-outlined !text-[14px] text-emerald-600"
+                                title="Recurring: the next ones are added automatically"
+                              >
+                                repeat
+                              </span>
+                            )}
                           </p>
-                          <span className="text-[11px] font-mono text-slate-400">
-                            ID: {tx.id}
-                          </span>
+                          {tx.notes && (
+                            <span className="text-[11px] text-slate-400" title={tx.notes}>
+                              {tx.notes}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </td>
 
-                    {/* Category & MCC */}
+                    {/* Category */}
                     <td className="py-3.5 px-5 whitespace-nowrap">
-                      <CategoryBadge mcc={tx.mcc ?? 0} category={tx.category} />
+                      <CategoryBadge group={tx.categoryGroup} />
+                      {tx.category && (
+                        <span className="block text-[11px] text-slate-500 mt-1 pl-1">{tx.category}</span>
+                      )}
                     </td>
 
                     {/* Amount */}
@@ -187,8 +214,70 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                           isExpense ? 'text-slate-900' : 'text-emerald-600'
                         }`}
                       >
-                        {formatCurrency(tx.amount)}
+                        {isExpense ? '' : '+'}{formatCurrency(tx.amount)}
                       </span>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="py-3.5 pr-4 text-right relative whitespace-nowrap">
+                      <div className="inline-flex items-center gap-0.5">
+                        <button
+                          onClick={() => onView(tx)}
+                          title="View"
+                          className={`${actionButton} hover:text-slate-700 hover:bg-slate-100`}
+                        >
+                          <span className="material-symbols-outlined !text-[18px]">visibility</span>
+                        </button>
+                        <button
+                          onClick={() => onEdit(tx)}
+                          title="Edit"
+                          className={`${actionButton} hover:text-emerald-700 hover:bg-emerald-50`}
+                        >
+                          <span className="material-symbols-outlined !text-[18px]">edit</span>
+                        </button>
+                        <button
+                          onClick={() => onDelete(tx)}
+                          title="Delete"
+                          className={`${actionButton} hover:text-rose-600 hover:bg-rose-50`}
+                        >
+                          <span className="material-symbols-outlined !text-[18px]">delete</span>
+                        </button>
+                        {tx.recurringTransactionId ? (
+                          <span className="p-1.5 text-emerald-600" title="Already recurring">
+                            <span className="material-symbols-outlined !text-[18px]">event_repeat</span>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setMenuFor(menuFor === tx.id ? null : tx.id)}
+                            title="Make recurring"
+                            className={`${actionButton} hover:text-emerald-700 hover:bg-emerald-50`}
+                          >
+                            <span className="material-symbols-outlined !text-[18px]">event_repeat</span>
+                          </button>
+                        )}
+                      </div>
+                      {menuFor === tx.id && (
+                        <div
+                          className="absolute right-4 top-full -mt-2 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-1.5 text-left"
+                          onMouseLeave={() => setMenuFor(null)}
+                        >
+                          <p className="px-2 py-1 text-[10px] font-mono font-semibold uppercase text-slate-400">
+                            Make recurring
+                          </p>
+                          {FREQUENCIES.map((frequency) => (
+                            <button
+                              key={frequency}
+                              onClick={() => {
+                                setMenuFor(null);
+                                onMakeRecurring(tx, frequency);
+                              }}
+                              className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer"
+                            >
+                              {FREQUENCY_LABELS[frequency]}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
