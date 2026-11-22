@@ -10,13 +10,15 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.ai.model.chat.client.autoconfigure.ChatClientBuilderConfigurer;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 
-@Configuration 
+@Configuration
+@EnableConfigurationProperties(CopilotProperties.class)
 public class CopilotConfig {
 
-    @Bean
+    @Bean("google-genai")
     @Primary
     public ChatClient geminiAiChatClient(GoogleGenAiChatModel chatModel, ChatClientBuilderConfigurer configurer,
             ObjectProvider<ObservationRegistry> observationRegistry,
