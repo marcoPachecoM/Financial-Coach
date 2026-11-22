@@ -1,6 +1,21 @@
 spring:
+  ai:
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY}
+        chat:
+          options:
+            model: gemini-4-hydrogen
+            # Cost guards: every output token is billed, thinking tokens included.
+            max-output-tokens: 1024
+            # Newer Gemini models use a level instead of thinking-budget (do not set both).
+            thinking-level: LOW
+
   application:
     name: financial-coach
+  
+  config:
+    import: optional:file:.env[.properties]
 
   datasource:
     url: ${DB_URL}
