@@ -2,6 +2,7 @@ package com.financialcoach.transactions;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -138,7 +139,9 @@ class CsvImportTest extends ApiIntegrationTest {
         /** A real export (bank-style signs, free-text categories); see src/test/resources/csv. */
         @Test
         void importsARealExport() throws Exception {
-            byte[] file = new ClassPathResource("csv/mock_transactions.csv").getContentAsByteArray();
+            ClassPathResource resource = new ClassPathResource("csv/mock_transactions.csv");
+            assumeTrue(resource.exists(), "csv/mock_transactions.csv not present; it is a private export kept out of git");
+            byte[] file = resource.getContentAsByteArray();
 
             upload(alice, "mock_transactions.csv", file)
                     .andExpect(status().isCreated())
