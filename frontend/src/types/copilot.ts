@@ -25,3 +25,11 @@ export interface ChatMessage {
   timestamp: string;
   isActionable?: boolean;
 }
+
+/** Response of POST /copilot/chat. */
+export interface ApiChatResponse {
+  response: string;
+  provider: string;
+  /** Model that answered, as the provider reports it (may be null). */
+  model: string | null;
+}

@@ -1,10 +1,17 @@
 package com.financialcoach.transactions;
 
 import com.financialcoach.accounts.AccountService;
+import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.shared.DateRange;
 import java.math.BigDecimal;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +55,43 @@ public class TransactionStatistics {
                                                           DateRange range) {
         accountService.requireOwned(userId, accountId);
         return transactions.totalsByCategoryGroup(userId, accountId, type, range.from(), range.to());
+    }
+
+    /**
+     * Transactions whose name or category contains {@code text} (case-insensitive) and, when
+     * {@code categoryGroup} is given, of that group. Totals cover every match; only the newest
+     * {@code limit} rows are returned. A null or blank {@code text} matches every transaction.
+     */
+    @Transactional(readOnly = true)
+    public TransactionSearch search(UUID userId, UUID accountId, DateRange range, String text,
+                                    CategoryGroup categoryGroup, int limit) {
+        accountService.requireOwned(userId, accountId);
+        String pattern = likePattern(text);
+        Collection<CategoryGroup> groups = categoryGroup == null
+                ? Arrays.asList(CategoryGroup.values())
+                : Set.of(categoryGroup);
+
+        List<TypeTotals> totals = transactions.searchTotals(userId, accountId, range.from(), range.to(), pattern, groups);
+        TypeTotals expenses = totals.stream().filter(t -> t.type() == TransactionType.EXPENSE).findFirst()
+                .orElseGet(() -> empty(TransactionType.EXPENSE));
+        TypeTotals income = totals.stream().filter(t -> t.type() == TransactionType.INCOME).findFirst()
+                .orElseGet(() -> empty(TransactionType.INCOME));
+
+        List<TransactionLine> latest = transactions.search(userId, accountId, range.from(), range.to(), pattern, groups,
+                        PageRequest.of(0, limit, Sort.by(Sort.Order.desc("occurredAt"), Sort.Order.desc("id"))))
+                .stream().map(TransactionLine::from).toList();
+
+        return new TransactionSearch(expenses.count(), expenses.sum(), income.count(), income.sum().negate(), latest);
+    }
+
+    /** "%text%" in lower case, with LIKE wildcards in the text escaped (the queries use escape '\\'). */
+    private static String likePattern(String text) {
+        if (text == null || text.isBlank()) {
+            return "%";
+        }
+        String escaped = text.strip().toLowerCase(Locale.ROOT)
+                .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+        return "%" + escaped + "%";
     }
 
     private static TypeTotals empty(TransactionType type) {

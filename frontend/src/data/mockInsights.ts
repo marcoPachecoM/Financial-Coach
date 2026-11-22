@@ -4,8 +4,8 @@ export const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
   {
     id: 'msg-1',
     sender: 'assistant',
-    text: "Hello Alex! I've analyzed your latest transactions. Everything looks on track for your 20% savings target this month.",
-    timestamp: '9:00 AM',
+    text: "Hi! Ask me about your spending, budget or subscriptions. I answer with the data of the selected account.",
+    timestamp: '',
   },
 ];
 

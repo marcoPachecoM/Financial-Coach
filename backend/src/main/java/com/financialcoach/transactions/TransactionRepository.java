@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import com.financialcoach.categorization.CategoryGroup;
 
 /**
  * Every query filters by owner. Soft-deleted rows are excluded by the entity's @SQLRestriction.
@@ -123,4 +124,34 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
     List<CategoryGroupTotal> totalsByCategoryGroup(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
                                          @Param("type") TransactionType type,
                                          @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    /**
+     * Search filters of the copilot: {@code pattern} is a lower-case LIKE pattern matched against the
+     * name and the category ("%" matches everything); {@code groups} are the category groups allowed.
+     */
+    @Query("""
+            select t from Transaction t
+            where t.userId = :userId and t.accountId = :accountId
+              and t.occurredAt >= :from and t.occurredAt < :to
+              and t.categoryGroup in :groups
+              and (lower(t.name) like :pattern escape '\\' or lower(coalesce(t.category, '')) like :pattern escape '\\')
+            """)
+    List<Transaction> search(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
+                             @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
+                             @Param("pattern") String pattern, @Param("groups") Collection<CategoryGroup> groups,
+                             Pageable pageable);
+
+    /** Totals per type over the same filters as {@link #search}. */
+    @Query("""
+            select new com.financialcoach.transactions.TypeTotals(t.type, count(t), sum(t.amount), max(abs(t.amount)))
+            from Transaction t
+            where t.userId = :userId and t.accountId = :accountId
+              and t.occurredAt >= :from and t.occurredAt < :to
+              and t.categoryGroup in :groups
+              and (lower(t.name) like :pattern escape '\\' or lower(coalesce(t.category, '')) like :pattern escape '\\')
+            group by t.type
+            """)
+    List<TypeTotals> searchTotals(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
+                                  @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
+                                  @Param("pattern") String pattern, @Param("groups") Collection<CategoryGroup> groups);
 }

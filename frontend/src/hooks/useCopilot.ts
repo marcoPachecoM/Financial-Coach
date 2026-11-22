@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { isAxiosError } from "axios";
 import { INITIAL_CHAT_MESSAGES } from "../data/mockInsights";
+import { sendChatMessage } from "../services/copilot";
 import { getErrorMessage } from "../services/errors";
 import { makeRecurring, stopRecurring, updateRecurring } from "../services/recurring";
 import type { AlertAction, ApiAlert, RecurrenceFrequency } from "../types/api";
 import type { ChatMessage } from "../types/copilot";
 import type { Transaction } from "../types/transaction";
-import type { BudgetUsage } from "../types/budget";
-import { FREQUENCY_LABELS, type RecurringTransaction } from "../types/recurring";
+import { FREQUENCY_LABELS } from "../types/recurring";
 import { toInsight } from "../utils/alertMessages";
 import { formatLocalDateToISO } from "../utils/dateHelper";
 import { formatCurrency, formatFullDate } from "../utils/formatters";
@@ -14,6 +15,8 @@ import { formatCurrency, formatFullDate } from "../utils/formatters";
 const DISMISSED_KEY = "financial-coach.dismissed-alerts";
 /** Keeps localStorage small; the oldest dismissals are forgotten first. */
 const MAX_DISMISSED = 300;
+/** Same limit as ChatRequestRecord (@Size max = 1000). */
+const MAX_MESSAGE_LENGTH = 1000;
 
 const now = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 const message = (sender: ChatMessage["sender"], text: string): ChatMessage => ({
@@ -41,33 +44,34 @@ const saveDismissed = (keys: string[]) => {
   }
 };
 
-interface LocalCopilotInput {
+/** Chat errors in the copilot's voice; a timeout is not "the server is down". */
+const chatErrorMessage = (error: unknown): string => {
+  if (isAxiosError(error) && error.code === "ECONNABORTED") {
+    return "The copilot is taking too long to answer. Please try again in a moment.";
+  }
+  return `I couldn't answer that: ${getErrorMessage(error)}`;
+};
+
+interface CopilotInput {
   accountId: string | null;
+  /** Transactions on screen, for the local "Search:" command. */
   transactions: Transaction[];
-  budget: BudgetUsage | undefined;
-  recurring: RecurringTransaction[];
   alerts: ApiAlert[];
-  periodLabel: string;
   /** Called after an action changed data, so the dashboard reloads. */
   onDataChanged: () => void;
 }
 
 /**
- * The copilot panel: real alerts from the API (with their actions) plus a chat that still
- * answers locally from the loaded data until POST /copilot/chat is migrated to Spring.
+ * The copilot panel: real alerts from the API (with their actions) and a chat answered by
+ * POST /copilot/chat. "Search: <text>" stays local: it only filters the loaded transactions.
  */
-export const useLocalCopilot = ({
-  accountId,
-  transactions,
-  budget,
-  recurring,
-  alerts,
-  periodLabel,
-  onDataChanged,
-}: LocalCopilotInput) => {
+export const useCopilot = ({ accountId, transactions, alerts, onDataChanged }: CopilotInput) => {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
   const [dismissed, setDismissed] = useState<string[]>(loadDismissed);
   const [busyInsightId, setBusyInsightId] = useState<string | null>(null);
+  const [thinking, setThinking] = useState(false);
+  /** Guards against double sends before the `thinking` state re-renders. */
+  const sending = useRef(false);
 
   const dismissKey = (alertId: string) => `${accountId}|${alertId}`;
   const insights = useMemo(
@@ -77,42 +81,38 @@ export const useLocalCopilot = ({
 
   const say = (text: string) => setMessages((prev) => [...prev, message("assistant", text)]);
 
-  const reply = (text: string): string => {
-    const lower = text.toLowerCase();
-    const expenses = transactions.filter((t) => t.type === "EXPENSE");
-
-    if (lower.startsWith("search:")) {
-      const query = text.replace(/^search:\s*/i, "").toLowerCase();
-      const matches = transactions.filter(
-        (t) => [t.name, t.categoryGroup, t.category].some((v) => v?.toLowerCase().includes(query)),
-      );
-      return `Search found ${matches.length} matching transactions for "${query}".`;
-    }
-    if (lower.includes("budget")) {
-      if (!budget || budget.budget === null) return "This account has no monthly budget yet.";
-      return `You have spent ${formatCurrency(budget.spent)} of your ${formatCurrency(budget.budget)} budget this month (${budget.percentageUsed ?? 0}%).`;
-    }
-    if (lower.includes("subscription") || lower.includes("recurring") || lower.includes("audit")) {
-      const active = recurring.filter((r) => r.nextDueDate !== null && r.type === "EXPENSE");
-      if (active.length === 0) return "You have no active recurring expenses. Mark a transaction as recurring to track it.";
-      const monthly = active
-        .filter((r) => r.frequency === "MONTHLY")
-        .reduce((sum, r) => sum + r.amount, 0);
-      const list = active
-        .map((r) => `${r.name} (${formatCurrency(r.amount)}, next ${formatFullDate(r.nextDueDate!)})`)
-        .join("; ");
-      return `You have ${active.length} active recurring expense(s): ${list}. Monthly ones add up to ${formatCurrency(monthly)}.`;
-    }
-    if (lower.includes("analyze") || lower.includes("expense") || lower.includes("spend")) {
-      const total = expenses.reduce((sum, t) => sum + Math.abs(t.amount), 0);
-      return `In this period (${periodLabel}) you have ${expenses.length} expenses totaling ${formatCurrency(total)}.`;
-    }
-    return "The AI copilot is not connected to the new backend yet. Try \"analyze my spending\", \"budget\", \"subscription audit\" or \"search: <text>\".";
+  const search = (text: string): string => {
+    const query = text.replace(/^search:\s*/i, "").toLowerCase();
+    const matches = transactions.filter((t) =>
+      [t.name, t.categoryGroup, t.category].some((v) => v?.toLowerCase().includes(query)),
+    );
+    return `Search found ${matches.length} matching transactions for "${query}".`;
   };
 
-  const sendMessage = (text: string) => {
+  const sendMessage = async (text: string) => {
+    if (sending.current) return;
     setMessages((prev) => [...prev, message("user", text)]);
-    setTimeout(() => say(reply(text)), 400);
+
+    if (/^search:/i.test(text)) {
+      say(search(text));
+      return;
+    }
+    if (!accountId) {
+      say("Select an account first, so I know which data to look at.");
+      return;
+    }
+
+    sending.current = true;
+    setThinking(true);
+    try {
+      const { response } = await sendChatMessage(accountId, text.slice(0, MAX_MESSAGE_LENGTH));
+      say(response);
+    } catch (error) {
+      say(chatErrorMessage(error));
+    } finally {
+      sending.current = false;
+      setThinking(false);
+    }
   };
 
   const dismissInsight = (alertId: string) => {
@@ -152,5 +152,5 @@ export const useLocalCopilot = ({
     }
   };
 
-  return { insights, busyInsightId, messages, sendMessage, runAction, dismissInsight, say };
+  return { insights, busyInsightId, messages, thinking, sendMessage, runAction, dismissInsight, say };
 };

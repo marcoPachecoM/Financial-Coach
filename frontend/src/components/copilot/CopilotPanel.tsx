@@ -9,6 +9,8 @@ interface CopilotPanelProps {
   /** Insight whose action is running, if any. */
   busyInsightId: string | null;
   messages: ChatMessage[];
+  /** Waiting for the copilot's answer. */
+  thinking: boolean;
   onInsightAction: (id: string, action: AlertAction) => void;
   onDismissInsight: (id: string) => void;
   onSendMessage: (text: string) => void;
@@ -18,6 +20,7 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({
   insights,
   busyInsightId,
   messages,
+  thinking,
   onInsightAction,
   onDismissInsight,
   onSendMessage,
@@ -78,11 +81,18 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({
             <p className="leading-relaxed">{msg.text}</p>
           </div>
         ))}
+
+        {thinking && (
+          <div className="rounded-2xl p-3.5 text-xs bg-emerald-50/80 border border-emerald-100 text-slate-500 mr-4 rounded-bl-xs flex items-center gap-2">
+            <span className="material-symbols-outlined !text-[16px] animate-spin text-emerald-600">progress_activity</span>
+            Mush AI is thinking...
+          </div>
+        )}
       </div>
 
       {/* 3. Sticky / Fixed Bottom Chat Input with Solid Background */}
       <div className="shrink-0 sticky bottom-0 z-20 bg-[#f7f9fb] pt-1">
-        <ChatBox onSendMessage={onSendMessage} />
+        <ChatBox onSendMessage={onSendMessage} disabled={thinking} />
       </div>
     </aside>
   );

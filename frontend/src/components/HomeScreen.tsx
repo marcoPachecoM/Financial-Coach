@@ -43,7 +43,7 @@ import { getErrorMessage } from "../services/errors";
 import { deleteRecurring, makeRecurring, stopRecurring } from "../services/recurring";
 import { deleteTransaction } from "../services/transactions";
 import { formatCurrency, formatFullDate } from "../utils/formatters";
-import { useLocalCopilot } from "../hooks/useLocalCopilot";
+import { useCopilot } from "../hooks/useCopilot";
 import { useAuth } from "../contexts/AuthContext";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -195,13 +195,10 @@ export const HomeScreen: React.FC = () => {
     };
   }, [summary.data, categorySummary, activePreset]);
 
-  const copilot = useLocalCopilot({
+  const copilot = useCopilot({
     accountId,
     transactions: dateFilteredTransactions,
-    budget: budget.data,
-    recurring: recurringList,
     alerts: alertList,
-    periodLabel: activePreset.sublabel,
     onDataChanged: refreshAll,
   });
 
@@ -480,6 +477,7 @@ export const HomeScreen: React.FC = () => {
             insights={copilot.insights}
             busyInsightId={copilot.busyInsightId}
             messages={copilot.messages}
+            thinking={copilot.thinking}
             onInsightAction={copilot.runAction}
             onDismissInsight={copilot.dismissInsight}
             onSendMessage={copilot.sendMessage}

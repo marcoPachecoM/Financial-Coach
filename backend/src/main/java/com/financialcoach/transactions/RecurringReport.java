@@ -48,6 +48,16 @@ public class RecurringReport {
         this.accountService = accountService;
     }
 
+    /** Rules that still create occurrences (not ended or stopped), in name order. */
+    @Transactional(readOnly = true)
+    public List<RecurringRuleSummary> activeRules(UUID userId, UUID accountId) {
+        accountService.requireOwned(userId, accountId);
+        return rules.findByAccount(userId, accountId).stream()
+                .filter(rule -> rule.getNextDueDate() != null)
+                .map(RecurringRuleSummary::from)
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public RecurringOverview report(UUID userId, UUID accountId, YearMonth month, LocalDate today) {
         accountService.requireOwned(userId, accountId);

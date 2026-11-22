@@ -52,6 +52,8 @@ spring:
 financial-coach:
   copilot:
     provider: google-genai
+    # How the copilot writes amounts: generic "$" like the frontend, without naming a currency.
+    amount-format: "$1,234.56"
   jwt:
     # HS256 key, at least 32 bytes. Required: the app does not start without it.
     secret: ${JWT_SECRET_KEY}
