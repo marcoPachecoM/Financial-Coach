@@ -1,5 +1,6 @@
 package com.financialcoach.transactions;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -111,6 +112,18 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
             """)
     List<TypeTotals> totalsByType(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
                                   @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    /** Sum of the expenses linked to a recurring transaction (EXPENSE amounts are positive). */
+    @Query("""
+            select coalesce(sum(t.amount), 0)
+            from Transaction t
+            where t.userId = :userId and t.accountId = :accountId
+              and t.type = com.financialcoach.transactions.TransactionType.EXPENSE
+              and t.recurringTransactionId is not null
+              and t.occurredAt >= :from and t.occurredAt < :to
+            """)
+    BigDecimal recurringExpenseTotal(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
+                                     @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     /** Amounts as positive values; largest first, ties by group name. */
     @Query("""

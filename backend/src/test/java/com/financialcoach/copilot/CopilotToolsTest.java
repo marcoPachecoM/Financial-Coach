@@ -139,12 +139,47 @@ class CopilotToolsTest extends ApiIntegrationTest {
     }
 
     @Test
+    void monthForecastAddsWhatIsSpentWhatIsDueAndThePaceOfTheRest() {
+        // Today is 2026-11-21: 21 days elapsed, 9 left.
+        UUID rent = rule("Rent", "500.00", "MONTHLY", LocalDate.of(2026, 12, 1));
+        recurringExpense(rent, "2026-11-01T09:00", "Rent", "500.00");
+        expense("2026-11-03T12:00", "Oxxo", "100.00", "Food", null);
+        expense("2026-11-20T19:00", "Cinemex", "110.00", "Entertainment", null);
+        rule("Spotify", "129.00", "MONTHLY", LocalDate.of(2026, 11, 28));
+        rule("Gym", "50.00", "WEEKLY", LocalDate.of(2026, 11, 21)); // today's not created yet: due twice
+        rule("Old gym", "500.00", "MONTHLY", null);
+
+        // 710 spent + 229 recurring still due + 10.00 a day of other expenses × 9 days = 1029.
+        assertThat(tools.monthForecast()).isEqualTo("""
+                Forecast for 2026-11 (today 2026-11-21, 9 days left): 1029.00.
+                - Spent so far: 710.00 (500.00 recurring, 210.00 other).
+                - Other expenses average 10.00 per day: 90.00 more over the days left.
+                - Recurring charges still due: 229.00 (Gym 50.00 on 2026-11-21; Gym 50.00 on 2026-11-28; Spotify 129.00 on 2026-11-28).
+                - Budget 1000.00: about 29.00 over at month end.
+                - Last month's expenses: 80.00.""");
+    }
+
+    @Test
+    void monthForecastWithoutExpensesThisMonthSaysSo() {
+        UUID cash = account(user, "Cash", null);
+
+        assertThat(toolsFor(user, cash).monthForecast()).isEqualTo("""
+                Forecast for 2026-11 (today 2026-11-21, 9 days left): 0.00.
+                - Spent so far: 0.00 (0.00 recurring, 0.00 other).
+                - Other expenses average 0.00 per day: 0.00 more over the days left.
+                - No recurring charges still due this month.
+                - Last month's expenses: 0.00.
+                No expenses recorded this month yet: the forecast only has the recurring charges.""");
+    }
+
+    @Test
     void toolsNeverReadAnotherUsersAccount() {
         TestUser other = users.create("other@example.com", user.role(), true);
         CopilotTools foreign = toolsFor(other, accountId);
 
         assertThatThrownBy(() -> foreign.summary(SEP_1, SEP_30)).isInstanceOf(NotFoundException.class);
         assertThatThrownBy(foreign::recurringCharges).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(foreign::monthForecast).isInstanceOf(NotFoundException.class);
     }
 
     private CopilotTools toolsFor(TestUser owner, UUID account) {
@@ -174,12 +209,23 @@ class CopilotToolsTest extends ApiIntegrationTest {
                 """, user.id(), accountId, type, LocalDateTime.parse(datetime), name, amount, group, category);
     }
 
-    /** {@code nextDueDate} null means the rule has ended. */
-    private void rule(String name, String amount, String frequency, LocalDate nextDueDate) {
-        jdbc.update("""
+    /** {@code nextDueDate} null means the rule has ended. Starts on Saturday 2026-01-03. */
+    private UUID rule(String name, String amount, String frequency, LocalDate nextDueDate) {
+        return jdbc.queryForObject("""
                 INSERT INTO recurring_transactions (user_id, account_id, type, name, amount, category_group,
                                                     frequency, start_date, time_of_day, next_due_date)
                 VALUES (?, ?, 'EXPENSE', ?, ?, 'Entertainment', ?, DATE '2026-01-03', TIME '09:00', ?)
-                """, user.id(), accountId, name, new BigDecimal(amount), frequency, nextDueDate);
+                RETURNING id
+                """, UUID.class, user.id(), accountId, name, new BigDecimal(amount), frequency, nextDueDate);
+    }
+
+    /** An occurrence already created by a rule. */
+    private void recurringExpense(UUID ruleId, String datetime, String name, String amount) {
+        LocalDateTime at = LocalDateTime.parse(datetime);
+        jdbc.update("""
+                INSERT INTO transactions (user_id, account_id, type, datetime, name, amount, category_group,
+                                          source, category_group_source, recurring_transaction_id, recurrence_date)
+                VALUES (?, ?, 'EXPENSE', ?, ?, ?, 'Housing', 'RECURRING', 'USER', ?, ?)
+                """, user.id(), accountId, at, name, new BigDecimal(amount), ruleId, at.toLocalDate());
     }
 }

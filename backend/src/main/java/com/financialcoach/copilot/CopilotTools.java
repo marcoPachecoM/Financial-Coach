@@ -22,6 +22,7 @@ import com.financialcoach.shared.DateRange;
 import com.financialcoach.shared.Money;
 import com.financialcoach.transactions.CategoryGroupTotal;
 import com.financialcoach.transactions.RecurringOverview;
+import com.financialcoach.transactions.RecurringOverview.UpcomingCharge;
 import com.financialcoach.transactions.RecurringReport;
 import com.financialcoach.transactions.RecurringRuleSummary;
 import com.financialcoach.transactions.TransactionSearch;
@@ -179,6 +180,57 @@ class CopilotTools {
                 c.name(), money(c.expectedAmount().abs()), money(c.chargedAmount().abs()), c.dueDate())));
         month.suggestions().forEach(s -> out.append("Looks recurring but not tracked: %s %s (%s, %d charges)\n".formatted(
                 s.name(), money(s.amount().abs()), s.frequency().name().toLowerCase(Locale.ROOT), s.occurrences())));
+        return out.toString().strip();
+    }
+
+    @Tool(description = """
+            Projection of this month's total expenses, computed from the account's data: spent so far,
+            recurring charges still due this month and the daily average of the other expenses for the
+            days left. Use it for "how much will I spend this month", forecast or "will I go over
+            budget" questions. The numbers are already computed: report them, do not recalculate.""")
+    String monthForecast() {
+        LocalDate today = LocalDate.now(clock);
+        YearMonth month = YearMonth.from(today);
+        LocalDate lastDay = month.atEndOfMonth();
+        DateRange soFar = DateRange.between(month.atDay(1), today);
+
+        BigDecimal spent = statistics.totals(userId, accountId, soFar).expenseTotal();
+        BigDecimal recurringSpent = statistics.recurringExpenseTotal(userId, accountId, soFar);
+        BigDecimal otherSpent = spent.subtract(recurringSpent);
+        int daysElapsed = today.getDayOfMonth();
+        int daysLeft = month.lengthOfMonth() - daysElapsed;
+
+        // Other expenses (not recurring) keep their pace so far; recurring ones are known exactly.
+        BigDecimal dailyAverage = otherSpent.divide(BigDecimal.valueOf(daysElapsed), 2, RoundingMode.HALF_UP);
+        BigDecimal otherAhead = dailyAverage.multiply(BigDecimal.valueOf(daysLeft));
+        List<UpcomingCharge> pending = recurringReport.pendingExpenses(userId, accountId, lastDay);
+        BigDecimal pendingTotal = pending.stream().map(UpcomingCharge::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal forecast = spent.add(pendingTotal).add(otherAhead);
+
+        StringBuilder out = new StringBuilder("Forecast for %s (today %s, %d days left): %s.\n".formatted(
+                month, today, daysLeft, money(forecast)));
+        out.append("- Spent so far: %s (%s recurring, %s other).\n".formatted(
+                money(spent), money(recurringSpent), money(otherSpent)));
+        out.append("- Other expenses average %s per day: %s more over the days left.\n".formatted(
+                money(dailyAverage), money(otherAhead)));
+        out.append(pending.isEmpty()
+                ? "- No recurring charges still due this month.\n"
+                : "- Recurring charges still due: %s (%s).\n".formatted(money(pendingTotal), pending.stream()
+                        .map(c -> "%s %s on %s".formatted(c.name(), money(c.amount()), c.dueDate()))
+                        .collect(Collectors.joining("; "))));
+        accountService.monthlyBudget(userId, accountId).ifPresent(budget -> {
+            BigDecimal difference = budget.subtract(forecast);
+            out.append(difference.signum() >= 0
+                    ? "- Budget %s: about %s left at month end.\n".formatted(money(budget), money(difference))
+                    : "- Budget %s: about %s over at month end.\n".formatted(money(budget), money(difference.negate())));
+        });
+        BigDecimal lastMonth = statistics.totals(userId, accountId, DateRange.of(month.minusMonths(1))).expenseTotal();
+        out.append("- Last month's expenses: %s.\n".formatted(money(lastMonth)));
+        if (spent.signum() == 0) {
+            out.append("No expenses recorded this month yet: the forecast only has the recurring charges.");
+        } else if (daysElapsed < 7) {
+            out.append("Only %d days into the month: a rough estimate.".formatted(daysElapsed));
+        }
         return out.toString().strip();
     }
 

@@ -49,6 +49,13 @@ public class TransactionStatistics {
                 income.count(), income.sum().negate());
     }
 
+    /** Expenses in the range that are occurrences of a recurring transaction (positive). */
+    @Transactional(readOnly = true)
+    public BigDecimal recurringExpenseTotal(UUID userId, UUID accountId, DateRange range) {
+        accountService.requireOwned(userId, accountId);
+        return transactions.recurringExpenseTotal(userId, accountId, range.from(), range.to());
+    }
+
     /** One entry per category group with transactions of this type, largest amount first. */
     @Transactional(readOnly = true)
     public List<CategoryGroupTotal> totalsByCategoryGroup(UUID userId, UUID accountId, TransactionType type,
