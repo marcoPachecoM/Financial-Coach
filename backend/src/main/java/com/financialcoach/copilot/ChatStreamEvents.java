@@ -10,6 +10,10 @@ import org.springframework.http.codec.ServerSentEvent;
  * event: done    data: {"provider":"google-genai","model":"...","usage":{...}}   (last, on success)
  * event: error   data: {"code":"COPILOT_UNAVAILABLE","detail":"..."}            (last, on failure)
  * </pre>
+ * Error codes: COPILOT_UNAVAILABLE (busy, timeout), COPILOT_QUOTA_EXCEEDED (the provider's quota is
+ * used up; the detail says when to retry) and COPILOT_EMPTY_RESPONSE.
+ * <pre>
+ * </pre>
  * An error can follow some deltas: the answer stopped half-way.
  */
 final class ChatStreamEvents {

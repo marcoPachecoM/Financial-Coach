@@ -93,6 +93,18 @@ class CopilotStreamTest extends ApiIntegrationTest {
     }
 
     @Test
+    void aQuotaErrorBecomesAQuotaEvent() throws Exception {
+        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.error(new RuntimeException("Failed to generate content",
+                new RuntimeException("429 RESOURCE_EXHAUSTED. Please retry in 41.2s."))));
+
+        assertThat(stream(alice, null))
+                .contains("event:error")
+                .contains("\"code\":\"COPILOT_QUOTA_EXCEEDED\"")
+                .contains("Try again in 42 seconds.")
+                .doesNotContain("event:done");
+    }
+
+    @Test
     void anotherUsersAccountIsStillAPlain404() throws Exception {
         TestUser bob = users.create("bob@example.com", alice.role(), true);
 

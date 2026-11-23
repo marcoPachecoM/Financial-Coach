@@ -2,6 +2,7 @@ package com.financialcoach.copilot;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -88,8 +89,13 @@ public class CopilotService {
                 logUsage(userId, request, null, usageAdvisor.usage(), "unknown_tool");
                 return new ChatResponseRecord(UNKNOWN_TOOL_ANSWER, properties.provider(), null, usageAdvisor.usage());
             }
-            // Overloaded (503), over quota (429), timeout or network error: to the user they are all
-            // "try again later". Providers wrap their errors differently, so the cause is only logged.
+            Optional<ProviderQuota> quota = ProviderQuota.of(e);
+            if (quota.isPresent()) {
+                log.warn("Copilot LLM quota exceeded: {}", rootMessage(e));
+                logUsage(userId, request, null, usageAdvisor.usage(), "quota");
+                throw new ServiceUnavailableException("COPILOT_QUOTA_EXCEEDED", quota.get().detail());
+            }
+            // Overloaded (503), timeout or network error: to the user they are all "try again later".
             log.warn("Copilot LLM call failed: {}", rootMessage(e), e);
             logUsage(userId, request, null, usageAdvisor.usage(), "failed");
             throw new ServiceUnavailableException("COPILOT_UNAVAILABLE",
@@ -160,6 +166,12 @@ public class CopilotService {
                 logOnce.accept("unknown_tool");
                 return Flux.just(ChatStreamEvents.delta(UNKNOWN_TOOL_ANSWER),
                         ChatStreamEvents.done(properties.provider(), model.get(), usageAdvisor.usage()));
+            }
+            Optional<ProviderQuota> quota = ProviderQuota.of(e);
+            if (quota.isPresent()) {
+                log.warn("Copilot LLM quota exceeded: {}", rootMessage(e));
+                logOnce.accept("quota");
+                return Flux.just(ChatStreamEvents.error("COPILOT_QUOTA_EXCEEDED", quota.get().detail()));
             }
             log.warn("Copilot LLM stream failed: {}", rootMessage(e), e);
             logOnce.accept("failed");

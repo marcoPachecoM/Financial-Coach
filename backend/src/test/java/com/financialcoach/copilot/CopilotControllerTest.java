@@ -101,6 +101,17 @@ class CopilotControllerTest extends ApiIntegrationTest {
     }
 
     @Test
+    void aQuotaErrorSaysWhenToTryAgain() throws Exception {
+        when(chatModel.call(any(Prompt.class))).thenThrow(new RuntimeException("Failed to generate content",
+                new RuntimeException("429 . You exceeded your current quota. Please retry in 6h50m44.913668754s.")));
+
+        mvc.perform(chat(alice, aliceAccount, "Hi", null))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("COPILOT_QUOTA_EXCEEDED"))
+                .andExpect(jsonPath("$.detail").value("The AI model's usage quota is used up. Try again in 6 h 51 min."));
+    }
+
+    @Test
     void anotherUsersAccountIs404AndTheModelIsNotCalled() throws Exception {
         TestUser bob = users.create("bob@example.com", alice.role(), true);
 
