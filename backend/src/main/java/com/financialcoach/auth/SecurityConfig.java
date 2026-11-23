@@ -87,8 +87,10 @@ class SecurityConfig {
         cors.setAllowedOrigins(properties.allowedOrigins());
         cors.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE));
-        // Readable by the frontend: where a created resource lives, and how long to wait after a 429.
-        cors.setExposedHeaders(List.of(HttpHeaders.LOCATION, HttpHeaders.RETRY_AFTER));
+        // Readable by the frontend: where a created resource lives, how long to wait after a 429,
+        // and the file name and row count of a download (CSV export).
+        cors.setExposedHeaders(List.of(HttpHeaders.LOCATION, HttpHeaders.RETRY_AFTER, HttpHeaders.CONTENT_DISPOSITION,
+                "X-Row-Count"));
         // Tokens travel in the Authorization header, never in cookies.
         cors.setAllowCredentials(false);
         cors.setMaxAge(Duration.ofHours(1));

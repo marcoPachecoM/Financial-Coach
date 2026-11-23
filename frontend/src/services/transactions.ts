@@ -121,6 +121,52 @@ export const getAllTransactions = async ({
   return all;
 };
 
+export interface CsvExportOptions {
+  /** null exports every account of the user. */
+  accountId: string | null;
+  /** yyyy-MM-dd, inclusive; null for no limit. */
+  startDate: string | null;
+  endDate: string | null;
+}
+
+/** "attachment; filename="x.csv"" → "x.csv". */
+const filenameFrom = (contentDisposition: unknown): string | null => {
+  const match = typeof contentDisposition === "string" ? /filename="([^"]+)"/.exec(contentDisposition) : null;
+  return match ? match[1] : null;
+};
+
+/**
+ * GET /transactions/export: the transactions as a CSV file in the import format, so it can be
+ * imported again. Returns the file, the name the server chose for it and its number of rows
+ * (X-Row-Count; null if a proxy dropped the header).
+ */
+export const exportTransactionsCsv = async ({ accountId, startDate, endDate }: CsvExportOptions) => {
+  const params: Record<string, string> = {};
+  if (accountId) params.account_id = accountId;
+  if (startDate) params.start_date = startDate;
+  if (endDate) params.end_date = endDate;
+  const res = await api.get<Blob>("/transactions/export", { params, responseType: "blob", timeout: 60_000 });
+  const rowCount = Number.parseInt(String(res.headers["x-row-count"] ?? ""), 10);
+  return {
+    blob: res.data,
+    filename: filenameFrom(res.headers["content-disposition"]) ?? "transactions.csv",
+    rows: Number.isNaN(rowCount) ? null : rowCount,
+  };
+};
+
+/** Makes the browser save a file it already has in memory. */
+export const saveFile = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // After the click the browser has the file; the URL is no longer needed.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+};
+
 /**
  * Columns: Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes.
  * All or nothing: if a row is invalid the API answers 400 CSV_INVALID_ROWS with every error.

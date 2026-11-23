@@ -6,6 +6,7 @@ import { FREQUENCY_LABELS, type RecurringTransaction } from "../types/recurring"
 
 import { Header } from "./common/Header";
 import { UploadModal } from "./common/UploadModal";
+import { ExportModal } from "./common/ExportModal";
 import { TransactionFormModal } from "./transactions/TransactionFormModal";
 import { RecurringCard } from "./dashboard/RecurringCard";
 import { MetricCards } from "./dashboard/MetricCards";
@@ -84,6 +85,7 @@ export const HomeScreen: React.FC = () => {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isNewTransactionOpen, setIsNewTransactionOpen] = useState(false);
   const [busyRecurringId, setBusyRecurringId] = useState<string | null>(null);
 
@@ -303,6 +305,7 @@ export const HomeScreen: React.FC = () => {
         activeAccountName={activeAccount?.name ?? null}
         onToggleSidebar={toggleSidebar}
         onOpenUpload={() => setIsUploadModalOpen(true)}
+        onOpenExport={accountList.length > 0 ? () => setIsExportModalOpen(true) : undefined}
         onOpenNewTransaction={() => setIsNewTransactionOpen(true)}
         onLogout={logout}
       />
@@ -491,6 +494,13 @@ export const HomeScreen: React.FC = () => {
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
         onImported={handleImported}
+      />
+
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        accounts={accountList}
+        defaultAccountId={activeAccount?.id ?? null}
       />
 
       <TransactionFormModal

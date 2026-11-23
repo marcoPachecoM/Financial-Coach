@@ -8,6 +8,7 @@ import com.financialcoach.categorization.CategoryGroupSource;
 import com.financialcoach.shared.error.ConflictException;
 import com.financialcoach.shared.error.ValidationException;
 import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -17,6 +18,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,6 +66,8 @@ class CsvImportService {
                 userId, rows.stream().map(CsvRow::account).toList());
         List<String> fingerprints = fingerprints(rows, accounts);
         Set<String> alreadyImported = findExisting(accounts.idsByKey().values(), fingerprints);
+        Map<String, Integer> unfingerprinted = findUnfingerprinted(userId, accounts, rows, fingerprints,
+                alreadyImported);
 
         ImportBatch batch = importBatches.save(new ImportBatch(userId, filename));
         Map<String, CategoryGroupAssignment> groupByName = new HashMap<>();
@@ -72,7 +76,7 @@ class CsvImportService {
         for (int i = 0; i < rows.size(); i++) {
             CsvRow row = rows.get(i);
             String fingerprint = fingerprints.get(i);
-            if (alreadyImported.contains(fingerprint)) {
+            if (alreadyImported.contains(fingerprint) || claimUnfingerprinted(unfingerprinted, row, accounts)) {
                 continue;
             }
             CategoryGroupAssignment group = row.categoryGroup() != null
@@ -127,6 +131,45 @@ class CsvImportService {
             existing.addAll(transactions.findExistingFingerprints(ids, chunk));
         }
         return existing;
+    }
+
+    /**
+     * Transactions without a fingerprint (manual or recurring) that match a row not already found by
+     * fingerprint, counted per identity (account, date and time to the second, name, amount). Two
+     * transactions with all of that equal are the same in practice: re-importing a file exported
+     * by this app must not duplicate what was typed in by hand.
+     */
+    private Map<String, Integer> findUnfingerprinted(UUID userId, ResolvedAccounts accounts, List<CsvRow> rows,
+                                                     List<String> fingerprints, Set<String> alreadyImported) {
+        List<LocalDateTime> times = new ArrayList<>(new LinkedHashSet<>(IntStream.range(0, rows.size())
+                .filter(i -> !alreadyImported.contains(fingerprints.get(i)))
+                .mapToObj(i -> rows.get(i).occurredAt())
+                .toList()));
+        Set<UUID> accountIds = new HashSet<>(accounts.idsByKey().values());
+
+        Map<String, Integer> counts = new HashMap<>();
+        for (int start = 0; start < times.size(); start += LOOKUP_CHUNK_SIZE) {
+            List<LocalDateTime> chunk = times.subList(start, Math.min(times.size(), start + LOOKUP_CHUNK_SIZE));
+            transactions.findWithoutFingerprintAt(userId, accountIds, chunk)
+                    .forEach(existing -> counts.merge(existing.key(), 1, Integer::sum));
+        }
+        return counts;
+    }
+
+    /**
+     * True when the row matches one of those transactions, which is then used up: if a coffee was
+     * typed in twice at the same second, a file with three such rows still imports the third.
+     */
+    private static boolean claimUnfingerprinted(Map<String, Integer> unfingerprinted, CsvRow row,
+                                                ResolvedAccounts accounts) {
+        String key = TransactionFingerprint.key(accounts.idFor(row.account()), row.occurredAt(), row.name(),
+                row.amount());
+        Integer left = unfingerprinted.get(key);
+        if (left == null || left == 0) {
+            return false;
+        }
+        unfingerprinted.put(key, left - 1);
+        return true;
     }
 
     /**

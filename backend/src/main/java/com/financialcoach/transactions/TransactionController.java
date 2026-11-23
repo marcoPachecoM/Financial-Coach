@@ -5,15 +5,19 @@ import com.financialcoach.shared.DateRange;
 import com.financialcoach.shared.error.PayloadTooLargeException;
 import com.financialcoach.shared.web.QueryParameters;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -36,16 +40,21 @@ import org.springframework.web.util.UriComponentsBuilder;
 class TransactionController {
 
     private static final Set<String> LIST_PARAMETERS = Set.of("account_id", "page", "size", "start_date", "end_date");
+    static final String ROW_COUNT_HEADER = "X-Row-Count";
+    private static final Set<String> EXPORT_PARAMETERS = Set.of("account_id", "start_date", "end_date");
 
     /** 1 MiB, as in the contract. spring.servlet.multipart enforces it too, before the file is read. */
     static final long MAX_CSV_BYTES = 1024 * 1024;
 
     private final TransactionService transactionService;
     private final CsvImportService csvImportService;
+    private final CsvExportService csvExportService;
 
-    TransactionController(TransactionService transactionService, CsvImportService csvImportService) {
+    TransactionController(TransactionService transactionService, CsvImportService csvImportService,
+                          CsvExportService csvExportService) {
         this.transactionService = transactionService;
         this.csvImportService = csvImportService;
+        this.csvExportService = csvExportService;
     }
 
     @GetMapping
@@ -80,6 +89,32 @@ class TransactionController {
         }
         CsvUploadResponse result = csvImportService.importFile(user.id(), file.getOriginalFilename(), file.getBytes());
         return ResponseEntity.status(HttpStatus.CREATED).body(result);
+    }
+
+    /**
+     * Downloads the transactions as CSV, in the import format. Without account_id, every account
+     * of the user. The checks run before anything is written, so errors are normal Problem Details.
+     */
+    @GetMapping("/export")
+    void export(@AuthenticationPrincipal AuthenticatedUser user,
+                HttpServletRequest request,
+                HttpServletResponse response,
+                @RequestParam(name = "account_id", required = false) UUID accountId,
+                @RequestParam(name = "start_date", required = false)
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+                @RequestParam(name = "end_date", required = false)
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) throws IOException {
+        QueryParameters.requireOnly(request, EXPORT_PARAMETERS);
+        CsvExportService.CsvExport export = csvExportService.prepare(user.id(), accountId, startDate, endDate);
+
+        // Known before the body: lets the client say "no transactions" instead of saving an empty file.
+        response.setHeader(ROW_COUNT_HEADER, Long.toString(export.rows()));
+        response.setContentType("text/csv");
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        // The file name is already ASCII (see CsvExportService.slug), so no RFC 5987 variant is needed.
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+                ContentDisposition.attachment().filename(export.filename()).build().toString());
+        csvExportService.write(export, response.getWriter());
     }
 
     @GetMapping("/{transactionId}")

@@ -109,6 +109,46 @@ class CsvImportTest extends ApiIntegrationTest {
                     .containsEntry("notes", null);
         }
 
+        /** Same account, date and time to the second, name and amount as a manual transaction: the same one. */
+        @Test
+        void aRowIdenticalToATransactionTypedInByHandIsSkipped() throws Exception {
+            insertManual(aliceCard, "2026-01-02T13:35:00", "La tiendita", "100.00");
+
+            upload(alice, HEADER + """
+                    Expense,2026-01-02 13:35:00,13:35,La tiendita,100.00,Food,,Debit card,
+                    Expense,2026-01-02 13:35:01,13:35,La tiendita,100.00,Food,,Debit card,
+                    Expense,2026-01-02 13:35:00,13:35,La tiendita,100.50,Food,,Debit card,
+                    Expense,2026-01-02 13:35:00,13:35,La Tiendita,100.00,Food,,Debit card,
+                    """)
+                    .andExpect(status().isCreated())
+                    // Only the exact match is skipped: another second, amount or spelling is new.
+                    .andExpect(jsonPath("$.records_imported").value(3))
+                    .andExpect(jsonPath("$.records_duplicated").value(1));
+        }
+
+        @Test
+        void eachTransactionTypedInByHandMatchesOneRowOnly() throws Exception {
+            insertManual(aliceCard, "2026-01-02T08:00:00", "Coffee", "45.00");
+            insertManual(aliceCard, "2026-01-02T08:00:00", "Coffee", "45.00");
+
+            upload(alice, HEADER + """
+                    Expense,2026-01-02 08:00:00,08:00,Coffee,45,Food,,Debit card,
+                    Expense,2026-01-02 08:00:00,08:00,Coffee,45,Food,,Debit card,
+                    Expense,2026-01-02 08:00:00,08:00,Coffee,45,Food,,Debit card,
+                    """)
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.records_imported").value(1))
+                    .andExpect(jsonPath("$.records_duplicated").value(2));
+        }
+
+        @Test
+        void anotherAccountsTransactionDoesNotCount() throws Exception {
+            insertManual(insertAccount(alice, "Cash"), "2026-01-02T08:00:00", "Coffee", "45.00");
+
+            upload(alice, HEADER + "Expense,2026-01-02 08:00:00,08:00,Coffee,45,Food,,Debit card,\n")
+                    .andExpect(jsonPath("$.records_imported").value(1));
+        }
+
         /** Bank exports use cash-flow signs; Type decides, so both conventions give the same result. */
         @Test
         void typeDecidesTheSignNotTheAmount() throws Exception {
@@ -429,6 +469,14 @@ class CsvImportTest extends ApiIntegrationTest {
         return jdbc.queryForObject(
                 "SELECT count(*) FROM transactions WHERE account_id = ? AND deleted_at IS NULL",
                 Integer.class, accountId);
+    }
+
+    private void insertManual(UUID accountId, String datetime, String name, String amount) {
+        jdbc.update("""
+                INSERT INTO transactions (user_id, account_id, type, datetime, name, amount, category_group,
+                                          source, category_group_source)
+                VALUES (?, ?, 'EXPENSE', ?, ?, ?, 'Food', 'MANUAL', 'USER')
+                """, alice.id(), accountId, java.time.LocalDateTime.parse(datetime), name, new java.math.BigDecimal(amount));
     }
 
     private UUID insertAccount(TestUser owner, String name) {

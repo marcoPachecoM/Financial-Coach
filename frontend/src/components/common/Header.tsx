@@ -2,6 +2,8 @@ import React from "react";
 
 interface HeaderProps {
   onOpenUpload: () => void;
+  /** Opens the CSV export dialog; hidden when there is no account yet. */
+  onOpenExport?: () => void;
   onLogout: () => void;
   /** Opens/closes the sidebar (drawer on mobile, icon bar on desktop). */
   onToggleSidebar: () => void;
@@ -12,6 +14,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenUpload,
+  onOpenExport,
   onLogout,
   onToggleSidebar,
   onOpenNewTransaction,
@@ -66,6 +69,18 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="material-symbols-outlined !text-[18px]">add</span>
             <span className="hidden sm:inline">Add transaction</span>
             <span className="sm:hidden">Add</span>
+          </button>
+        )}
+        {onOpenExport && (
+          <button
+            onClick={onOpenExport}
+            title="Export transactions as CSV"
+            aria-label="Export CSV"
+            className="bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 hover:border-emerald-300 px-2.5 sm:px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 shadow-2xs cursor-pointer"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined !text-[18px]">download</span>
+            {/* Icon only on phones: the header already has three buttons there. */}
+            <span className="hidden sm:inline">Export CSV</span>
           </button>
         )}
         <button

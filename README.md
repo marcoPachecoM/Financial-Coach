@@ -51,7 +51,8 @@ All under `/api/v1`. Everything except login, refresh and the public health chec
 | `GET /transactions/{id}` | One transaction. |
 | `PATCH /transactions/{id}` | Changes the fields sent; `category` and `notes` can be cleared with `null`. |
 | `DELETE /transactions/{id}` | Deletes it (soft delete: it disappears from every list and total). If it was an occurrence of a recurring transaction, that occurrence is not created again. |
-| `POST /transactions/upload-csv` | Multipart `file`. Header: `Type,Date,Time,Name,Amount,Category Group,Category,Account,Notes`. All or nothing: every row is validated first (errors listed per row), then accounts that do not exist yet are created and rows already imported are skipped. |
+| `GET /transactions/export` | Downloads the transactions as CSV in the import format, oldest first: one account (`account_id`) or all of them, optionally between `start_date` and `end_date`. Expenses negative, income positive. Text that looks like a spreadsheet formula gets a leading `'` (CSV injection), which the import removes. |
+| `POST /transactions/upload-csv` | Multipart `file`. Header: `Type,Date,Time,Name,Amount,Category Group,Category,Account,Notes`. All or nothing: every row is validated first (errors listed per row), then accounts that do not exist yet are created and duplicates are skipped: rows already imported, and rows identical to an existing transaction (same account, date and time to the second, name and amount), so an exported file can be imported again. |
 | **Recurring transactions** | |
 | `GET /recurring-transactions?account_id=…` | The account's recurring transactions, with their next due date. |
 | `POST /recurring-transactions` | Makes an existing transaction recurring: `transaction_id`, `frequency` (`WEEKLY`, `BIWEEKLY`, `MONTHLY`, `YEARLY`), optional `end_date`. Occurrences already due are created at once. |
@@ -126,6 +127,8 @@ curl -H "$AUTH" "$API/transactions?account_id=$ACCOUNT&size=20"
 
 # CSV import (header: Type,Date,Time,Name,Amount,Category Group,Category,Account,Notes)
 curl -H "$AUTH" -F 'file=@transactions.csv' $API/transactions/upload-csv
+# CSV export, same format (omit account_id for every account)
+curl -H "$AUTH" -OJ "$API/transactions/export?account_id=$ACCOUNT&start_date=2026-09-01&end_date=2026-09-30"
 
 # Analytics and budget
 curl -H "$AUTH" "$API/analytics/summary?account_id=$ACCOUNT&start_date=2026-11-01&end_date=2026-11-30"
@@ -179,6 +182,8 @@ Configuration (environment variables; the `dev` profile provides a development s
 | `COPILOT_DAILY_LIMIT` | `100` | Chat messages per user and day: caps what the LLM can cost. |
 | `COPILOT_MAX_LLM_CALLS` | `5` | Calls to the model for one message (the tool loop; a normal question takes 2 or 3). Above it the message stops with `502 COPILOT_CALL_LIMIT`. |
 | `RATE_LIMIT_LOGIN` / `RATE_LIMIT_REFRESH` / `RATE_LIMIT_LOGOUT` | `5` / `10` / `20` | Requests per minute and client IP on the token endpoints. |
+| `LOG_FILE` | `logs/financial-coach.log` | Log file besides the console (relative to `backend/`), rotated daily or every 10 MB and kept 7 days (100 MB at most). Empty: console only. |
+| `RATE_LIMIT_CSV` | `10` | CSV export and import requests per user and minute. |
 | `RATE_LIMIT_LOGIN_ACCOUNT_FAILURES` | `5` | Consecutive failed logins of one email, from any IP, before each new attempt must wait (see [Rate limits](#rate-limits)). |
 
 Variables go in `backend/.env` (gitignored; copy `backend/.env.example`) or in the server's environment. Secrets (keys, passwords) always go there, never in `application.yml`. Any other property of `application.yml` can also be overridden without a placeholder, by its name in upper case with `_` instead of `.` and no dashes, e.g. `FINANCIALCOACH_COPILOT_TIMEOUT=30s` for `financial-coach.copilot.timeout`.
@@ -192,6 +197,7 @@ Some endpoints count requests in **fixed windows** and answer `429 RATE_LIMIT_EX
 | `POST /auth/login` | client IP | 5 / minute | Slows down password guessing. |
 | `POST /auth/login` | email (any IP) | after 5 failures in a row: wait 30 s, then 1, 2, 4, 8 and at most 15 min | Stops guessing one account's password from many IPs. |
 | `POST /auth/refresh`, `/auth/logout` | client IP | 10 / minute, 20 / minute | Protects the token table. |
+| `GET /transactions/export`, `POST /transactions/upload-csv` | user | 10 / minute each | Each request reads or writes a whole file. |
 | `POST /copilot/chat`, `/copilot/chat/stream` | user (one counter for both) | 10 / minute and 100 / day | The minute limit stops scripts and loops; the daily one caps the LLM cost. |
 
 How it works (`shared/web/RateLimiter`):
@@ -308,7 +314,7 @@ What it has:
 - **Sidebar** (collapsible; a drawer on phones): the Dashboard and Transactions views, and the **accounts**. Picking an account switches every view to it. Each account shows the month's spending against its budget and against last month; accounts can be created and edited there.
 - **Dashboard**: metric cards, budget, recurring transactions, spending by category group and the spending trend, for a chosen period.
 - **Transactions**: a calendar (each day shaded by what was spent; click a day to filter) above the list, 10 per page, with search and a category filter. Each row can be viewed, edited, deleted or made recurring.
-- **Header**: add a transaction (optionally repeating) and import a CSV.
+- **Header**: add a transaction (optionally repeating), import a CSV, and export one (a dialog to pick one account or all, and a period).
 - **Copilot panel**: the account's alerts with their actions (make recurring, update the amount, stop) and the AI chat, streamed, with a Stop button and one conversation per account.
 
 ```bash
