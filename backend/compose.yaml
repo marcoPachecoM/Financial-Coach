@@ -7,7 +7,9 @@ services:
       POSTGRES_USER: financial_coach
       POSTGRES_PASSWORD: financial_coach
     ports:
-      - "5432:5432"
+      # Only this machine can connect: published on all interfaces, anyone on the same network
+      # (a café, an office) could reach the database with these development credentials.
+      - "127.0.0.1:5432:5432"
     volumes:
       # PostgreSQL 18 images store data under /var/lib/postgresql/<major>/,
       # so the volume is mounted on the parent directory.

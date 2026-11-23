@@ -37,6 +37,9 @@ class AuthControllerTest extends ApiIntegrationTest {
     @Autowired
     private RateLimiter rateLimiter;
 
+    @Autowired
+    private LoginThrottle loginThrottle;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -52,6 +55,7 @@ class AuthControllerTest extends ApiIntegrationTest {
     @BeforeEach
     void setUp() {
         rateLimiter.reset();
+        loginThrottle.reset();
         jwts = new TestJwts(encoder, properties);
         client = users.client();
     }

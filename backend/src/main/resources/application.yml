@@ -88,6 +88,9 @@ financial-coach:
     login: ${RATE_LIMIT_LOGIN:5}
     refresh: ${RATE_LIMIT_REFRESH:10}
     logout: ${RATE_LIMIT_LOGOUT:20}
+    # Consecutive failed logins of one email (from any IP) before each new attempt must wait:
+    # 30 s, then doubling up to 15 min. A success resets it.
+    login-account-failures: ${RATE_LIMIT_LOGIN_ACCOUNT_FAILURES:5}
   # Generator of recurring transactions: daily (server time) and once at startup.
   recurring:
     scheduler-enabled: ${RECURRING_SCHEDULER_ENABLED:true}

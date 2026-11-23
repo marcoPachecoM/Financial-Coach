@@ -82,7 +82,7 @@ Run the app locally against a persistent PostgreSQL:
 
 ```bash
 cd backend
-docker compose up -d --wait                               # PostgreSQL 18 on localhost:5432
+docker compose up -d --wait                               # PostgreSQL 18 on localhost:5432 (this machine only)
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev     # applies migrations + demo data
 curl http://localhost:8080/actuator/health                # {"status":"UP"}
 ```
@@ -179,6 +179,7 @@ Configuration (environment variables; the `dev` profile provides a development s
 | `COPILOT_DAILY_LIMIT` | `100` | Chat messages per user and day: caps what the LLM can cost. |
 | `COPILOT_MAX_LLM_CALLS` | `5` | Calls to the model for one message (the tool loop; a normal question takes 2 or 3). Above it the message stops with `502 COPILOT_CALL_LIMIT`. |
 | `RATE_LIMIT_LOGIN` / `RATE_LIMIT_REFRESH` / `RATE_LIMIT_LOGOUT` | `5` / `10` / `20` | Requests per minute and client IP on the token endpoints. |
+| `RATE_LIMIT_LOGIN_ACCOUNT_FAILURES` | `5` | Consecutive failed logins of one email, from any IP, before each new attempt must wait (see [Rate limits](#rate-limits)). |
 
 Variables go in `backend/.env` (gitignored; copy `backend/.env.example`) or in the server's environment. Secrets (keys, passwords) always go there, never in `application.yml`. Any other property of `application.yml` can also be overridden without a placeholder, by its name in upper case with `_` instead of `.` and no dashes, e.g. `FINANCIALCOACH_COPILOT_TIMEOUT=30s` for `financial-coach.copilot.timeout`.
 
@@ -189,6 +190,7 @@ Some endpoints count requests in **fixed windows** and answer `429 RATE_LIMIT_EX
 | Endpoint | Counted per | Limits (default) | Why |
 |---|---|---|---|
 | `POST /auth/login` | client IP | 5 / minute | Slows down password guessing. |
+| `POST /auth/login` | email (any IP) | after 5 failures in a row: wait 30 s, then 1, 2, 4, 8 and at most 15 min | Stops guessing one account's password from many IPs. |
 | `POST /auth/refresh`, `/auth/logout` | client IP | 10 / minute, 20 / minute | Protects the token table. |
 | `POST /copilot/chat`, `/copilot/chat/stream` | user (one counter for both) | 10 / minute and 100 / day | The minute limit stops scripts and loops; the daily one caps the LLM cost. |
 
@@ -207,6 +209,8 @@ Example with the login limit (5 per minute):
 | 10:00:20 | 5th | 5 | allowed |
 | 10:00:37 | 6th | 6 | `429`, `Retry-After: 23` |
 | 10:01:02 | 7th | 1 (new window) | allowed |
+
+The per-email login limit (`auth/LoginThrottle`) works differently: it counts consecutive failures, not requests. After 5, every attempt for that email waits, even with the right password, and each new failure doubles the wait (30 s up to 15 min). A successful login, or an hour without failures, starts again from zero. It applies to unknown emails too, so a 429 never reveals which emails have an account. It is a growing delay rather than a lockout, so an attacker can make a victim wait while they keep failing, but cannot lock the account for good.
 
 Limitations: a client can send a full window's worth at 10:00:59 and another at 10:01:00 (fixed windows allow that burst), and the counters live in memory, so they reset on restart and each instance counts on its own. Behind a reverse proxy, set `server.forward-headers-strategy` so the real client IP is used.
 
@@ -336,6 +340,8 @@ GitHub Actions on push and pull request:
 
 - `backend`: `./mvnw verify` on Java 25 (unit and integration tests, Flyway migrations against PostgreSQL with Testcontainers).
 - `frontend`: `npm ci`, ESLint, type check and build.
+
+Dependabot ([.github/dependabot.yml](.github/dependabot.yml)) opens weekly pull requests for Maven, npm and GitHub Actions updates (minor and patch grouped per ecosystem). For immediate pull requests on security advisories, enable *Dependabot alerts* and *Dependabot security updates* in the repository settings.
 
 ## 7. Production Security Requirements
 

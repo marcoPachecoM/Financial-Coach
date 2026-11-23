@@ -1,6 +1,7 @@
 package com.financialcoach.shared.web;
 
 import com.financialcoach.shared.error.ApiException;
+import com.financialcoach.shared.error.TooManyRequestsException;
 import com.financialcoach.shared.error.ApiFieldError;
 import com.financialcoach.shared.error.ValidationException;
 import java.net.URI;
@@ -56,6 +57,9 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         if (ex.status() == HttpStatus.UNAUTHORIZED) {
             // A 401 must say how to authenticate (RFC 9110).
             headers.set(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+        }
+        if (ex instanceof TooManyRequestsException tooMany) {
+            headers.set(HttpHeaders.RETRY_AFTER, Long.toString(tooMany.retryAfterSeconds()));
         }
         return handleExceptionInternal(ex, problem, headers, ex.status(), request);
     }
