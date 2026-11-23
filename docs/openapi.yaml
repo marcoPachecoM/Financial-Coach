@@ -751,7 +751,9 @@ paths:
         "404": { $ref: "#/components/responses/AccountNotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "502":
-          description: The model returned no text (`COPILOT_EMPTY_RESPONSE`), e.g. blocked by safety filters.
+          description: |
+            `COPILOT_EMPTY_RESPONSE`: the model returned no text, e.g. blocked by safety filters.
+            `COPILOT_CALL_LIMIT`: the tool loop needed more model calls than allowed (5 by default).
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetail" }
@@ -801,7 +803,7 @@ paths:
         - `done` (last, on success): provider, model and token usage.
         - `error` (last, on failure): `code` and `detail`. It can follow some deltas (the answer
           stopped half-way). Codes: `COPILOT_UNAVAILABLE`, `COPILOT_QUOTA_EXCEEDED`,
-          `COPILOT_EMPTY_RESPONSE`.
+          `COPILOT_CALL_LIMIT`, `COPILOT_EMPTY_RESPONSE`.
 
         Exactly one `done` or `error` ends the stream. Closing the connection cancels the answer
         (the model stops). Errors found before the stream starts (validation, account, rate limit)
@@ -1098,6 +1100,7 @@ components:
             - COPILOT_UNAVAILABLE
             - COPILOT_QUOTA_EXCEEDED
             - COPILOT_EMPTY_RESPONSE
+            - COPILOT_CALL_LIMIT
             - INTERNAL_SERVER_ERROR
         errors:
           type: array
@@ -1698,5 +1701,5 @@ components:
       properties:
         code:
           type: string
-          enum: [COPILOT_UNAVAILABLE, COPILOT_QUOTA_EXCEEDED, COPILOT_EMPTY_RESPONSE]
+          enum: [COPILOT_UNAVAILABLE, COPILOT_QUOTA_EXCEEDED, COPILOT_CALL_LIMIT, COPILOT_EMPTY_RESPONSE]
         detail: { type: string, example: "The AI model's usage quota is used up. Try again in 6 h 51 min." }

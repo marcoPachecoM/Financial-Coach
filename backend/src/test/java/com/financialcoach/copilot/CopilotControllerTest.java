@@ -91,6 +91,22 @@ class CopilotControllerTest extends ApiIntegrationTest {
     }
 
     @Test
+    void aModelThatKeepsAskingForToolsIsStoppedAfterTheLimit() throws Exception {
+        // A model stuck in the tool loop: every answer asks for the summary tool again.
+        when(chatModel.call(any(Prompt.class))).thenAnswer(invocation -> new ChatResponse(List.of(new Generation(
+                AssistantMessage.builder()
+                        .toolCalls(List.of(new AssistantMessage.ToolCall("call-1", "function", "summary",
+                                "{\"startDate\": \"2026-09-01\", \"endDate\": \"2026-09-30\"}")))
+                        .build()))));
+
+        mvc.perform(chat(alice, aliceAccount, "How much in September?", null))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("COPILOT_CALL_LIMIT"));
+        // max-llm-calls is 5 by default: the 6th call never reaches the model.
+        verify(chatModel, times(5)).call(any(Prompt.class));
+    }
+
+    @Test
     void providerErrorsBecome503WithoutHanging() throws Exception {
         when(chatModel.call(any(Prompt.class)))
                 .thenThrow(new RuntimeException("Failed to generate content", new RuntimeException("503 UNAVAILABLE")));

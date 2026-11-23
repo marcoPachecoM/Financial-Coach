@@ -11,7 +11,8 @@ import org.springframework.http.codec.ServerSentEvent;
  * event: error   data: {"code":"COPILOT_UNAVAILABLE","detail":"..."}            (last, on failure)
  * </pre>
  * Error codes: COPILOT_UNAVAILABLE (busy, timeout), COPILOT_QUOTA_EXCEEDED (the provider's quota is
- * used up; the detail says when to retry) and COPILOT_EMPTY_RESPONSE.
+ * used up; the detail says when to retry), COPILOT_CALL_LIMIT (the tool loop needed too many model
+ * calls) and COPILOT_EMPTY_RESPONSE.
  * <pre>
  * </pre>
  * An error can follow some deltas: the answer stopped half-way.

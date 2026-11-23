@@ -71,6 +71,8 @@ financial-coach:
     # Chat messages per user (429 RATE_LIMIT_EXCEEDED above). The daily limit caps the LLM cost.
     requests-per-minute: ${COPILOT_REQUESTS_PER_MINUTE:10}
     daily-limit: ${COPILOT_DAILY_LIMIT:100}
+    # Calls to the LLM for one message (tool loop); above it, 502 COPILOT_CALL_LIMIT. Normal: 2-3.
+    max-llm-calls: ${COPILOT_MAX_LLM_CALLS:5}
   jwt:
     # HS256 key, at least 32 bytes. Required: the app does not start without it.
     secret: ${JWT_SECRET_KEY}

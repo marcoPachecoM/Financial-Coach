@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -79,6 +80,13 @@ class CopilotStreamTest extends ApiIntegrationTest {
                 // Only the last chunk's usage counts: 120 / 8 / 150, not the sum of every chunk.
                 "\"usage\":{\"input_tokens\":120,\"output_tokens\":8,\"total_tokens\":150,\"llm_calls\":1}");
         assertThat(body).doesNotContain("event:error");
+    }
+
+    @Test
+    void asksProxiesNotToBufferTheStream() throws Exception {
+        mvc.perform(streamRequest(alice, null))
+                .andExpect(request().asyncStarted())
+                .andExpect(header().string("X-Accel-Buffering", "no"));
     }
 
     @Test

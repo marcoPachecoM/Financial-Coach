@@ -177,6 +177,7 @@ Configuration (environment variables; the `dev` profile provides a development s
 | `GEMINI_MODEL` | `gemini-4-hydrogen` | Any model of your key; a lighter one (e.g. `gemini-flash-lite-latest`) is faster and less often overloaded. |
 | `COPILOT_REQUESTS_PER_MINUTE` | `10` | Chat messages per user and minute. |
 | `COPILOT_DAILY_LIMIT` | `100` | Chat messages per user and day: caps what the LLM can cost. |
+| `COPILOT_MAX_LLM_CALLS` | `5` | Calls to the model for one message (the tool loop; a normal question takes 2 or 3). Above it the message stops with `502 COPILOT_CALL_LIMIT`. |
 | `RATE_LIMIT_LOGIN` / `RATE_LIMIT_REFRESH` / `RATE_LIMIT_LOGOUT` | `5` / `10` / `20` | Requests per minute and client IP on the token endpoints. |
 
 Variables go in `backend/.env` (gitignored; copy `backend/.env.example`) or in the server's environment. Secrets (keys, passwords) always go there, never in `application.yml`. Any other property of `application.yml` can also be overridden without a placeholder, by its name in upper case with `_` instead of `.` and no dashes, e.g. `FINANCIALCOACH_COPILOT_TIMEOUT=30s` for `financial-coach.copilot.timeout`.
@@ -217,11 +218,13 @@ To change a limit, set its variable, e.g. `COPILOT_DAILY_LIMIT=300` in `backend/
 
 - **Streaming**: `POST /api/v1/copilot/chat/stream` (same body) sends the answer while it is written; see [Streaming](#streaming-server-sent-events) below.
 - **Tools**: the model cannot query the database; it calls read-only Java methods (`CopilotTools`): totals, spending by category group, transaction search, budget status and recurring charges. The user and account come from the request, never from the model.
+- **Prompt injection**: transaction names and categories come from bank files and user input, so a row could contain instructions ("ignore your rules..."). The system prompt tells the model that tool results are data, never instructions. Even if it obeyed, the tools are read-only and scoped to the user's account.
+- **Tool loop limit**: Spring AI's tool loop has no limit of its own, and the rate limit counts HTTP requests, not model calls. A model that keeps asking for tools is stopped after `COPILOT_MAX_LLM_CALLS` calls (5): `502 COPILOT_CALL_LIMIT`, logged as `outcome=call_limit`.
 - **Memory**: messages with the same `conversation_id` share history, so follow-up questions work ("and in October?"). The last 10 messages go back to the model. The history lives in the server's memory: it is lost on restart, and at most 1000 conversations are kept (the least recently used are forgotten first). Without `conversation_id`, every message stands alone.
 - **Frontend chat**: one conversation per account. Switching accounts shows that account's chat and coming back shows the earlier messages; an answer still streaming is cancelled. The **Stop** button (in place of Send while answering) cancels the answer too. Chats are kept while the page is open, not in localStorage, because they hold financial data.
 - **Fail fast**: each LLM request has a 20 s timeout and one retry (only for 408 and 5xx). An overloaded, slow or unreachable model answers `503 COPILOT_UNAVAILABLE`. A model that returns no text (safety filters, output limit) answers `502 COPILOT_EMPTY_RESPONSE`.
 - **Provider quota**: when the model's quota is used up (HTTP 429; Gemini's free tier allows a few requests per model per day, and each question with tools takes about 2), the answer is `503 COPILOT_QUOTA_EXCEEDED` (or that `error` event when streaming) with when to retry, read from the provider's error: `The AI model's usage quota is used up. Try again in 6 h 51 min.` 429 is not retried, since a daily quota would only make the user wait. Gemini's daily quota resets at midnight Pacific time; see your usage at https://ai.dev/rate-limit, or switch `GEMINI_MODEL`, since the quota is per model.
-- **Token usage**: `usage` has the `input_tokens`, `output_tokens`, `total_tokens` (as billed; Gemini adds thinking tokens, so it can exceed input + output) and `llm_calls` of the message, summed over the whole tool loop. Each message also logs exactly one line, even when it fails (ids only, never the text): `Copilot usage: outcome=ok user=… account=… model=… calls=2 input=1830 output=95 total=2010`. `outcome` is `ok`, `empty`, `unknown_tool`, `failed`, `quota` or `cancelled` (the client stopped a streamed answer; the tokens spent until then are counted). The chat shows the total under each answer.
+- **Token usage**: `usage` has the `input_tokens`, `output_tokens`, `total_tokens` (as billed; Gemini adds thinking tokens, so it can exceed input + output) and `llm_calls` of the message, summed over the whole tool loop. Each message also logs exactly one line, even when it fails (ids only, never the text): `Copilot usage: outcome=ok user=… account=… model=… calls=2 input=1830 output=95 total=2010`. `outcome` is `ok`, `empty`, `unknown_tool`, `failed`, `quota`, `call_limit` or `cancelled` (the client stopped a streamed answer; the tokens spent until then are counted). The chat shows the total under each answer.
 - **Cost**: `max-output-tokens` and `thinking-level` in `application.yml`, plus the daily limit above. Without billing enabled on the Google project only the free tier is used (Google may use that data to improve its products).
 - **Another model**: change `GEMINI_MODEL`. **Another provider**: change the starter in `pom.xml`, the `spring.ai.*` block in `application.yml`, the API key variable, the chat model type in `CopilotConfig`, and delete `GeminiClientConfig`.
 
@@ -251,9 +254,9 @@ data:{"provider":"google-genai","model":"gemini-...","usage":{"input_tokens":300
 |---|---|---|
 | `delta` | A new piece of text (many of them) | Appends it to the answer bubble |
 | `done` | Finished; carries model and token usage | Shows the tokens and enables the input again |
-| `error` | Failed: `code` (`COPILOT_UNAVAILABLE`, `COPILOT_QUOTA_EXCEEDED` or `COPILOT_EMPTY_RESPONSE`) and `detail` | Shows the error; it can arrive after some deltas (the answer stopped half-way) |
+| `error` | Failed: `code` (`COPILOT_UNAVAILABLE`, `COPILOT_QUOTA_EXCEEDED`, `COPILOT_CALL_LIMIT` or `COPILOT_EMPTY_RESPONSE`) and `detail` | Shows the error; it can arrive after some deltas (the answer stopped half-way) |
 
-Exactly one `done` or `error` closes the stream, unless the client cancels it (closing the connection stops the model too). Errors before the stream starts (404 account, 429 rate limit, 400 validation) are normal Problem Details responses.
+Exactly one `done` or `error` closes the stream, unless the client cancels it (closing the connection stops the model too). The response carries `X-Accel-Buffering: no` so that nginx passes each event on instead of buffering the whole answer; other proxies may need buffering turned off for this path. Errors before the stream starts (404 account, 429 rate limit, 400 validation) are normal Problem Details responses.
 
 Where it lives:
 
@@ -341,5 +344,7 @@ GitHub Actions on push and pull request:
 - Never log passwords, JWTs or secrets.
 - The rate limiter (login, refresh, logout, copilot) is in memory: with several instances, move it to a shared store (e.g. Redis).
 - Keep the copilot's daily limit and `max-output-tokens` low if billing is enabled on the LLM account, and set a quota there: budget alerts alone do not stop spending.
+- With real users, use a paid LLM tier (or get their consent): on Gemini's free tier Google may use prompts, which carry merchants, amounts and questions, to improve its products.
+- Do not run with the `dev` profile: it logs Spring AI at DEBUG, which can include tool arguments and results (financial data).
 - Enforce TLS and set HSTS behind HTTPS.
 - Keep dependencies updated and scanned.
