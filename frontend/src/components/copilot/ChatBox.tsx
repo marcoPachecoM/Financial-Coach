@@ -5,11 +5,14 @@ interface ChatBoxProps {
   onSendMessage: (text: string) => void;
   /** While the copilot is answering: the text can be typed but not sent. */
   disabled?: boolean;
+  /** Shown instead of Send while the copilot is answering: cancels the answer. */
+  onStop?: () => void;
 }
 
 export const ChatBox: React.FC<ChatBoxProps> = ({
   onSendMessage,
   disabled = false,
+  onStop,
 }) => {
   const [inputValue, setInputValue] = useState('');
 
@@ -56,14 +59,27 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
           className="flex-1 bg-transparent border-0 focus:outline-hidden text-xs text-slate-800 placeholder:text-slate-400 px-2.5 py-1.5 font-sans"
         />
 
-        <button
-          type="submit"
-          disabled={disabled || !inputValue.trim()}
-          title="Send prompt"
-          className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer shrink-0"
-        >
-          <span className="material-symbols-outlined !text-[15px]">send</span>
-        </button>
+        {disabled && onStop ? (
+          <button
+            type="button"
+            onClick={onStop}
+            title="Stop answering"
+            aria-label="Stop answering"
+            className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center hover:bg-rose-600 transition-colors cursor-pointer shrink-0"
+          >
+            <span className="material-symbols-outlined !text-[15px]">stop</span>
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={disabled || !inputValue.trim()}
+            title="Send prompt"
+            aria-label="Send prompt"
+            className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer shrink-0"
+          >
+            <span className="material-symbols-outlined !text-[15px]">send</span>
+          </button>
+        )}
       </form>
     </div>
   );

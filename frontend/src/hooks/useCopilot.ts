@@ -62,6 +62,8 @@ interface Chat {
 }
 
 const NO_ACCOUNT = "none";
+/** Abort reason of the Stop button, to tell it from leaving the account. */
+const STOPPED_BY_USER = "stopped-by-user";
 const newChat = (): Chat => ({ id: crypto.randomUUID(), messages: INITIAL_CHAT_MESSAGES });
 const EMPTY_CHAT: Chat = { id: "", messages: INITIAL_CHAT_MESSAGES };
 
@@ -163,10 +165,13 @@ export const useCopilot = ({ accountId, alerts, onDataChanged }: CopilotInput) =
       );
       update((m) => ({ ...m, tokens: done.usage?.total_tokens }));
     } catch (error) {
-      // Cancelled because the user switched accounts: say so in that chat, seen when coming back.
-      const text = controller.signal.aborted
-        ? "I stopped answering because you switched accounts. Ask again if you still need it."
-        : chatErrorMessage(error);
+      // Cancelled by the Stop button, or because the user switched accounts (said in that chat,
+      // seen when coming back).
+      const text = !controller.signal.aborted
+        ? chatErrorMessage(error)
+        : controller.signal.reason === STOPPED_BY_USER
+          ? "Stopped."
+          : "I stopped answering because you switched accounts. Ask again if you still need it.";
       if (started) {
         update((m) => ({ ...m, text: `${m.text}\n\n(${text})` }));
       } else {
@@ -181,6 +186,9 @@ export const useCopilot = ({ accountId, alerts, onDataChanged }: CopilotInput) =
       }
     }
   };
+
+  /** The Stop button: cancels the answer being streamed (the server stops generating it). */
+  const stop = () => streaming.current?.abort(STOPPED_BY_USER);
 
   const dismissInsight = (alertId: string) => {
     const next = [...dismissed.filter((k) => k !== dismissKey(alertId)), dismissKey(alertId)];
@@ -219,5 +227,5 @@ export const useCopilot = ({ accountId, alerts, onDataChanged }: CopilotInput) =
     }
   };
 
-  return { insights, busyInsightId, messages, thinking, busy, sendMessage, runAction, dismissInsight, say };
+  return { insights, busyInsightId, messages, thinking, busy, sendMessage, stop, runAction, dismissInsight, say };
 };

@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +24,7 @@ import com.financialcoach.transactions.RecurringReport;
 import com.financialcoach.transactions.TransactionStatistics;
 
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.SignalType;
 
 @Service
 public class CopilotService {
@@ -122,6 +124,14 @@ public class CopilotService {
         TokenUsageAdvisor usageAdvisor = new TokenUsageAdvisor();
         AtomicReference<String> model = new AtomicReference<>();
         AtomicBoolean answered = new AtomicBoolean();
+        // Exactly one usage line per message: the stream can end (ok, empty, failed) and be
+        // cancelled around the same time, from different threads.
+        AtomicBoolean logged = new AtomicBoolean();
+        Consumer<String> logOnce = outcome -> {
+            if (logged.compareAndSet(false, true)) {
+                logUsage(userId, request, model.get(), usageAdvisor.usage(), outcome);
+            }
+        };
 
         Flux<ServerSentEvent<Object>> deltas = Flux.defer(() -> prompt(userId, request, usageAdvisor).stream().chatResponse())
                 .doOnNext(chunk -> {
@@ -135,28 +145,33 @@ public class CopilotService {
                 .map(ChatStreamEvents::delta);
 
         Flux<ServerSentEvent<Object>> end = Flux.defer(() -> {
-            TokenUsage usage = usageAdvisor.usage();
             if (!answered.get()) {
-                logUsage(userId, request, model.get(), usage, "empty");
+                logOnce.accept("empty");
                 return Flux.just(ChatStreamEvents.error("COPILOT_EMPTY_RESPONSE",
                         "The copilot returned no answer. Try again or rephrase the question."));
             }
-            logUsage(userId, request, model.get(), usage, "ok");
-            return Flux.just(ChatStreamEvents.done(properties.provider(), model.get(), usage));
+            logOnce.accept("ok");
+            return Flux.just(ChatStreamEvents.done(properties.provider(), model.get(), usageAdvisor.usage()));
         });
 
         return deltas.concatWith(end).onErrorResume(e -> {
-            TokenUsage usage = usageAdvisor.usage();
             if (e instanceof IllegalStateException ise && isUnknownTool(ise)) {
                 log.warn("Copilot model called an unknown tool: {}", e.getMessage());
-                logUsage(userId, request, model.get(), usage, "unknown_tool");
+                logOnce.accept("unknown_tool");
                 return Flux.just(ChatStreamEvents.delta(UNKNOWN_TOOL_ANSWER),
-                        ChatStreamEvents.done(properties.provider(), model.get(), usage));
+                        ChatStreamEvents.done(properties.provider(), model.get(), usageAdvisor.usage()));
             }
             log.warn("Copilot LLM stream failed: {}", rootMessage(e), e);
-            logUsage(userId, request, model.get(), usage, "failed");
+            logOnce.accept("failed");
             return Flux.just(ChatStreamEvents.error("COPILOT_UNAVAILABLE",
                     "The copilot is busy or unavailable right now. Please try again in a moment."));
+        }).doFinally(signal -> {
+            // The client left (closed the tab, switched accounts, timed out): Reactor cancels the
+            // stream and neither branch above runs, but the tokens so far are billed. doFinally runs
+            // after the cancel reached the TokenUsageAdvisor, so the call cut short is included.
+            if (signal == SignalType.CANCEL) {
+                logOnce.accept("cancelled");
+            }
         });
     }
 

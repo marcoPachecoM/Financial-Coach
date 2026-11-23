@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -28,6 +29,8 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MvcResult;
@@ -42,6 +45,9 @@ class CopilotStreamTest extends ApiIntegrationTest {
 
     @Autowired
     private RateLimiter rateLimiter;
+
+    @Autowired
+    private CopilotService service;
 
     private TestUser alice;
     private UUID account;
@@ -105,6 +111,18 @@ class CopilotStreamTest extends ApiIntegrationTest {
         verify(chatModel, org.mockito.Mockito.times(2)).stream(prompts.capture());
         List<String> secondCall = prompts.getValue().getInstructions().stream().map(Message::getText).toList();
         assertThat(secondCall).contains("How much?", "En septiembre gastaste $10.00.");
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void aStreamCutShortByTheClientStillLogsItsTokens(CapturedOutput output) {
+        // take(1) cancels after the first piece, like a browser that closes the connection.
+        service.stream(alice.id(), new ChatRequestRecord("How much?", account, null)).take(1).blockLast();
+
+        // The tokens reported by the first chunk (120 / 3 / 3), logged once as "cancelled".
+        assertThat(output.getOut())
+                .contains("outcome=cancelled", "calls=1 input=120 output=3 total=3")
+                .doesNotContain("outcome=ok");
     }
 
     /** Runs the request and returns the SSE body once the stream ends. */

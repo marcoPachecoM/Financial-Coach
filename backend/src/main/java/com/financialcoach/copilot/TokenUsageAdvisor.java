@@ -19,7 +19,8 @@ import reactor.core.publisher.Flux;
  * round of the tool loop. The usage of the final response alone would only cover the last call.
  *
  * <p>When streaming, every chunk of a call repeats the usage so far, so only the last one with
- * tokens is added (adding every chunk would count the same tokens many times).
+ * tokens is added (adding every chunk would count the same tokens many times). A call cancelled
+ * half-way (the client left) adds what its chunks reported until then.
  */
 class TokenUsageAdvisor implements CallAdvisor, StreamAdvisor {
 
@@ -45,7 +46,9 @@ class TokenUsageAdvisor implements CallAdvisor, StreamAdvisor {
                         last.set(usage);
                     }
                 })
-                .doOnComplete(() -> addCall(last.get()));
+                .doOnComplete(() -> addCall(last.get()))
+                // Cut short by the client: the tokens of this call up to now are billed too.
+                .doOnCancel(() -> addCall(last.get()));
     }
 
     /** What was spent so far; also valid after a failure in a later call. */

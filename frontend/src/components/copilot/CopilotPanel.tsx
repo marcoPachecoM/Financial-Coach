@@ -16,6 +16,8 @@ interface CopilotPanelProps {
   onInsightAction: (id: string, action: AlertAction) => void;
   onDismissInsight: (id: string) => void;
   onSendMessage: (text: string) => void;
+  /** Cancels the answer being streamed. */
+  onStop: () => void;
 }
 
 export const CopilotPanel: React.FC<CopilotPanelProps> = ({
@@ -27,6 +29,7 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({
   onInsightAction,
   onDismissInsight,
   onSendMessage,
+  onStop,
 }) => {
   return (
     <aside className="w-full lg:w-92 lg:sticky lg:top-20 lg:self-start lg:h-[calc(100vh-6.5rem)] flex flex-col justify-between gap-3">
@@ -98,7 +101,7 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({
 
       {/* 3. Sticky / Fixed Bottom Chat Input with Solid Background */}
       <div className="shrink-0 sticky bottom-0 z-20 bg-[#f7f9fb] pt-1">
-        <ChatBox onSendMessage={onSendMessage} disabled={busy} />
+        <ChatBox onSendMessage={onSendMessage} disabled={busy} onStop={onStop} />
       </div>
     </aside>
   );
