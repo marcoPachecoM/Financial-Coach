@@ -481,6 +481,7 @@ export const HomeScreen: React.FC = () => {
             onInsightAction={copilot.runAction}
             onDismissInsight={copilot.dismissInsight}
             onSendMessage={copilot.sendMessage}
+            onNewChat={copilot.newChat}
           />
         </div>
       </main>

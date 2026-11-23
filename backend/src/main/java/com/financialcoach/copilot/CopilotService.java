@@ -7,10 +7,14 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.stereotype.Service;
 
 import com.financialcoach.accounts.AccountService;
+import com.financialcoach.shared.error.ApiException;
+import com.financialcoach.shared.error.ServiceUnavailableException;
 import com.financialcoach.shared.error.UpstreamUnavailableException;
 import com.financialcoach.transactions.RecurringReport;
 import com.financialcoach.transactions.TransactionStatistics;
@@ -32,6 +36,8 @@ public class CopilotService {
             - Plain text only, no Markdown (no asterisks, no headings); use "- " for lists.
             - Answer in the user's language, briefly (a few sentences or a short list).
             - Do not give investment, tax or legal advice.
+            - Earlier messages of the conversation may be included: use them to understand follow-up
+              questions ("and in August?"), but get the numbers again from the tools.
             """;
 
     /** Answer given when the model calls a tool that does not exist (Spring AI throws). */
@@ -40,6 +46,7 @@ public class CopilotService {
                     + "search transactions by merchant, your budget and your recurring charges.";
 
     private final ChatClient chatClient;
+    private final MessageChatMemoryAdvisor memoryAdvisor;
     private final TransactionStatistics statistics;
     private final RecurringReport recurringReport;
     private final AccountService accountService;
@@ -47,8 +54,9 @@ public class CopilotService {
     private final CopilotProperties properties;
 
     public CopilotService(ChatClient chatClient, TransactionStatistics statistics, RecurringReport recurringReport,
-            AccountService accountService, Clock clock, CopilotProperties properties) {
+            AccountService accountService, Clock clock, CopilotProperties properties, ChatMemory chatMemory) {
         this.chatClient = chatClient;
+        this.memoryAdvisor = MessageChatMemoryAdvisor.builder(chatMemory).build();
         this.statistics = statistics;
         this.recurringReport = recurringReport;
         this.accountService = accountService;
@@ -64,19 +72,28 @@ public class CopilotService {
 
         ChatResponse chatAnswer;
         try {
-            chatAnswer = chatClient.prompt()
+            ChatClient.ChatClientRequestSpec prompt = chatClient.prompt()
                     .system(SYSTEM_PROMPT.formatted(LocalDate.now(clock), properties.amountFormat()))
                     .user(request.message())
-                    .tools(tools)
-                    .call()
-                    .chatResponse();
-        } catch (IllegalStateException e) {
-            // Spring AI has no dedicated exception for a hallucinated tool name.
-            if (e.getMessage() != null && e.getMessage().startsWith("No ToolCallback found")) {
+                    .tools(tools);
+            if (request.conversationId() != null) {
+                String conversation = conversationKey(userId, request);
+                prompt = prompt.advisors(a -> a.advisors(memoryAdvisor).param(ChatMemory.CONVERSATION_ID, conversation));
+            }
+            chatAnswer = prompt.call().chatResponse();
+        } catch (RuntimeException e) {
+            if (e instanceof ApiException) {
+                throw e;  // ours (e.g. 404), already mapped to an HTTP response
+            }
+            if (e instanceof IllegalStateException && isUnknownTool(e)) {
                 log.warn("Copilot model called an unknown tool: {}", e.getMessage());
                 return new ChatResponseRecord(UNKNOWN_TOOL_ANSWER, properties.provider(), null);
             }
-            throw e;
+            // Overloaded (503), over quota (429), timeout or network error: to the user they are all
+            // "try again later". Providers wrap their errors differently, so the cause is only logged.
+            log.warn("Copilot LLM call failed: {}", rootMessage(e), e);
+            throw new ServiceUnavailableException("COPILOT_UNAVAILABLE",
+                    "The copilot is busy or unavailable right now. Please try again in a moment.");
         }
 
         // Blocked by safety filters or cut by max-output-tokens: the provider may return no text.
@@ -89,5 +106,26 @@ public class CopilotService {
         String model = chatAnswer.getMetadata().getModel();
 
         return new ChatResponseRecord(answer, properties.provider(), model);
+    }
+
+    /**
+     * The user and the account are part of the key, so a conversation id sent by another user,
+     * or reused with another account, never sees this history.
+     */
+    private static String conversationKey(UUID userId, ChatRequestRecord request) {
+        return userId + ":" + request.accountId() + ":" + request.conversationId();
+    }
+
+    /** Spring AI has no dedicated exception for a hallucinated tool name. */
+    private static boolean isUnknownTool(RuntimeException e) {
+        return e.getMessage() != null && e.getMessage().startsWith("No ToolCallback found");
+    }
+
+    private static String rootMessage(Throwable e) {
+        Throwable root = e;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        return root.getClass().getSimpleName() + ": " + root.getMessage();
     }
 }

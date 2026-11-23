@@ -1,5 +1,8 @@
 spring:
   ai:
+    # The Google SDK already retries (financial-coach.copilot.attempts); do not retry on top of it.
+    retry:
+      max-attempts: 1
     google:
       genai:
         api-key: ${GEMINI_API_KEY}
@@ -54,6 +57,12 @@ financial-coach:
     provider: google-genai
     # How the copilot writes amounts: generic "$" like the frontend, without naming a currency.
     amount-format: "$1,234.56"
+    # Each call to the LLM: time limit and tries (2 = one retry when the model is busy).
+    timeout: 20s
+    attempts: 2
+    # Chat memory: last messages per conversation sent back to the model, and conversations kept.
+    memory-messages: 10
+    memory-conversations: 1000
   jwt:
     # HS256 key, at least 32 bytes. Required: the app does not start without it.
     secret: ${JWT_SECRET_KEY}

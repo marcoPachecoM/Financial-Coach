@@ -6,6 +6,8 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.springframework.ai.chat.client.advisor.observation.AdvisorObservationConvention;
 import org.springframework.ai.chat.client.observation.ChatClientObservationConvention;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.ai.model.chat.client.autoconfigure.ChatClientBuilderConfigurer;
@@ -47,6 +49,18 @@ public class CopilotConfig {
     //     return buildChatClient(chatModel, configurer, observationRegistry,
     //             chatClientObservationConvention, advisorObservationConvention, toolCallingAdvisorBuilder);
     // }
+
+    /**
+     * Replaces Spring AI's default (20 messages, conversations never forgotten): only the last
+     * messages of each conversation go back to the model, and old conversations are dropped.
+     */
+    @Bean
+    ChatMemory chatMemory(CopilotProperties properties) {
+        return MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new BoundedChatMemoryRepository(properties.memoryConversations()))
+                .maxMessages(properties.memoryMessages())
+                .build();
+    }
 
     private ChatClient buildChatClient(ChatModel chatModel, ChatClientBuilderConfigurer configurer,
             ObjectProvider<ObservationRegistry> observationRegistry,

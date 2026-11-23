@@ -70,6 +70,9 @@ export const useCopilot = ({ accountId, transactions, alerts, onDataChanged }: C
   const [dismissed, setDismissed] = useState<string[]>(loadDismissed);
   const [busyInsightId, setBusyInsightId] = useState<string | null>(null);
   const [thinking, setThinking] = useState(false);
+  /** The server keeps the history per conversation; a new id starts a fresh chat. */
+  const [conversationId, setConversationId] = useState(() => crypto.randomUUID());
+  const [conversationAccount, setConversationAccount] = useState(accountId);
   /** Guards against double sends before the `thinking` state re-renders. */
   const sending = useRef(false);
 
@@ -78,6 +81,18 @@ export const useCopilot = ({ accountId, transactions, alerts, onDataChanged }: C
     () => alerts.filter((alert) => !dismissed.includes(`${accountId}|${alert.id}`)).map(toInsight),
     [alerts, dismissed, accountId],
   );
+
+  const newChat = () => {
+    setConversationId(crypto.randomUUID());
+    setMessages(INITIAL_CHAT_MESSAGES);
+  };
+
+  // Another account means other data: start a new chat (state adjusted during render, as React
+  // recommends, instead of an effect that would first paint the old messages).
+  if (accountId !== conversationAccount) {
+    setConversationAccount(accountId);
+    newChat();
+  }
 
   const say = (text: string) => setMessages((prev) => [...prev, message("assistant", text)]);
 
@@ -105,7 +120,7 @@ export const useCopilot = ({ accountId, transactions, alerts, onDataChanged }: C
     sending.current = true;
     setThinking(true);
     try {
-      const { response } = await sendChatMessage(accountId, text.slice(0, MAX_MESSAGE_LENGTH));
+      const { response } = await sendChatMessage(accountId, conversationId, text.slice(0, MAX_MESSAGE_LENGTH));
       say(response);
     } catch (error) {
       say(chatErrorMessage(error));
@@ -152,5 +167,5 @@ export const useCopilot = ({ accountId, transactions, alerts, onDataChanged }: C
     }
   };
 
-  return { insights, busyInsightId, messages, thinking, sendMessage, runAction, dismissInsight, say };
+  return { insights, busyInsightId, messages, thinking, sendMessage, newChat, runAction, dismissInsight, say };
 };
