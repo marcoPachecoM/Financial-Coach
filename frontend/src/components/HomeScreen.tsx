@@ -86,6 +86,8 @@ export const HomeScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  /** Bumped by refreshAll: the transactions table (server-paginated) reloads its page. */
+  const [listVersion, setListVersion] = useState(0);
   const [isNewTransactionOpen, setIsNewTransactionOpen] = useState(false);
   const [busyRecurringId, setBusyRecurringId] = useState<string | null>(null);
 
@@ -165,6 +167,7 @@ export const HomeScreen: React.FC = () => {
 
   /** After any change: every card depends on the transactions. */
   const refreshAll = () => {
+    setListVersion((v) => v + 1);
     accounts.refetch();
     allTransactions.refetch();
     summary.refetch();
@@ -352,8 +355,9 @@ export const HomeScreen: React.FC = () => {
               </div>
             ) : view === "transactions" ? (
               <TransactionsView
+                accountId={accountId ?? ""}
+                refreshKey={listVersion}
                 transactions={transactions}
-                loading={allTransactions.loading}
                 month={calendarMonth}
                 selectedDay={selectedDay}
                 selectedCategory={selectedCategory}

@@ -390,6 +390,24 @@ paths:
           schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
         - $ref: "#/components/parameters/StartDate"
         - $ref: "#/components/parameters/EndDate"
+        - name: q
+          in: query
+          description: Text contained in the name, the category or the notes (case-insensitive).
+          schema: { type: string, maxLength: 100 }
+        - name: category_group
+          in: query
+          description: Exact category group (one of the 26 labels), e.g. `Food`.
+          schema: { type: string, example: Food }
+        - name: min_amount
+          in: query
+          description: |
+            Lower bound of the absolute amount, inclusive, so it applies the same to expenses and
+            income. Must not exceed `max_amount`.
+          schema: { type: string, pattern: '^\d{1,12}(\.\d{1,2})?$', example: "50" }
+        - name: max_amount
+          in: query
+          description: Upper bound of the absolute amount, inclusive.
+          schema: { type: string, pattern: '^\d{1,12}(\.\d{1,2})?$', example: "200" }
       responses:
         "200":
           description: One page of transactions.

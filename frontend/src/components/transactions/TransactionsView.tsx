@@ -7,8 +7,11 @@ import { CategoryFilters } from '../dashboard/CategoryFilters';
 import { CalendarFilter } from './CalendarFilter';
 
 interface TransactionsViewProps {
+  accountId: string;
+  /** Changes after any edit: the table reloads its page. */
+  refreshKey: number;
+  /** Every transaction of the account: for the calendar and the category chips (the table loads its own page). */
   transactions: Transaction[];
-  loading: boolean;
   month: Date;
   selectedDay: string | null;
   selectedCategory: string;
@@ -26,8 +29,9 @@ const pad = (n: number) => String(n).padStart(2, '0');
 
 /** Calendar on top; below, the transactions of the selected day (or of the month shown). */
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
+  accountId,
+  refreshKey,
   transactions,
-  loading,
   month,
   selectedDay,
   selectedCategory,
@@ -37,6 +41,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   ...tableActions
 }) => {
   const monthPrefix = `${month.getFullYear()}-${pad(month.getMonth() + 1)}`;
+  const lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  // The period the table asks the server for: the selected day, or the whole month shown.
+  const startDate = selectedDay ?? `${monthPrefix}-01`;
+  const endDate = selectedDay ?? `${monthPrefix}-${pad(lastDay)}`;
   const visible = useMemo(
     () =>
       transactions.filter((tx) =>
@@ -77,8 +85,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
       <TransactionsTable
         title={title}
-        transactions={visible}
-        loading={loading}
+        accountId={accountId}
+        startDate={startDate}
+        endDate={endDate}
+        refreshKey={refreshKey}
         selectedCategory={selectedCategory}
         {...tableActions}
       />
