@@ -5,6 +5,12 @@ import type { ApiChatResponse, ApiChatStreamDone } from "../types/copilot";
 
 /** The LLM can take a while (tool calls, provider retries); give up after a minute. */
 const CHAT_TIMEOUT_MS = 60_000;
+/**
+ * A streamed answer gives up only after this long without receiving anything, so a long answer
+ * that keeps arriving is never cut. Before the first piece the model may be calling tools (each
+ * call up to 20 s on the server), hence the margin. The server ends any stream after 90 s.
+ */
+const STREAM_IDLE_TIMEOUT_MS = 45_000;
 
 /**
  * POST /copilot/chat: the copilot answers with the data of that account (it must be the user's).
@@ -48,7 +54,11 @@ export const streamChatMessage = async (
   signal?: AbortSignal,
 ): Promise<ApiChatStreamDone> => {
   const abort = new AbortController();
-  const timeout = setTimeout(() => abort.abort(), CHAT_TIMEOUT_MS);
+  let timeout = setTimeout(() => abort.abort(), STREAM_IDLE_TIMEOUT_MS);
+  const stillAlive = () => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => abort.abort(), STREAM_IDLE_TIMEOUT_MS);
+  };
   const cancel = () => abort.abort();
   if (signal?.aborted) cancel();
   signal?.addEventListener("abort", cancel, { once: true });
@@ -63,7 +73,7 @@ export const streamChatMessage = async (
       const problem = await problemOf(response);
       throw new ChatStreamError(problem?.code ?? `HTTP_${response.status}`, problem?.detail ?? "The copilot request failed.");
     }
-    return await readEvents(response.body, onDelta);
+    return await readEvents(response.body, onDelta, stillAlive);
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener("abort", cancel);
@@ -104,6 +114,7 @@ const problemOf = async (response: Response): Promise<Partial<ProblemDetail> | n
 const readEvents = async (
   body: ReadableStream<Uint8Array>,
   onDelta: (text: string) => void,
+  onData: () => void,
 ): Promise<ApiChatStreamDone> => {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -112,6 +123,7 @@ const readEvents = async (
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
+    onData();
     buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
 
     let end: number;

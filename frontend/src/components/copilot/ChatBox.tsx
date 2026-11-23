@@ -55,6 +55,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           maxLength={1000}
+          aria-label="Message to the copilot"
           placeholder="Ask anything about your finances..."
           className="flex-1 bg-transparent border-0 focus:outline-hidden text-xs text-slate-800 placeholder:text-slate-400 px-2.5 py-1.5 font-sans"
         />
@@ -67,7 +68,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
             aria-label="Stop answering"
             className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center hover:bg-rose-600 transition-colors cursor-pointer shrink-0"
           >
-            <span className="material-symbols-outlined !text-[15px]">stop</span>
+            <span aria-hidden="true" className="material-symbols-outlined !text-[15px]">stop</span>
           </button>
         ) : (
           <button
@@ -77,7 +78,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
             aria-label="Send prompt"
             className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer shrink-0"
           >
-            <span className="material-symbols-outlined !text-[15px]">send</span>
+            <span aria-hidden="true" className="material-symbols-outlined !text-[15px]">send</span>
           </button>
         )}
       </form>
