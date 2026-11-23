@@ -38,15 +38,20 @@ export class ChatStreamError extends Error {
  * POST /copilot/chat/stream: the same answer as sendChatMessage, delivered as it is written.
  * `onDelta` receives each piece of text (append them); the promise resolves with the usage when the
  * answer is complete. Uses fetch because EventSource cannot send a POST body or the token header.
+ * Aborting `signal` cancels the request (the server stops generating) and rejects with an AbortError.
  */
 export const streamChatMessage = async (
   accountId: string,
   conversationId: string,
   message: string,
   onDelta: (text: string) => void,
+  signal?: AbortSignal,
 ): Promise<ApiChatStreamDone> => {
   const abort = new AbortController();
   const timeout = setTimeout(() => abort.abort(), CHAT_TIMEOUT_MS);
+  const cancel = () => abort.abort();
+  if (signal?.aborted) cancel();
+  signal?.addEventListener("abort", cancel, { once: true });
   try {
     let response = await postStream(accountId, conversationId, message, authStorage.getAccessToken(), abort.signal);
     if (response.status === 401 && (await problemOf(response.clone()))?.code === "INVALID_TOKEN") {
@@ -61,6 +66,7 @@ export const streamChatMessage = async (
     return await readEvents(response.body, onDelta);
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", cancel);
   }
 };
 

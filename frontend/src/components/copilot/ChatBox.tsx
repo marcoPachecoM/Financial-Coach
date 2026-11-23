@@ -57,20 +57,6 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
         />
 
         <button
-          type="button"
-          onClick={() => {
-            if (inputValue.trim()) {
-              onSendMessage(`Search: ${inputValue.trim()}`);
-              setInputValue('');
-            }
-          }}
-          title="Search transactions"
-          className="w-7 h-7 rounded-lg bg-slate-200/70 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors cursor-pointer shrink-0"
-        >
-          <span className="material-symbols-outlined !text-[15px]">search</span>
-        </button>
-
-        <button
           type="submit"
           disabled={disabled || !inputValue.trim()}
           title="Send prompt"

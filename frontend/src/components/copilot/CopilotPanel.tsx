@@ -11,13 +11,11 @@ interface CopilotPanelProps {
   messages: ChatMessage[];
   /** Waiting for the first piece of the copilot's answer. */
   thinking: boolean;
-  /** Until the answer is complete: sending and "new chat" are disabled. */
+  /** Until the answer is complete: sending is disabled. */
   busy: boolean;
   onInsightAction: (id: string, action: AlertAction) => void;
   onDismissInsight: (id: string) => void;
   onSendMessage: (text: string) => void;
-  /** Clears the chat and starts a conversation without history. */
-  onNewChat: () => void;
 }
 
 export const CopilotPanel: React.FC<CopilotPanelProps> = ({
@@ -29,7 +27,6 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({
   onInsightAction,
   onDismissInsight,
   onSendMessage,
-  onNewChat,
 }) => {
   return (
     <aside className="w-full lg:w-92 lg:sticky lg:top-20 lg:self-start lg:h-[calc(100vh-6.5rem)] flex flex-col justify-between gap-3">
@@ -48,20 +45,9 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={onNewChat}
-            disabled={busy}
-            title="New chat"
-            className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined !text-[18px]">edit_square</span>
-          </button>
-          <span className="text-[11px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full font-semibold">
-            AI Active
-          </span>
-        </div>
+        <span className="text-[11px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full font-semibold">
+          AI Active
+        </span>
       </div>
 
       {/* 2. Scrollable Feed & Insights Area */}

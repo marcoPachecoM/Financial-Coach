@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isAxiosError } from "axios";
 import { INITIAL_CHAT_MESSAGES } from "../data/mockInsights";
 import { streamChatMessage } from "../services/copilot";
@@ -6,7 +6,6 @@ import { getErrorMessage } from "../services/errors";
 import { makeRecurring, stopRecurring, updateRecurring } from "../services/recurring";
 import type { AlertAction, ApiAlert, RecurrenceFrequency } from "../types/api";
 import type { ChatMessage } from "../types/copilot";
-import type { Transaction } from "../types/transaction";
 import { FREQUENCY_LABELS } from "../types/recurring";
 import { toInsight } from "../utils/alertMessages";
 import { formatLocalDateToISO } from "../utils/dateHelper";
@@ -56,10 +55,18 @@ const chatErrorMessage = (error: unknown): string => {
   return `I couldn't answer that: ${getErrorMessage(error)}`;
 };
 
+interface Chat {
+  /** conversation_id sent to the server, which keeps the history per conversation. */
+  id: string;
+  messages: ChatMessage[];
+}
+
+const NO_ACCOUNT = "none";
+const newChat = (): Chat => ({ id: crypto.randomUUID(), messages: INITIAL_CHAT_MESSAGES });
+const EMPTY_CHAT: Chat = { id: "", messages: INITIAL_CHAT_MESSAGES };
+
 interface CopilotInput {
   accountId: string | null;
-  /** Transactions on screen, for the local "Search:" command. */
-  transactions: Transaction[];
   alerts: ApiAlert[];
   /** Called after an action changed data, so the dashboard reloads. */
   onDataChanged: () => void;
@@ -67,21 +74,36 @@ interface CopilotInput {
 
 /**
  * The copilot panel: real alerts from the API (with their actions) and a chat answered by
- * POST /copilot/chat. "Search: <text>" stays local: it only filters the loaded transactions.
+ * POST /copilot/chat/stream, with one conversation per account.
  */
-export const useCopilot = ({ accountId, transactions, alerts, onDataChanged }: CopilotInput) => {
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
+export const useCopilot = ({ accountId, alerts, onDataChanged }: CopilotInput) => {
+  /**
+   * One chat per account, kept while the page is open: switching accounts and coming back shows
+   * the same messages, and the server still remembers that conversation (its id). Chats about one
+   * account never mix with another's. Not saved to localStorage: they hold financial data.
+   */
+  const chatKey = accountId ?? NO_ACCOUNT;
+  const [chats, setChats] = useState<Record<string, Chat>>(() => ({ [chatKey]: newChat() }));
+  // EMPTY_CHAT only in the render that switches to a new account; React discards it and renders
+  // again with the chat created below.
+  const chat = chats[chatKey] ?? EMPTY_CHAT;
+  const messages = chat.messages;
+  /** Changes the chat of `key` (by default, the one on screen). */
+  const updateChat = (change: (prev: ChatMessage[]) => ChatMessage[], key = chatKey) =>
+    setChats((cs) => (cs[key] ? { ...cs, [key]: { ...cs[key], messages: change(cs[key].messages) } } : cs));
   const [dismissed, setDismissed] = useState<string[]>(loadDismissed);
   const [busyInsightId, setBusyInsightId] = useState<string | null>(null);
   /** Waiting for the first piece of the answer. */
   const [thinking, setThinking] = useState(false);
   /** From sending until the answer is complete: no new message meanwhile. */
   const [busy, setBusy] = useState(false);
-  /** The server keeps the history per conversation; a new id starts a fresh chat. */
-  const [conversationId, setConversationId] = useState(() => crypto.randomUUID());
-  const [conversationAccount, setConversationAccount] = useState(accountId);
-  /** Guards against double sends before the `thinking` state re-renders. */
-  const sending = useRef(false);
+  const [chatAccount, setChatAccount] = useState(accountId);
+  /** The answer being streamed. Also guards against double sends before `busy` re-renders. */
+  const streaming = useRef<AbortController | null>(null);
+
+  // Leaving an account (or unmounting) cancels the answer still streaming: the server stops
+  // generating and spending tokens on something nobody is looking at.
+  useEffect(() => () => streaming.current?.abort(), [accountId]);
 
   const dismissKey = (alertId: string) => `${accountId}|${alertId}`;
   const insights = useMemo(
@@ -89,71 +111,74 @@ export const useCopilot = ({ accountId, transactions, alerts, onDataChanged }: C
     [alerts, dismissed, accountId],
   );
 
-  const newChat = () => {
-    setConversationId(crypto.randomUUID());
-    setMessages(INITIAL_CHAT_MESSAGES);
-  };
-
-  // Another account means other data: start a new chat (state adjusted during render, as React
-  // recommends, instead of an effect that would first paint the old messages).
-  if (accountId !== conversationAccount) {
-    setConversationAccount(accountId);
-    newChat();
+  // Another account: show its chat, creating it the first time (state adjusted during render, as
+  // React recommends, instead of an effect that would first paint the previous account's messages).
+  if (accountId !== chatAccount) {
+    setChatAccount(accountId);
+    if (!chats[chatKey]) setChats((cs) => (cs[chatKey] ? cs : { ...cs, [chatKey]: newChat() }));
+    setThinking(false);
+    setBusy(false);
   }
 
-  const say = (text: string) => setMessages((prev) => [...prev, message("assistant", text)]);
-
-  const search = (text: string): string => {
-    const query = text.replace(/^search:\s*/i, "").toLowerCase();
-    const matches = transactions.filter((t) =>
-      [t.name, t.categoryGroup, t.category].some((v) => v?.toLowerCase().includes(query)),
-    );
-    return `Search found ${matches.length} matching transactions for "${query}".`;
-  };
+  const say = (text: string) => updateChat((prev) => [...prev, message("assistant", text)]);
 
   const sendMessage = async (text: string) => {
-    if (sending.current) return;
-    setMessages((prev) => [...prev, message("user", text)]);
+    if (streaming.current && !streaming.current.signal.aborted) return;
+    updateChat((prev) => [...prev, message("user", text)]);
 
-    if (/^search:/i.test(text)) {
-      say(search(text));
-      return;
-    }
     if (!accountId) {
       say("Select an account first, so I know which data to look at.");
       return;
     }
 
-    sending.current = true;
+    const controller = new AbortController();
+    streaming.current = controller;
+    const key = chatKey;
+    const conversationId = chat.id;
     setThinking(true);
     setBusy(true);
+    // Always writes to the chat it was asked in, even if another account is on screen by then.
+    const inThisChat = (change: (prev: ChatMessage[]) => ChatMessage[]) => updateChat(change, key);
     // The answer bubble appears with the first piece and grows with each one.
     const answer = message("assistant", "");
     let started = false;
     const update = (change: (m: ChatMessage) => ChatMessage) =>
-      setMessages((prev) => prev.map((m) => (m.id === answer.id ? change(m) : m)));
+      inThisChat((prev) => prev.map((m) => (m.id === answer.id ? change(m) : m)));
 
     try {
-      const done = await streamChatMessage(accountId, conversationId, text.slice(0, MAX_MESSAGE_LENGTH), (delta) => {
-        if (!started) {
-          started = true;
-          setThinking(false);
-          setMessages((prev) => [...prev, { ...answer, text: delta }]);
-        } else {
-          update((m) => ({ ...m, text: m.text + delta }));
-        }
-      });
+      const done = await streamChatMessage(
+        accountId,
+        conversationId,
+        text.slice(0, MAX_MESSAGE_LENGTH),
+        (delta) => {
+          if (!started) {
+            started = true;
+            setThinking(false);
+            inThisChat((prev) => [...prev, { ...answer, text: delta }]);
+          } else {
+            update((m) => ({ ...m, text: m.text + delta }));
+          }
+        },
+        controller.signal,
+      );
       update((m) => ({ ...m, tokens: done.usage?.total_tokens }));
     } catch (error) {
+      // Cancelled because the user switched accounts: say so in that chat, seen when coming back.
+      const text = controller.signal.aborted
+        ? "I stopped answering because you switched accounts. Ask again if you still need it."
+        : chatErrorMessage(error);
       if (started) {
-        update((m) => ({ ...m, text: `${m.text}\n\n(${chatErrorMessage(error)})` }));
+        update((m) => ({ ...m, text: `${m.text}\n\n(${text})` }));
       } else {
-        say(chatErrorMessage(error));
+        inThisChat((prev) => [...prev, message("assistant", text)]);
       }
     } finally {
-      sending.current = false;
-      setThinking(false);
-      setBusy(false);
+      // A newer message may already be streaming; its state is not ours to reset.
+      if (streaming.current === controller) {
+        streaming.current = null;
+        setThinking(false);
+        setBusy(false);
+      }
     }
   };
 
@@ -194,5 +219,5 @@ export const useCopilot = ({ accountId, transactions, alerts, onDataChanged }: C
     }
   };
 
-  return { insights, busyInsightId, messages, thinking, busy, sendMessage, newChat, runAction, dismissInsight, say };
+  return { insights, busyInsightId, messages, thinking, busy, sendMessage, runAction, dismissInsight, say };
 };
