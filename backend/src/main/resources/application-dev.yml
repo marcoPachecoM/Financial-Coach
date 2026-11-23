@@ -14,3 +14,7 @@ financial-coach:
   jwt:
     # Development only. Real environments must set JWT_SECRET_KEY.
     secret: ${JWT_SECRET_KEY:dev-only-jwt-secret-change-me-0123456789}
+
+logging:
+  level:
+    org.springframework.ai: DEBUG

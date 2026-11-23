@@ -48,6 +48,31 @@ public class RecurringReport {
         this.accountService = accountService;
     }
 
+    /** Rules that still create occurrences (not ended or stopped), in name order. */
+    @Transactional(readOnly = true)
+    public List<RecurringRuleSummary> activeRules(UUID userId, UUID accountId) {
+        accountService.requireOwned(userId, accountId);
+        return rules.findByAccount(userId, accountId).stream()
+                .filter(rule -> rule.getNextDueDate() != null)
+                .map(RecurringRuleSummary::from)
+                .toList();
+    }
+
+    /**
+     * Recurring expenses not created yet that fall due on or before {@code through}, earliest
+     * first, with positive amounts. Used to project what is still to be charged this month.
+     */
+    @Transactional(readOnly = true)
+    public List<UpcomingCharge> pendingExpenses(UUID userId, UUID accountId, LocalDate through) {
+        accountService.requireOwned(userId, accountId);
+        return rules.findByAccount(userId, accountId).stream()
+                .filter(rule -> rule.getType() == TransactionType.EXPENSE)
+                .flatMap(rule -> rule.pendingDueDatesThrough(through).stream()
+                        .map(date -> new UpcomingCharge(rule.getId(), rule.getName(), rule.getAmount().abs(), date)))
+                .sorted(Comparator.comparing(UpcomingCharge::dueDate).thenComparing(UpcomingCharge::name))
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public RecurringOverview report(UUID userId, UUID accountId, YearMonth month, LocalDate today) {
         accountService.requireOwned(userId, accountId);

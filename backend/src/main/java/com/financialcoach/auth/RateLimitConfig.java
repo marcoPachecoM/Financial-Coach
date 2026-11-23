@@ -1,8 +1,10 @@
 package com.financialcoach.auth;
 
 import com.financialcoach.shared.web.ProblemResponseWriter;
+import com.financialcoach.shared.web.RateLimiter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.time.Duration;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -20,11 +22,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 class RateLimitConfig implements WebMvcConfigurer {
 
-    private final AuthRateLimiter limiter;
+    private final RateLimiter limiter;
     private final RateLimitProperties limits;
     private final ProblemResponseWriter problems;
 
-    RateLimitConfig(AuthRateLimiter limiter, RateLimitProperties limits, ProblemResponseWriter problems) {
+    RateLimitConfig(RateLimiter limiter, RateLimitProperties limits, ProblemResponseWriter problems) {
         this.limiter = limiter;
         this.limits = limits;
         this.problems = problems;
@@ -42,7 +44,8 @@ class RateLimitConfig implements WebMvcConfigurer {
             @Override
             public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
                     throws Exception {
-                long retryAfter = limiter.acquire(endpoint, request.getRemoteAddr(), perMinute);
+                long retryAfter = limiter.acquire(endpoint + "|" + request.getRemoteAddr(), perMinute,
+                        Duration.ofMinutes(1));
                 if (retryAfter == 0) {
                     return true;
                 }

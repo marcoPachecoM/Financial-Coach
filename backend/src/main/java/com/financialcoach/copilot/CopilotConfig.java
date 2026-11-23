@@ -1,0 +1,77 @@
+package com.financialcoach.copilot;
+
+import org.springframework.context.annotation.Configuration;
+import io.micrometer.observation.ObservationRegistry;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
+import org.springframework.ai.chat.client.advisor.observation.AdvisorObservationConvention;
+import org.springframework.ai.chat.client.observation.ChatClientObservationConvention;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.MessageWindowChatMemory;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.ai.model.chat.client.autoconfigure.ChatClientBuilderConfigurer;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+
+@Configuration
+@EnableConfigurationProperties(CopilotProperties.class)
+public class CopilotConfig {
+
+    @Bean("google-genai")
+    @Primary
+    public ChatClient geminiAiChatClient(GoogleGenAiChatModel chatModel, ChatClientBuilderConfigurer configurer,
+            ObjectProvider<ObservationRegistry> observationRegistry,
+            ObjectProvider<ChatClientObservationConvention> chatClientObservationConvention,
+            ObjectProvider<AdvisorObservationConvention> advisorObservationConvention,
+            ObjectProvider<ToolCallingAdvisor.Builder<?>> toolCallingAdvisorBuilder) {
+        return buildChatClient(chatModel, configurer, observationRegistry,
+                chatClientObservationConvention, advisorObservationConvention, toolCallingAdvisorBuilder);
+    }
+
+    // public ChatClient openAiChatClient(OpenAiChatModel chatModel, ChatClientBuilderConfigurer configurer,
+    //         ObjectProvider<ObservationRegistry> observationRegistry,
+    //         ObjectProvider<ChatClientObservationConvention> chatClientObservationConvention,
+    //         ObjectProvider<AdvisorObservationConvention> advisorObservationConvention,
+    //         ObjectProvider<ToolCallingAdvisor.Builder<?>> toolCallingAdvisorBuilder) {
+    //     return buildChatClient(chatModel, configurer, observationRegistry,
+    //             chatClientObservationConvention, advisorObservationConvention, toolCallingAdvisorBuilder);
+    // }
+
+    // @Bean
+    // public ChatClient anthropicChatClient(AnthropicChatModel chatModel, ChatClientBuilderConfigurer configurer,
+    //         ObjectProvider<ObservationRegistry> observationRegistry,
+    //         ObjectProvider<ChatClientObservationConvention> chatClientObservationConvention,
+    //         ObjectProvider<AdvisorObservationConvention> advisorObservationConvention,
+    //         ObjectProvider<ToolCallingAdvisor.Builder<?>> toolCallingAdvisorBuilder) {
+    //     return buildChatClient(chatModel, configurer, observationRegistry,
+    //             chatClientObservationConvention, advisorObservationConvention, toolCallingAdvisorBuilder);
+    // }
+
+    /**
+     * Replaces Spring AI's default (20 messages, conversations never forgotten): only the last
+     * messages of each conversation go back to the model, and old conversations are dropped.
+     */
+    @Bean
+    ChatMemory chatMemory(CopilotProperties properties) {
+        return MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new BoundedChatMemoryRepository(properties.memoryConversations()))
+                .maxMessages(properties.memoryMessages())
+                .build();
+    }
+
+    private ChatClient buildChatClient(ChatModel chatModel, ChatClientBuilderConfigurer configurer,
+            ObjectProvider<ObservationRegistry> observationRegistry,
+            ObjectProvider<ChatClientObservationConvention> chatClientObservationConvention,
+            ObjectProvider<AdvisorObservationConvention> advisorObservationConvention,
+            ObjectProvider<ToolCallingAdvisor.Builder<?>> toolCallingAdvisorBuilder) {
+        ChatClient.Builder builder = ChatClient.builder(chatModel,
+                observationRegistry.getIfUnique(() -> ObservationRegistry.NOOP),
+                chatClientObservationConvention.getIfUnique(),
+                advisorObservationConvention.getIfUnique(),
+                toolCallingAdvisorBuilder.getIfAvailable());
+        return configurer.configure(builder).build();
+    }
+}

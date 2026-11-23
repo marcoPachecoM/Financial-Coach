@@ -1,6 +1,24 @@
 spring:
+  ai:
+    # The Google SDK already retries (financial-coach.copilot.attempts); do not retry on top of it.
+    retry:
+      max-attempts: 1
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY}
+        chat:
+          options:
+            model: ${GEMINI_MODEL:gemini-4-hydrogen}
+            # Cost guards: every output token is billed, thinking tokens included.
+            max-output-tokens: 1024
+            # Newer Gemini models use a level instead of thinking-budget (do not set both).
+            thinking-level: LOW
+
   application:
     name: financial-coach
+  
+  config:
+    import: optional:file:.env[.properties]
 
   datasource:
     url: ${DB_URL}
@@ -19,6 +37,11 @@ spring:
       hibernate.order_inserts: true
 
   # CSV upload limit of the contract (1 MiB file); larger requests get 413 PAYLOAD_TOO_LARGE.
+  # Streamed copilot answers (async requests) may take a while with tool calls; Tomcat's default is 30 s.
+  mvc:
+    async:
+      request-timeout: 90s
+
   servlet:
     multipart:
       max-file-size: 1MB
@@ -35,6 +58,21 @@ spring:
       fail-on-unknown-properties: true
 
 financial-coach:
+  copilot:
+    provider: google-genai
+    # How the copilot writes amounts: generic "$" like the frontend, without naming a currency.
+    amount-format: "$1,234.56"
+    # Each call to the LLM: time limit and tries (2 = one retry when the model is busy).
+    timeout: 20s
+    attempts: 2
+    # Chat memory: last messages per conversation sent back to the model, and conversations kept.
+    memory-messages: 10
+    memory-conversations: 1000
+    # Chat messages per user (429 RATE_LIMIT_EXCEEDED above). The daily limit caps the LLM cost.
+    requests-per-minute: ${COPILOT_REQUESTS_PER_MINUTE:10}
+    daily-limit: ${COPILOT_DAILY_LIMIT:100}
+    # Calls to the LLM for one message (tool loop); above it, 502 COPILOT_CALL_LIMIT. Normal: 2-3.
+    max-llm-calls: ${COPILOT_MAX_LLM_CALLS:5}
   jwt:
     # HS256 key, at least 32 bytes. Required: the app does not start without it.
     secret: ${JWT_SECRET_KEY}
@@ -47,9 +85,12 @@ financial-coach:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   # Requests per minute and client IP on the token endpoints (openapi.yaml).
   rate-limit:
-    login: 5
-    refresh: 10
-    logout: 20
+    login: ${RATE_LIMIT_LOGIN:5}
+    refresh: ${RATE_LIMIT_REFRESH:10}
+    logout: ${RATE_LIMIT_LOGOUT:20}
+    # Consecutive failed logins of one email (from any IP) before each new attempt must wait:
+    # 30 s, then doubling up to 15 min. A success resets it.
+    login-account-failures: ${RATE_LIMIT_LOGIN_ACCOUNT_FAILURES:5}
   # Generator of recurring transactions: daily (server time) and once at startup.
   recurring:
     scheduler-enabled: ${RECURRING_SCHEDULER_ENABLED:true}

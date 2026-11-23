@@ -12,6 +12,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -156,6 +158,18 @@ class RecurringTransaction {
     /** Local date-time of the generated transaction for the occurrence due on {@code dueDate}. */
     LocalDateTime occurrenceDateTime(LocalDate dueDate) {
         return dueDate.atTime(timeOfDay);
+    }
+
+    /**
+     * Occurrences not created yet that fall due on or before {@code lastDay}, from
+     * {@code nextDueDate} on (a weekly rule can have several in a month). Empty once ended.
+     */
+    List<LocalDate> pendingDueDatesThrough(LocalDate lastDay) {
+        List<LocalDate> dates = new ArrayList<>();
+        for (LocalDate date = nextDueDate; date != null && !date.isAfter(lastDay); date = dueAfter(date)) {
+            dates.add(date);
+        }
+        return dates;
     }
 
     /** First due date after {@code date}, or null once past the end date. */

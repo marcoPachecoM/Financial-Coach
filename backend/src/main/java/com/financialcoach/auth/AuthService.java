@@ -1,5 +1,6 @@
 package com.financialcoach.auth;
 
+import com.financialcoach.shared.error.TooManyRequestsException;
 import com.financialcoach.shared.error.UnauthorizedException;
 import com.financialcoach.users.UserCredentials;
 import com.financialcoach.users.UserProfile;
@@ -32,34 +33,48 @@ class AuthService {
     private final TokenService tokens;
     private final RefreshTokenRepository refreshTokens;
     private final PasswordEncoder passwordEncoder;
+    private final LoginThrottle throttle;
     private final Clock clock;
     /** Checked when the email does not exist, so the response takes as long as a wrong password. */
     private final String dummyHash;
 
     AuthService(UserService userService, TokenService tokens, RefreshTokenRepository refreshTokens,
-                PasswordEncoder passwordEncoder, Clock clock) {
+                PasswordEncoder passwordEncoder, LoginThrottle throttle, Clock clock) {
         this.userService = userService;
         this.tokens = tokens;
         this.refreshTokens = refreshTokens;
         this.passwordEncoder = passwordEncoder;
+        this.throttle = throttle;
         this.clock = clock;
         this.dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
-    /** Unknown email, wrong password and inactive user all get the same answer. */
+    /**
+     * Unknown email, wrong password and inactive user all get the same answer. After several
+     * failures for one email, further attempts must wait (429), whether the email exists or not.
+     */
     @Transactional
     TokenPairResponse login(String email, String password) {
+        long wait = throttle.secondsUntilAllowed(email);
+        if (wait > 0) {
+            log.info("Login throttled: too many failures for this email");
+            throw new TooManyRequestsException(wait,
+                    "Too many failed sign-in attempts. Try again in %d seconds.".formatted(wait));
+        }
         Optional<UserCredentials> found = userService.findCredentialsByEmail(email);
         if (found.isEmpty()) {
             passwordEncoder.matches(password, dummyHash);
+            throttle.recordFailure(email);
             log.info("Login failed: unknown email");
             throw invalidCredentials();
         }
         UserCredentials user = found.get();
         if (!passwordEncoder.matches(password, user.passwordHash()) || !user.active()) {
+            throttle.recordFailure(email);
             log.info("Login failed for user {}", user.id());
             throw invalidCredentials();
         }
+        throttle.recordSuccess(email);
         log.info("Login succeeded for user {}", user.id());
         return issue(user.id(), user.role()).pair();
     }
