@@ -128,12 +128,13 @@ final class CsvTransactionReader {
         TransactionType type = parseType(row, text(record, "Type"), errors);
         LocalDateTime occurredAt = parseDate(row, text(record, "Date"), errors);
         // "Time" is ignored: "Date" already contains the time.
-        String name = required(row, "Name", text(record, "Name"), 255, errors);
+        // Text fields undo the export's protection against formula injection (see CsvFormulas).
+        String name = required(row, "Name", CsvFormulas.unescape(text(record, "Name")), 255, errors);
         BigDecimal amount = parseAmount(row, text(record, "Amount"), errors);
         CategoryGroup categoryGroup = parseCategoryGroup(row, text(record, "Category Group"), errors);
-        String category = optional(row, "Category", text(record, "Category"), 100, errors);
-        String account = required(row, "Account", text(record, "Account"), 100, errors);
-        String notes = optional(row, "Notes", text(record, "Notes"), 1000, errors);
+        String category = optional(row, "Category", CsvFormulas.unescape(text(record, "Category")), 100, errors);
+        String account = required(row, "Account", CsvFormulas.unescape(text(record, "Account")), 100, errors);
+        String notes = optional(row, "Notes", CsvFormulas.unescape(text(record, "Notes")), 1000, errors);
 
         if (amount != null && amount.signum() == 0) {
             fail(row, "Amount", "must not be zero", errors);

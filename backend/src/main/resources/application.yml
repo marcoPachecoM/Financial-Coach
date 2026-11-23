@@ -91,6 +91,8 @@ financial-coach:
     # Consecutive failed logins of one email (from any IP) before each new attempt must wait:
     # 30 s, then doubling up to 15 min. A success resets it.
     login-account-failures: ${RATE_LIMIT_LOGIN_ACCOUNT_FAILURES:5}
+    # CSV export and import requests per user and minute (each one reads or writes a whole file).
+    csv: ${RATE_LIMIT_CSV:10}
   # Generator of recurring transactions: daily (server time) and once at startup.
   recurring:
     scheduler-enabled: ${RECURRING_SCHEDULER_ENABLED:true}
@@ -99,3 +101,15 @@ financial-coach:
   refresh-token-cleanup:
     enabled: true
     cron: ${REFRESH_TOKEN_CLEANUP_CRON:0 30 3 * * *}
+
+# Besides the console, a rotating log file (relative to where the app starts: backend/logs/).
+# Set LOG_FILE= (empty) to log to the console only, e.g. in containers whose platform keeps stdout.
+logging:
+  file:
+    name: ${LOG_FILE:logs/financial-coach.log}
+  logback:
+    rollingpolicy:
+      # A new file every 10 MB or day; files older than 7 days are deleted, at most 100 MB in total.
+      max-file-size: 10MB
+      max-history: 7
+      total-size-cap: 100MB

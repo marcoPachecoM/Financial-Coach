@@ -492,6 +492,58 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/TransactionNotFound" }
 
+  /api/v1/transactions/export:
+    get:
+      tags: [Transactions]
+      summary: Export transactions as a CSV file
+      description: |
+        Downloads the user's transactions, oldest first, in the same format the import reads
+        (`Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes`), UTF-8
+        with a byte order mark so spreadsheets show accents.
+
+        - Without `account_id`, every account of the user (the `Account` column tells them apart).
+        - `Amount` uses the bank convention: expenses negative, income positive. On import,
+          `Type` decides the sign anyway.
+        - Text starting with `=`, `+`, `-`, `@`, tab or carriage return is written with a
+          leading `'`, so spreadsheets do not run it as a formula (CSV injection). The import
+          removes that `'` again.
+        - Importing the file again creates nothing: rows from an earlier CSV import match their
+          fingerprint, and the rest match the existing transaction exactly.
+
+        Errors are checked before the download starts, so they are ordinary Problem Details.
+        Every export is logged with ids only (user, account, dates, rows), for auditing.
+        Rate limited per user, together with `upload-csv` (10 per minute by default).
+      operationId: exportTransactions
+      parameters:
+        - name: account_id
+          in: query
+          required: false
+          description: Omit to export every account of the user.
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/StartDate"
+        - $ref: "#/components/parameters/EndDate"
+      responses:
+        "200":
+          description: The CSV file.
+          headers:
+            Content-Disposition:
+              description: '`attachment; filename="financial-coach-<account or all-accounts>-<dates>.csv"`'
+              schema: { type: string }
+            X-Row-Count:
+              description: Number of transactions in the file, sent before the body (0 means only the header).
+              schema: { type: integer, example: 2 }
+          content:
+            text/csv:
+              schema: { type: string }
+              example: |
+                Type,Date,Time,Name,Amount,Category Group,Category,Account,Notes
+                Income,2026-09-24 06:55:57,06:55,Payroll,25000.00,Salary,,Debit card,"September, bonus"
+                Expense,2026-09-25 15:58:12,15:58,Engigas,-232.50,Utilities,Gas,Debit card,
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
   /api/v1/transactions/upload-csv:
     post:
       tags: [Transactions]
@@ -515,7 +567,10 @@ paths:
         - **Duplicates.** Each row gets a fingerprint of
           (account, datetime, name, amount, occurrence within the file).
           Rows whose fingerprint already exists are skipped and counted in
-          `records_duplicated`, so uploading the same file twice is safe.
+          `records_duplicated`, so uploading the same file twice is safe. A row is also skipped
+          when it matches a transaction typed in by hand or created by a recurring rule (same
+          account, date and time to the second, name and amount), each one matching one row,
+          so a file exported by `/transactions/export` can be imported again.
       operationId: uploadTransactionsCsv
       x-status: planned
       requestBody:

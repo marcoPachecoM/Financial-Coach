@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -44,6 +45,21 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
             """, nativeQuery = true)
     List<String> findExistingFingerprints(@Param("accountIds") Collection<UUID> accountIds,
                                           @Param("fingerprints") Collection<String> fingerprints);
+
+    /**
+     * Active transactions without a CSV fingerprint (typed in by hand or created by a recurring
+     * rule) at any of these times. The import compares them with its rows to skip duplicates, e.g.
+     * when a file exported by this app is imported again.
+     */
+    @Query("""
+            select new com.financialcoach.transactions.TransactionIdentity(t.accountId, t.occurredAt, t.name, t.amount)
+            from Transaction t
+            where t.userId = :userId and t.accountId in :accountIds
+              and t.fingerprint is null and t.occurredAt in :times
+            """)
+    List<TransactionIdentity> findWithoutFingerprintAt(@Param("userId") UUID userId,
+                                                       @Param("accountIds") Collection<UUID> accountIds,
+                                                       @Param("times") Collection<LocalDateTime> times);
 
     /** The active transaction covering this occurrence of a rule (ux_transactions_recurrence). */
     @Query("""
@@ -112,6 +128,31 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
             """)
     List<TypeTotals> totalsByType(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
                                   @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    /**
+     * One page of the CSV export, oldest first. A constructor projection: the rows are not managed
+     * entities, so a large export does not fill the persistence context.
+     */
+    @Query("""
+            select new com.financialcoach.transactions.CsvExportRow(t.occurredAt, t.type, t.name, t.amount,
+                       t.categoryGroup, t.category, t.accountId, t.notes)
+            from Transaction t
+            where t.userId = :userId and t.accountId in :accountIds
+              and t.occurredAt >= :from and t.occurredAt < :to
+            order by t.occurredAt, t.id
+            """)
+    Slice<CsvExportRow> exportPage(@Param("userId") UUID userId, @Param("accountIds") Collection<UUID> accountIds,
+                                   @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
+                                   Pageable pageable);
+
+    /** Rows of the CSV export, known before writing it (sent as a header). */
+    @Query("""
+            select count(t) from Transaction t
+            where t.userId = :userId and t.accountId in :accountIds
+              and t.occurredAt >= :from and t.occurredAt < :to
+            """)
+    long countForExport(@Param("userId") UUID userId, @Param("accountIds") Collection<UUID> accountIds,
+                        @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     /** Sum of the expenses linked to a recurring transaction (EXPENSE amounts are positive). */
     @Query("""

@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -64,6 +65,14 @@ public class AccountService {
             }
         }
         return new ResolvedAccounts(idsByKey, created);
+    }
+
+    /** For other modules: id → name of every account of the user, ordered by name. */
+    @Transactional(readOnly = true)
+    public Map<UUID, String> namesOf(UUID userId) {
+        Map<UUID, String> names = new LinkedHashMap<>();
+        accounts.findAllOwnedBy(userId).forEach(account -> names.put(account.getId(), account.getName()));
+        return names;
     }
 
     /** For other modules: the account's monthly budget, empty when it has none. 404 unless owned. */

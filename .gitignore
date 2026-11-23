@@ -36,3 +36,5 @@ build/
 
 uploads/
 myNotes.md
+# Backend log files (logging.file.name)
+logs/

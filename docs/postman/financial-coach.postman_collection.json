@@ -839,6 +839,41 @@
               ]
             }
           }
+        },
+        {
+          "name": "Export CSV",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/export?account_id={{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "account_id",
+                  "value": "{{accountId}}",
+                  "description": "Disable to export every account"
+                },
+                {
+                  "key": "start_date",
+                  "value": "2026-09-01",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2026-09-30",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Downloads the transactions as CSV in the import format. Use **Send and Download** to save the file."
+          }
         }
       ]
     },

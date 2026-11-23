@@ -54,6 +54,16 @@ const refreshAccessToken = (): Promise<string> => {
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<ProblemDetail>) => {
+    // Downloads (responseType "blob") get their Problem Details as a Blob too: read it as JSON, so
+    // the expiry check below and getErrorMessage work the same as for any other request.
+    const body: unknown = error.response?.data;
+    if (error.response && body instanceof Blob && body.type.includes("json")) {
+      try {
+        error.response.data = JSON.parse(await body.text()) as ProblemDetail;
+      } catch {
+        // Not JSON after all: keep the Blob.
+      }
+    }
     const request = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
     const expired = error.response?.status === 401 && error.response.data?.code === "INVALID_TOKEN";
 
