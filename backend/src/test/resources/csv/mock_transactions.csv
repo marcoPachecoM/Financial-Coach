@@ -1,0 +1,25 @@
+Type,Date,Time,Name,Amount,Category Group,Category,Account,Notes
+Expense,2026-09-25 15:58:12,15:58,Engigas,-232.5,Utilities,Gas,Malu,
+Expense,2026-09-25 15:57:45,15:57,Engigas depto,-492.5,Utilities,Gas,Malu,
+Expense,2026-09-25 15:57:39,15:57,Plan telcel,-199,Utilities,Cellphone Data,Malu,
+Expense,2026-09-25 11:51:26,11:51,Yves Rocher,-1657,Others,Others,Malu,
+Income,2026-09-24 06:55:57,6:55,Banorte iva,301.92,Others,Awards,Credit Card,Mercado libre
+Income,2026-09-24 06:55:23,6:55,Banorte Banorte,1081,Others,Others,Credit Card,Compras 23 agosto 
+Expense,2026-09-23 22:18:22,22:18,cfe depto,-187,Utilities,Electricity,Malu,
+Expense,2026-09-22 11:39:36,11:39,Walmart,-324,Household,Grocery,Malu,
+Expense,2026-09-20 07:00:20,7:00,Youtube premium,-86,Entertainment,Entertainment,Credit Card,
+Expense,2026-09-18 11:37:56,11:37,Gemini pro,-99,Services,Entertainment,Credit Card,
+Expense,2026-09-17 11:38:35,11:38,Cinemex 2x1,-106,Entertainment,Entertainment,Malu,
+Expense,2026-09-16 22:16:12,22:16,Concierto Divo de Juárez,-322,Entertainment,Entertainment,Malu,
+Expense,2026-09-15 11:43:56,11:43,Pastel,-35,Entertainment,Dining Out,Credit Card,
+Expense,2026-09-15 10:23:39,10:23,cfe,-382,Utilities,Electricity,Malu,
+Expense,2026-09-14 07:00:02,7:00,Thermomix,-1557.08,Electronics,Electronics,Credit Card,17127.92 - 30%
+Expense,2026-09-13 17:44:41,17:44,Sams,-1840,Household,Grocery,Malu,Falta 10%
+Expense,2026-09-13 17:44:09,17:44,Galleta y chocolate,-81.26,Food,Snacks,Credit Card,
+Expense,2026-09-13 11:06:27,11:06,Subscription udemy,-300,Education,Course,Credit Card,
+Expense,2026-09-12 11:06:45,11:06,Steren alcohol isopropilico,-229,Others,Others,Credit Card,
+Expense,2026-09-11 13:40:26,13:40,telmex depto,-400,Utilities,Internet,Malu,
+Expense,2026-09-10 16:07:59,16:07,Walmart,-1618.2,Household,Grocery,Malu,
+Expense,2026-09-10 07:00:48,7:00,Megacable,-650,Utilities,Cable,Malu,
+Expense,2026-09-09 22:11:14,22:11,Yves Rocher,-1047,Others,Others,Malu,
+Expense,2026-09-09 20:31:22,20:31,12 latas low fat,-1091.7,Pet,Pet,Malu,

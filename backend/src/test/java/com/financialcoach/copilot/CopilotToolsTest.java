@@ -225,7 +225,7 @@ class CopilotToolsTest extends ApiIntegrationTest {
         jdbc.update("""
                 INSERT INTO transactions (user_id, account_id, type, datetime, name, amount, category_group,
                                           source, category_group_source, recurring_transaction_id, recurrence_date)
-                VALUES (?, ?, 'EXPENSE', ?, ?, ?, 'Housing', 'RECURRING', 'USER', ?, ?)
+                VALUES (?, ?, 'EXPENSE', ?, ?, ?, 'House', 'RECURRING', 'USER', ?, ?)
                 """, user.id(), accountId, at, name, new BigDecimal(amount), ruleId, at.toLocalDate());
     }
 }
