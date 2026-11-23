@@ -63,6 +63,9 @@ financial-coach:
     # Chat memory: last messages per conversation sent back to the model, and conversations kept.
     memory-messages: 10
     memory-conversations: 1000
+    # Chat messages per user (429 RATE_LIMIT_EXCEEDED above). The daily limit caps the LLM cost.
+    requests-per-minute: ${COPILOT_REQUESTS_PER_MINUTE:10}
+    daily-limit: ${COPILOT_DAILY_LIMIT:100}
   jwt:
     # HS256 key, at least 32 bytes. Required: the app does not start without it.
     secret: ${JWT_SECRET_KEY}
@@ -75,9 +78,9 @@ financial-coach:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   # Requests per minute and client IP on the token endpoints (openapi.yaml).
   rate-limit:
-    login: 5
-    refresh: 10
-    logout: 20
+    login: ${RATE_LIMIT_LOGIN:5}
+    refresh: ${RATE_LIMIT_REFRESH:10}
+    logout: ${RATE_LIMIT_LOGOUT:20}
   # Generator of recurring transactions: daily (server time) and once at startup.
   recurring:
     scheduler-enabled: ${RECURRING_SCHEDULER_ENABLED:true}

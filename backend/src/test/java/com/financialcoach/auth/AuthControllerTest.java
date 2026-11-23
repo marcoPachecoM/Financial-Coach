@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.financialcoach.shared.web.RateLimiter;
 import com.financialcoach.support.ApiIntegrationTest;
 import com.financialcoach.support.TestUsers.TestUser;
 import com.financialcoach.users.UserRole;
@@ -34,7 +35,7 @@ class AuthControllerTest extends ApiIntegrationTest {
     private static final String ME = "/api/v1/auth/me";
 
     @Autowired
-    private AuthRateLimiter rateLimiter;
+    private RateLimiter rateLimiter;
 
     @PersistenceContext
     private EntityManager entityManager;

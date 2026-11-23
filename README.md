@@ -22,7 +22,7 @@ The original Flask backend was replaced by the Spring Boot one and removed from 
 
 ## 2. Backend
 
-Modules: **JWT authentication** (`POST /api/v1/auth/login`, `/refresh` with rotation and reuse detection, `/logout`, `GET /api/v1/auth/me`), the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`), the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`), the **CSV import** (`POST /api/v1/transactions/upload-csv`: all or nothing, creates missing accounts, skips rows already imported), **analytics** (`GET /api/v1/analytics/summary`, `GET /api/v1/analytics/by-category-group`) the **monthly budget** (`GET /api/v1/accounts/{id}/budget?month=YYYY-MM`), **recurring transactions** (`/api/v1/recurring-transactions`, or `recurrence` when creating a transaction: the next occurrences are created automatically every day, and a matching CSV charge replaces the automatic one) and **alerts** (`GET /api/v1/accounts/{id}/alerts`: budget near or over the limit, upcoming and missing recurring charges, price changes, subscription audit and suggested subscriptions). Transactions have a **category group** from a closed list of 26 (assigned automatically from the merchant cache when missing, falling back to `Other`) and an optional free-text **category** inside it (e.g. group `Utilities`, category `Gas`); the LLM step comes later. The React frontend (below): the copilot panel shows the real alerts with their actions, while its chat still answers locally until the copilot endpoint is migrated. See [docs/database.md](docs/database.md) for the data model.
+Modules: **JWT authentication** (`POST /api/v1/auth/login`, `/refresh` with rotation and reuse detection, `/logout`, `GET /api/v1/auth/me`), the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`), the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`), the **CSV import** (`POST /api/v1/transactions/upload-csv`: all or nothing, creates missing accounts, skips rows already imported), **analytics** (`GET /api/v1/analytics/summary`, `GET /api/v1/analytics/by-category-group`) the **monthly budget** (`GET /api/v1/accounts/{id}/budget?month=YYYY-MM`), **recurring transactions** (`/api/v1/recurring-transactions`, or `recurrence` when creating a transaction: the next occurrences are created automatically every day, and a matching CSV charge replaces the automatic one) and **alerts** (`GET /api/v1/accounts/{id}/alerts`: budget near or over the limit, upcoming and missing recurring charges, price changes, subscription audit and suggested subscriptions). Transactions have a **category group** from a closed list of 26 (assigned automatically from the merchant cache when missing, falling back to `Other`) and an optional free-text **category** inside it (e.g. group `Utilities`, category `Gas`); the LLM step comes later. The **copilot** (`POST /api/v1/copilot/chat`) answers questions about an account with an LLM (Gemini through Spring AI) that reads the data through read-only tools; see [Copilot](#copilot-ai-chat) below. The React frontend (below): the copilot panel shows the real alerts with their actions and the AI chat. See [docs/database.md](docs/database.md) for the data model.
 
 Requirements: Java 25 and Docker running. If Java 25 is not your default JDK:
 
@@ -130,8 +130,53 @@ Configuration (environment variables; the `dev` profile provides a development s
 | `RECURRING_SCHEDULER_ENABLED` | `true` | Creates the due occurrences of recurring transactions daily and at startup. Safe with several instances. |
 | `RECURRING_CRON` | `0 5 0 * * *` | When the daily run happens (Spring cron, server time zone). |
 | `REFRESH_TOKEN_CLEANUP_CRON` | `0 30 3 * * *` | Daily deletion of refresh tokens expired more than a day ago. |
+| `GEMINI_API_KEY` | none (required) | Key of the copilot's LLM ([Google AI Studio](https://aistudio.google.com/apikey)). Tests use a fake one. |
+| `GEMINI_MODEL` | `gemini-4-hydrogen` | Any model of your key; a lighter one (e.g. `gemini-flash-lite-latest`) is faster and less often overloaded. |
+| `COPILOT_REQUESTS_PER_MINUTE` | `10` | Chat messages per user and minute. |
+| `COPILOT_DAILY_LIMIT` | `100` | Chat messages per user and day: caps what the LLM can cost. |
+| `RATE_LIMIT_LOGIN` / `RATE_LIMIT_REFRESH` / `RATE_LIMIT_LOGOUT` | `5` / `10` / `20` | Requests per minute and client IP on the token endpoints. |
 
-Login, refresh and logout are rate limited per client IP (5, 10 and 20 per minute) and answer `429` with `Retry-After` when exceeded.
+Variables go in `backend/.env` (gitignored; copy `backend/.env.example`) or in the server's environment. Secrets (keys, passwords) always go there, never in `application.yml`. Any other property of `application.yml` can also be overridden without a placeholder, by its name in upper case with `_` instead of `.` and no dashes, e.g. `FINANCIALCOACH_COPILOT_TIMEOUT=30s` for `financial-coach.copilot.timeout`.
+
+### Rate limits
+
+Some endpoints count requests in **fixed windows** and answer `429 RATE_LIMIT_EXCEEDED` with a `Retry-After` header (seconds until the window ends) once the limit is reached:
+
+| Endpoint | Counted per | Limits (default) | Why |
+|---|---|---|---|
+| `POST /auth/login` | client IP | 5 / minute | Slows down password guessing. |
+| `POST /auth/refresh`, `/auth/logout` | client IP | 10 / minute, 20 / minute | Protects the token table. |
+| `POST /copilot/chat` | user | 10 / minute and 100 / day | The minute limit stops scripts and loops; the daily one caps the LLM cost. |
+
+How it works (`shared/web/RateLimiter`):
+
+- Time is split into windows aligned on the server's local time: 10:00:00–10:00:59, 10:01:00–10:01:59..., and days from midnight to midnight.
+- Each key (`login|<ip>`, `copilot|<user id>`) has one counter per window length. A request adds 1; the first request of a new window starts again at 1.
+- Above the limit the request is rejected before reaching the controller (a Spring MVC interceptor), so a rejected chat message never calls the LLM.
+- The token endpoints use the IP because the user is not known yet. The copilot uses the user id: it runs after authentication, and people on the same network share an IP.
+
+Example with the login limit (5 per minute):
+
+| Time | Request | Counter | Result |
+|---|---|---|---|
+| 10:00:05 | 1st | 1 | allowed |
+| 10:00:20 | 5th | 5 | allowed |
+| 10:00:37 | 6th | 6 | `429`, `Retry-After: 23` |
+| 10:01:02 | 7th | 1 (new window) | allowed |
+
+Limitations: a client can send a full window's worth at 10:00:59 and another at 10:01:00 (fixed windows allow that burst), and the counters live in memory, so they reset on restart and each instance counts on its own. Behind a reverse proxy, set `server.forward-headers-strategy` so the real client IP is used.
+
+To change a limit, set its variable, e.g. `COPILOT_DAILY_LIMIT=300` in `backend/.env`, and restart.
+
+### Copilot (AI chat)
+
+`POST /api/v1/copilot/chat` with `{"message": "...", "account_id": "...", "conversation_id": "..."}` returns `{"response", "provider", "model"}`.
+
+- **Tools**: the model cannot query the database; it calls read-only Java methods (`CopilotTools`): totals, spending by category group, transaction search, budget status and recurring charges. The user and account come from the request, never from the model.
+- **Memory**: messages with the same `conversation_id` (generated by the frontend; new on account change or "New chat") share history, so follow-up questions work. The last 10 messages go back to the model; history is in memory and lost on restart.
+- **Fail fast**: each LLM call has a 20 s timeout and one retry. An overloaded, over-quota or unreachable model answers `503 COPILOT_UNAVAILABLE`.
+- **Cost**: `max-output-tokens` and `thinking-level` in `application.yml`, plus the daily limit above. Without billing enabled on the Google project only the free tier is used (Google may use that data to improve its products).
+- **Another model**: change `GEMINI_MODEL`. **Another provider**: change the starter in `pom.xml`, the `spring.ai.*` block in `application.yml`, the API key variable, the chat model type in `CopilotConfig`, and delete `GeminiClientConfig`.
 
 Inspect the database with:
 
@@ -180,7 +225,7 @@ Access tokens are HS256 JWTs validated without a database lookup (issuer, audien
 
 ## 5. Architecture
 
-Modular monolith, one package per feature under `backend/src/main/java/com/financialcoach/`: `auth`, `users`, `accounts`, `transactions` (including CSV import and recurring transactions), `categorization`, `analytics` (summary, budget, alerts), `health` and `shared` (errors, money, time). Entities and repositories are package-private; modules talk through public services and records. Errors follow RFC 9457 Problem Details with a stable `code`.
+Modular monolith, one package per feature under `backend/src/main/java/com/financialcoach/`: `auth`, `users`, `accounts`, `transactions` (including CSV import and recurring transactions), `categorization`, `analytics` (summary, budget, alerts), `copilot` (AI chat), `health` and `shared` (errors, money, time, rate limiter). Entities and repositories are package-private; modules talk through public services and records. Errors follow RFC 9457 Problem Details with a stable `code`.
 
 ## 6. CI
 
@@ -194,6 +239,7 @@ GitHub Actions on push and pull request:
 - Set a strong, unique `JWT_SECRET_KEY` (never the `dev` one) and real database credentials.
 - Never use wildcard CORS for authenticated APIs.
 - Never log passwords, JWTs or secrets.
-- The login/refresh rate limiter is in memory: with several instances, move it to a shared store.
+- The rate limiter (login, refresh, logout, copilot) is in memory: with several instances, move it to a shared store (e.g. Redis).
+- Keep the copilot's daily limit and `max-output-tokens` low if billing is enabled on the LLM account, and set a quota there: budget alerts alone do not stop spending.
 - Enforce TLS and set HSTS behind HTTPS.
 - Keep dependencies updated and scanned.

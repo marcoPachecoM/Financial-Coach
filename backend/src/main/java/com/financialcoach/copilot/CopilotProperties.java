@@ -17,5 +17,9 @@ record CopilotProperties(
         /** Messages of a conversation sent back to the model (user and assistant); more costs more tokens. */
         @DefaultValue("10") int memoryMessages,
         /** Conversations kept in memory; the least recently used is forgotten first. */
-        @DefaultValue("1000") int memoryConversations) {
+        @DefaultValue("1000") int memoryConversations,
+        /** Chat messages per user and minute: stops scripts and accidental loops. */
+        @DefaultValue("10") int requestsPerMinute,
+        /** Chat messages per user and day (resets at local midnight): caps what the LLM can cost. */
+        @DefaultValue("100") int dailyLimit) {
 }

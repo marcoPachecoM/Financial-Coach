@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.financialcoach.shared.web.RateLimiter;
 import com.financialcoach.support.ApiIntegrationTest;
 import com.financialcoach.support.TestUsers.TestUser;
 import java.util.List;
@@ -25,6 +26,7 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -36,11 +38,15 @@ class CopilotControllerTest extends ApiIntegrationTest {
     @MockitoBean
     private GoogleGenAiChatModel chatModel;
 
+    @Autowired
+    private RateLimiter rateLimiter;
+
     private TestUser alice;
     private UUID aliceAccount;
 
     @BeforeEach
     void setUp() {
+        rateLimiter.reset();
         alice = users.client();
         aliceAccount = account(alice, "Debit");
         when(chatModel.getOptions()).thenReturn(GoogleGenAiChatOptions.builder().build());

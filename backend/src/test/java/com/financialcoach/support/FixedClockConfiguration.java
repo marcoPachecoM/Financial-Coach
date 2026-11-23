@@ -39,6 +39,11 @@ public class FixedClockConfiguration {
             this.instant = today.atTime(10, 0).atZone(zone).toInstant();
         }
 
+        /** Moves the clock forward, e.g. past a rate-limit window. */
+        public void advance(java.time.Duration duration) {
+            this.instant = instant.plus(duration);
+        }
+
         @Override
         public ZoneId getZone() {
             return zone;
