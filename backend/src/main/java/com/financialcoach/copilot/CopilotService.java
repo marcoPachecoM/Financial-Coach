@@ -3,6 +3,8 @@ package com.financialcoach.copilot;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +12,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 
 import com.financialcoach.accounts.AccountService;
@@ -18,6 +21,8 @@ import com.financialcoach.shared.error.ServiceUnavailableException;
 import com.financialcoach.shared.error.UpstreamUnavailableException;
 import com.financialcoach.transactions.RecurringReport;
 import com.financialcoach.transactions.TransactionStatistics;
+
+import reactor.core.publisher.Flux;
 
 @Service
 public class CopilotService {
@@ -67,45 +72,128 @@ public class CopilotService {
     ChatResponseRecord chat(UUID userId, ChatRequestRecord request) {
         // 404 before spending tokens: inside a tool the error would only reach the model.
         accountService.requireOwned(userId, request.accountId());
-        CopilotTools tools = new CopilotTools(statistics, recurringReport, accountService, clock, userId,
-                request.accountId());
 
+        TokenUsageAdvisor usageAdvisor = new TokenUsageAdvisor();
         ChatResponse chatAnswer;
         try {
-            ChatClient.ChatClientRequestSpec prompt = chatClient.prompt()
-                    .system(SYSTEM_PROMPT.formatted(LocalDate.now(clock), properties.amountFormat()))
-                    .user(request.message())
-                    .tools(tools);
-            if (request.conversationId() != null) {
-                String conversation = conversationKey(userId, request);
-                prompt = prompt.advisors(a -> a.advisors(memoryAdvisor).param(ChatMemory.CONVERSATION_ID, conversation));
-            }
-            chatAnswer = prompt.call().chatResponse();
+            chatAnswer = prompt(userId, request, usageAdvisor).call().chatResponse();
         } catch (RuntimeException e) {
             if (e instanceof ApiException) {
                 throw e;  // ours (e.g. 404), already mapped to an HTTP response
             }
             if (e instanceof IllegalStateException && isUnknownTool(e)) {
                 log.warn("Copilot model called an unknown tool: {}", e.getMessage());
-                return new ChatResponseRecord(UNKNOWN_TOOL_ANSWER, properties.provider(), null);
+                logUsage(userId, request, null, usageAdvisor.usage(), "unknown_tool");
+                return new ChatResponseRecord(UNKNOWN_TOOL_ANSWER, properties.provider(), null, usageAdvisor.usage());
             }
             // Overloaded (503), over quota (429), timeout or network error: to the user they are all
             // "try again later". Providers wrap their errors differently, so the cause is only logged.
             log.warn("Copilot LLM call failed: {}", rootMessage(e), e);
+            logUsage(userId, request, null, usageAdvisor.usage(), "failed");
             throw new ServiceUnavailableException("COPILOT_UNAVAILABLE",
                     "The copilot is busy or unavailable right now. Please try again in a moment.");
         }
 
+        TokenUsage usage = usageAdvisor.usage();
+        String model = chatAnswer == null ? null : chatAnswer.getMetadata().getModel();
+
         // Blocked by safety filters or cut by max-output-tokens: the provider may return no text.
         if (chatAnswer == null || chatAnswer.getResult() == null
                 || chatAnswer.getResult().getOutput().getText() == null) {
+            logUsage(userId, request, model, usage, "empty");
             throw new UpstreamUnavailableException("COPILOT_EMPTY_RESPONSE",
                     "The copilot returned no answer. Try again or rephrase the question.");
         }
         String answer = chatAnswer.getResult().getOutput().getText();
-        String model = chatAnswer.getMetadata().getModel();
+        logUsage(userId, request, model, usage, "ok");
 
-        return new ChatResponseRecord(answer, properties.provider(), model);
+        return new ChatResponseRecord(answer, properties.provider(), model, usage);
+    }
+
+    /**
+     * Same answer as {@link #chat}, sent as it is written (Server-Sent Events, see
+     * {@link ChatStreamEvents}). The account is checked before the stream starts, so a foreign
+     * account is still a plain 404. Failures after that arrive as an {@code error} event, because
+     * the HTTP status (200) is already sent.
+     */
+    Flux<ServerSentEvent<Object>> stream(UUID userId, ChatRequestRecord request) {
+        accountService.requireOwned(userId, request.accountId());
+
+        TokenUsageAdvisor usageAdvisor = new TokenUsageAdvisor();
+        AtomicReference<String> model = new AtomicReference<>();
+        AtomicBoolean answered = new AtomicBoolean();
+
+        Flux<ServerSentEvent<Object>> deltas = Flux.defer(() -> prompt(userId, request, usageAdvisor).stream().chatResponse())
+                .doOnNext(chunk -> {
+                    if (chunk.getMetadata() != null && chunk.getMetadata().getModel() != null) {
+                        model.set(chunk.getMetadata().getModel());
+                    }
+                })
+                .map(CopilotService::textOf)
+                .filter(text -> !text.isEmpty())
+                .doOnNext(text -> answered.set(true))
+                .map(ChatStreamEvents::delta);
+
+        Flux<ServerSentEvent<Object>> end = Flux.defer(() -> {
+            TokenUsage usage = usageAdvisor.usage();
+            if (!answered.get()) {
+                logUsage(userId, request, model.get(), usage, "empty");
+                return Flux.just(ChatStreamEvents.error("COPILOT_EMPTY_RESPONSE",
+                        "The copilot returned no answer. Try again or rephrase the question."));
+            }
+            logUsage(userId, request, model.get(), usage, "ok");
+            return Flux.just(ChatStreamEvents.done(properties.provider(), model.get(), usage));
+        });
+
+        return deltas.concatWith(end).onErrorResume(e -> {
+            TokenUsage usage = usageAdvisor.usage();
+            if (e instanceof IllegalStateException ise && isUnknownTool(ise)) {
+                log.warn("Copilot model called an unknown tool: {}", e.getMessage());
+                logUsage(userId, request, model.get(), usage, "unknown_tool");
+                return Flux.just(ChatStreamEvents.delta(UNKNOWN_TOOL_ANSWER),
+                        ChatStreamEvents.done(properties.provider(), model.get(), usage));
+            }
+            log.warn("Copilot LLM stream failed: {}", rootMessage(e), e);
+            logUsage(userId, request, model.get(), usage, "failed");
+            return Flux.just(ChatStreamEvents.error("COPILOT_UNAVAILABLE",
+                    "The copilot is busy or unavailable right now. Please try again in a moment."));
+        });
+    }
+
+    /** The request to the model, shared by {@link #chat} and {@link #stream}. */
+    private ChatClient.ChatClientRequestSpec prompt(UUID userId, ChatRequestRecord request,
+                                                    TokenUsageAdvisor usageAdvisor) {
+        CopilotTools tools = new CopilotTools(statistics, recurringReport, accountService, clock, userId,
+                request.accountId());
+        ChatClient.ChatClientRequestSpec prompt = chatClient.prompt()
+                .system(SYSTEM_PROMPT.formatted(LocalDate.now(clock), properties.amountFormat()))
+                .user(request.message())
+                .tools(tools)
+                .advisors(usageAdvisor);
+        if (request.conversationId() != null) {
+            String conversation = conversationKey(userId, request);
+            prompt = prompt.advisors(a -> a.advisors(memoryAdvisor).param(ChatMemory.CONVERSATION_ID, conversation));
+        }
+        return prompt;
+    }
+
+    /** Text of a streamed chunk; chunks with only metadata or a tool call have none. */
+    private static String textOf(ChatResponse chunk) {
+        if (chunk.getResult() == null || chunk.getResult().getOutput() == null) {
+            return "";
+        }
+        String text = chunk.getResult().getOutput().getText();
+        return text == null ? "" : text;
+    }
+
+    /**
+     * One line per message, also when it fails: tokens are billed even then. Ids only, never the
+     * message or the answer (they may contain financial data).
+     */
+    private void logUsage(UUID userId, ChatRequestRecord request, String model, TokenUsage usage, String outcome) {
+        log.info("Copilot usage: outcome={} user={} account={} provider={} model={} calls={} input={} output={} total={}",
+                outcome, userId, request.accountId(), properties.provider(), model, usage.llmCalls(),
+                usage.inputTokens(), usage.outputTokens(), usage.totalTokens());
     }
 
     /**

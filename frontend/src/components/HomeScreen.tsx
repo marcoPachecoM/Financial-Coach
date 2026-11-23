@@ -478,6 +478,7 @@ export const HomeScreen: React.FC = () => {
             busyInsightId={copilot.busyInsightId}
             messages={copilot.messages}
             thinking={copilot.thinking}
+            busy={copilot.busy}
             onInsightAction={copilot.runAction}
             onDismissInsight={copilot.dismissInsight}
             onSendMessage={copilot.sendMessage}

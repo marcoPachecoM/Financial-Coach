@@ -15,20 +15,19 @@ import com.financialcoach.auth.AuthenticatedUser;
 import com.financialcoach.shared.web.ProblemResponseWriter;
 import com.financialcoach.shared.web.RateLimiter;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 /**
- * Limits on POST /copilot/chat per user (not per IP: the endpoint is authenticated, and people
- * behind the same network share an IP). The per-minute limit stops loops and scripts; the daily
+ * Limits on POST /copilot/chat and /copilot/chat/stream, with one counter per user for both (not
+ * per IP: the endpoints are authenticated, and people behind the same network share an IP). The per-minute limit stops loops and scripts; the daily
  * one caps what the LLM can cost. Exceeding them returns 429 RATE_LIMIT_EXCEEDED with Retry-After.
  *
  * <p>Runs after Spring Security, so the user is known; anonymous requests never get here (401).
  */
 @Configuration
 class CopilotRateLimitConfig implements WebMvcConfigurer {
-
-    static final String CHAT_PATH = "/api/v1/copilot/chat";
 
     private final RateLimiter limiter;
     private final CopilotProperties properties;
@@ -46,6 +45,9 @@ class CopilotRateLimitConfig implements WebMvcConfigurer {
             @Override
             public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
                     throws Exception {
+                if (request.getDispatcherType() == DispatcherType.ASYNC) {
+                    return true; // a streamed answer is dispatched again when it ends: count it once
+                }
                 Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
                 if (authentication == null || !(authentication.getPrincipal() instanceof AuthenticatedUser user)) {
                     return true; // Spring Security already answers 401; nothing to count
@@ -65,7 +67,7 @@ class CopilotRateLimitConfig implements WebMvcConfigurer {
                 }
                 return true;
             }
-        }).addPathPatterns(CHAT_PATH);
+        }).addPathPatterns(CopilotController.CHAT_PATH, CopilotController.STREAM_PATH);
     }
 
     private boolean reject(HttpServletRequest request, HttpServletResponse response, long retryAfter, String detail)

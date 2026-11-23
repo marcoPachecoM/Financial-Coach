@@ -107,7 +107,7 @@ class CopilotRateLimitTest extends ApiIntegrationTest {
     }
 
     private RequestBuilder chat(TestUser user) {
-        return post(CopilotRateLimitConfig.CHAT_PATH).with(as(user)).contentType(MediaType.APPLICATION_JSON)
+        return post(CopilotController.CHAT_PATH).with(as(user)).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"message\": \"Hi\", \"account_id\": \"%s\"}".formatted(account));
     }
 }

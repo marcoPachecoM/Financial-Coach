@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { isAxiosError } from "axios";
 import { INITIAL_CHAT_MESSAGES } from "../data/mockInsights";
-import { sendChatMessage } from "../services/copilot";
+import { streamChatMessage } from "../services/copilot";
 import { getErrorMessage } from "../services/errors";
 import { makeRecurring, stopRecurring, updateRecurring } from "../services/recurring";
 import type { AlertAction, ApiAlert, RecurrenceFrequency } from "../types/api";
@@ -19,11 +19,12 @@ const MAX_DISMISSED = 300;
 const MAX_MESSAGE_LENGTH = 1000;
 
 const now = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-const message = (sender: ChatMessage["sender"], text: string): ChatMessage => ({
+const message = (sender: ChatMessage["sender"], text: string, tokens?: number): ChatMessage => ({
   id: `msg-${sender}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
   sender,
   text,
   timestamp: now(),
+  tokens,
 });
 
 /** Dismissed alerts are a per-browser convenience: losing them only shows the alert again. */
@@ -46,7 +47,10 @@ const saveDismissed = (keys: string[]) => {
 
 /** Chat errors in the copilot's voice; a timeout is not "the server is down". */
 const chatErrorMessage = (error: unknown): string => {
-  if (isAxiosError(error) && error.code === "ECONNABORTED") {
+  const timedOut =
+    (isAxiosError(error) && error.code === "ECONNABORTED") ||
+    (error instanceof DOMException && error.name === "AbortError");
+  if (timedOut) {
     return "The copilot is taking too long to answer. Please try again in a moment.";
   }
   return `I couldn't answer that: ${getErrorMessage(error)}`;
@@ -69,7 +73,10 @@ export const useCopilot = ({ accountId, transactions, alerts, onDataChanged }: C
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
   const [dismissed, setDismissed] = useState<string[]>(loadDismissed);
   const [busyInsightId, setBusyInsightId] = useState<string | null>(null);
+  /** Waiting for the first piece of the answer. */
   const [thinking, setThinking] = useState(false);
+  /** From sending until the answer is complete: no new message meanwhile. */
+  const [busy, setBusy] = useState(false);
   /** The server keeps the history per conversation; a new id starts a fresh chat. */
   const [conversationId, setConversationId] = useState(() => crypto.randomUUID());
   const [conversationAccount, setConversationAccount] = useState(accountId);
@@ -119,14 +126,34 @@ export const useCopilot = ({ accountId, transactions, alerts, onDataChanged }: C
 
     sending.current = true;
     setThinking(true);
+    setBusy(true);
+    // The answer bubble appears with the first piece and grows with each one.
+    const answer = message("assistant", "");
+    let started = false;
+    const update = (change: (m: ChatMessage) => ChatMessage) =>
+      setMessages((prev) => prev.map((m) => (m.id === answer.id ? change(m) : m)));
+
     try {
-      const { response } = await sendChatMessage(accountId, conversationId, text.slice(0, MAX_MESSAGE_LENGTH));
-      say(response);
+      const done = await streamChatMessage(accountId, conversationId, text.slice(0, MAX_MESSAGE_LENGTH), (delta) => {
+        if (!started) {
+          started = true;
+          setThinking(false);
+          setMessages((prev) => [...prev, { ...answer, text: delta }]);
+        } else {
+          update((m) => ({ ...m, text: m.text + delta }));
+        }
+      });
+      update((m) => ({ ...m, tokens: done.usage?.total_tokens }));
     } catch (error) {
-      say(chatErrorMessage(error));
+      if (started) {
+        update((m) => ({ ...m, text: `${m.text}\n\n(${chatErrorMessage(error)})` }));
+      } else {
+        say(chatErrorMessage(error));
+      }
     } finally {
       sending.current = false;
       setThinking(false);
+      setBusy(false);
     }
   };
 
@@ -167,5 +194,5 @@ export const useCopilot = ({ accountId, transactions, alerts, onDataChanged }: C
     }
   };
 
-  return { insights, busyInsightId, messages, thinking, sendMessage, newChat, runAction, dismissInsight, say };
+  return { insights, busyInsightId, messages, thinking, busy, sendMessage, newChat, runAction, dismissInsight, say };
 };

@@ -37,6 +37,11 @@ spring:
       hibernate.order_inserts: true
 
   # CSV upload limit of the contract (1 MiB file); larger requests get 413 PAYLOAD_TOO_LARGE.
+  # Streamed copilot answers (async requests) may take a while with tool calls; Tomcat's default is 30 s.
+  mvc:
+    async:
+      request-timeout: 90s
+
   servlet:
     multipart:
       max-file-size: 1MB

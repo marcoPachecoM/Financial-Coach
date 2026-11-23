@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -59,7 +60,34 @@ class CopilotControllerTest extends ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.response").value("You spent $10.00."))
                 .andExpect(jsonPath("$.provider").value("google-genai"))
-                .andExpect(jsonPath("$.model").value("fake-model"));
+                .andExpect(jsonPath("$.model").value("fake-model"))
+                .andExpect(jsonPath("$.usage.input_tokens").value(100))
+                .andExpect(jsonPath("$.usage.output_tokens").value(20))
+                .andExpect(jsonPath("$.usage.total_tokens").value(120))
+                .andExpect(jsonPath("$.usage.llm_calls").value(1));
+    }
+
+    @Test
+    void usageAddsUpEveryCallOfTheToolLoop() throws Exception {
+        // 1st call: the model asks for the summary tool. 2nd call: it answers with the tool result.
+        // Totals include thinking tokens, so they are larger than input + output.
+        AssistantMessage toolCall = AssistantMessage.builder()
+                .toolCalls(List.of(new AssistantMessage.ToolCall("call-1", "function", "summary",
+                        "{\"startDate\": \"2026-09-01\", \"endDate\": \"2026-09-30\"}")))
+                .build();
+        when(chatModel.call(any(Prompt.class)))
+                .thenReturn(new ChatResponse(List.of(new Generation(toolCall)),
+                        ChatResponseMetadata.builder().model("fake-model").usage(new DefaultUsage(100, 10, 130)).build()))
+                .thenReturn(new ChatResponse(List.of(new Generation(new AssistantMessage("You spent $0.00."))),
+                        ChatResponseMetadata.builder().model("fake-model").usage(new DefaultUsage(200, 30, 250)).build()));
+
+        mvc.perform(chat(alice, aliceAccount, "How much in September?", null))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.response").value("You spent $0.00."))
+                .andExpect(jsonPath("$.usage.input_tokens").value(300))
+                .andExpect(jsonPath("$.usage.output_tokens").value(40))
+                .andExpect(jsonPath("$.usage.total_tokens").value(380))
+                .andExpect(jsonPath("$.usage.llm_calls").value(2));
     }
 
     @Test
@@ -134,7 +162,7 @@ class CopilotControllerTest extends ApiIntegrationTest {
 
     private static ChatResponse answer(String text) {
         return new ChatResponse(List.of(new Generation(new AssistantMessage(text))),
-                ChatResponseMetadata.builder().model("fake-model").build());
+                ChatResponseMetadata.builder().model("fake-model").usage(new DefaultUsage(100, 20)).build());
     }
 
     private UUID account(TestUser owner, String name) {

@@ -24,6 +24,8 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   isActionable?: boolean;
+  /** Tokens the LLM spent on this answer (only answers from POST /copilot/chat). */
+  tokens?: number;
 }
 
 /** Response of POST /copilot/chat. */
@@ -32,4 +34,21 @@ export interface ApiChatResponse {
   provider: string;
   /** Model that answered, as the provider reports it (may be null). */
   model: string | null;
+  usage: ApiTokenUsage;
+}
+
+/** Tokens spent on one message, summed over every LLM call (tool calls make several). */
+export interface ApiTokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  /** As the provider bills them; may exceed input + output (thinking tokens). */
+  total_tokens: number;
+  llm_calls: number;
+}
+
+/** Last event of a streamed answer (POST /copilot/chat/stream). */
+export interface ApiChatStreamDone {
+  provider: string;
+  model: string | null;
+  usage: ApiTokenUsage;
 }

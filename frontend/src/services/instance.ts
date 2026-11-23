@@ -76,4 +76,19 @@ api.interceptors.response.use(
   },
 );
 
+/**
+ * For requests made without axios (the copilot's streamed answer uses fetch): a fresh access
+ * token after a 401 INVALID_TOKEN, sharing the same single refresh. If the refresh fails the
+ * session ends, as for axios requests.
+ */
+export const refreshAccessTokenOrExpire = async (): Promise<string> => {
+  try {
+    return await refreshAccessToken();
+  } catch (refreshError) {
+    authStorage.clear();
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+    throw refreshError;
+  }
+};
+
 export default api;

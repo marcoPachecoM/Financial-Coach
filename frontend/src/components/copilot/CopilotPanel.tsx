@@ -9,8 +9,10 @@ interface CopilotPanelProps {
   /** Insight whose action is running, if any. */
   busyInsightId: string | null;
   messages: ChatMessage[];
-  /** Waiting for the copilot's answer. */
+  /** Waiting for the first piece of the copilot's answer. */
   thinking: boolean;
+  /** Until the answer is complete: sending and "new chat" are disabled. */
+  busy: boolean;
   onInsightAction: (id: string, action: AlertAction) => void;
   onDismissInsight: (id: string) => void;
   onSendMessage: (text: string) => void;
@@ -23,6 +25,7 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({
   busyInsightId,
   messages,
   thinking,
+  busy,
   onInsightAction,
   onDismissInsight,
   onSendMessage,
@@ -49,7 +52,7 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({
           <button
             type="button"
             onClick={onNewChat}
-            disabled={thinking}
+            disabled={busy}
             title="New chat"
             className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
           >
@@ -88,9 +91,14 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({
               <span className="font-semibold text-[11px] opacity-80">
                 {msg.sender === 'user' ? 'You' : 'Mush AI'}
               </span>
-              <span className="text-[10px] opacity-60 font-mono">{msg.timestamp}</span>
+              <span className="text-[10px] opacity-60 font-mono">
+                {msg.tokens !== undefined && (
+                  <span title="Tokens the AI spent on this answer">{msg.tokens.toLocaleString()} tokens · </span>
+                )}
+                {msg.timestamp}
+              </span>
             </div>
-            <p className="leading-relaxed">{msg.text}</p>
+            <p className="leading-relaxed whitespace-pre-line">{msg.text}</p>
           </div>
         ))}
 
@@ -104,7 +112,7 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({
 
       {/* 3. Sticky / Fixed Bottom Chat Input with Solid Background */}
       <div className="shrink-0 sticky bottom-0 z-20 bg-[#f7f9fb] pt-1">
-        <ChatBox onSendMessage={onSendMessage} disabled={thinking} />
+        <ChatBox onSendMessage={onSendMessage} disabled={busy} />
       </div>
     </aside>
   );
