@@ -22,7 +22,48 @@ The original Flask backend was replaced by the Spring Boot one and removed from 
 
 ## 2. Backend
 
-Modules: **JWT authentication** (`POST /api/v1/auth/login`, `/refresh` with rotation and reuse detection, `/logout`, `GET /api/v1/auth/me`), the **accounts** module (`GET`/`POST /api/v1/accounts`, `GET`/`PATCH /api/v1/accounts/{id}`), the **transactions** module (`GET`/`POST /api/v1/transactions`, `GET`/`PATCH`/`DELETE /api/v1/transactions/{id}`), the **CSV import** (`POST /api/v1/transactions/upload-csv`: all or nothing, creates missing accounts, skips rows already imported), **analytics** (`GET /api/v1/analytics/summary`, `GET /api/v1/analytics/by-category-group`) the **monthly budget** (`GET /api/v1/accounts/{id}/budget?month=YYYY-MM`), **recurring transactions** (`/api/v1/recurring-transactions`, or `recurrence` when creating a transaction: the next occurrences are created automatically every day, and a matching CSV charge replaces the automatic one) and **alerts** (`GET /api/v1/accounts/{id}/alerts`: budget near or over the limit, upcoming and missing recurring charges, price changes, subscription audit and suggested subscriptions). Transactions have a **category group** from a closed list of 26 (assigned automatically from the merchant cache when missing, falling back to `Other`) and an optional free-text **category** inside it (e.g. group `Utilities`, category `Gas`); the LLM step comes later. The **copilot** (`POST /api/v1/copilot/chat`) answers questions about an account with an LLM (Gemini through Spring AI) that reads the data through read-only tools; see [Copilot](#copilot-ai-chat) below. The React frontend (below): the copilot panel shows the real alerts with their actions and the AI chat. See [docs/database.md](docs/database.md) for the data model.
+Modules: **authentication** (JWT access and refresh tokens), **accounts** with an optional monthly budget, **transactions** (typed in or imported from CSV), **recurring transactions** (the next occurrences are created automatically every day), **analytics** (summary, spending by category group, monthly budget), **alerts** and the AI **copilot**. Transactions have a **category group** from a closed list of 26 (assigned from the merchant cache when missing, falling back to `Other`; an LLM step is planned) and an optional free-text **category** inside it (e.g. group `Utilities`, category `Gas`). See [docs/database.md](docs/database.md) for the data model.
+
+### Endpoints
+
+All under `/api/v1`. Everything except login, refresh and the public health checks needs `Authorization: Bearer <access token>`, and a user only sees their own accounts and data (someone else's id answers `404`, as if it did not exist). Errors are [Problem Details](#5-architecture) with a stable `code`. Full contract: [docs/openapi.yaml](docs/openapi.yaml).
+
+| Method and path | What it does |
+|---|---|
+| **Auth** | |
+| `POST /auth/login` | Email and password → access token (15 min) and refresh token (14 days, single use). |
+| `POST /auth/refresh` | Refresh token in the `Authorization` header → new pair. The old refresh token stops working; reusing it revokes every session of the user. |
+| `POST /auth/logout` | Revokes the refresh token sent in the header. Idempotent. |
+| `GET /auth/me` | The signed-in user's profile (id, username, email, role, active). |
+| **Health** | |
+| `GET /health`, `GET /health/public` | Public: `{"status": "ok"}` (the first one adds the active Spring profile). `GET /actuator/health` (outside `/api/v1`) also checks the database. |
+| `GET /health/protected`, `GET /health/admin` | Demo checks of the security levels: any signed-in user, and `ADMIN` only (`403` for others). |
+| **Accounts** | |
+| `GET /accounts` | The user's accounts. |
+| `POST /accounts` | Creates one: `name` (unique per user, else `409`) and optional `monthly_budget`. |
+| `GET /accounts/{id}` | One account. |
+| `PATCH /accounts/{id}` | Renames it or changes the budget; `"monthly_budget": null` removes the budget. |
+| `GET /accounts/{id}/budget?month=YYYY-MM` | The month's expenses against the budget: budget, spent, remaining, percentage used and status (`ON_TRACK` below 80 %, `WARNING` up to 100 %, `EXCEEDED` above, `NO_BUDGET`). Default month: the current one. |
+| `GET /accounts/{id}/alerts?month=YYYY-MM` | The month's [alerts](#alerts), most severe first. Default month: the current one. |
+| **Transactions** | |
+| `GET /transactions?account_id=…` | Newest first, paginated (`page` from 1, `size` 1–100, default 10), optionally between `start_date` and `end_date`. |
+| `POST /transactions` | Creates one. Expenses have a positive amount, income a negative one. Without `category_group` it is assigned automatically. With `recurrence` (`frequency`, optional `end_date`) it also becomes a recurring transaction. |
+| `GET /transactions/{id}` | One transaction. |
+| `PATCH /transactions/{id}` | Changes the fields sent; `category` and `notes` can be cleared with `null`. |
+| `DELETE /transactions/{id}` | Deletes it (soft delete: it disappears from every list and total). If it was an occurrence of a recurring transaction, that occurrence is not created again. |
+| `POST /transactions/upload-csv` | Multipart `file`. Header: `Type,Date,Time,Name,Amount,Category Group,Category,Account,Notes`. All or nothing: every row is validated first (errors listed per row), then accounts that do not exist yet are created and rows already imported are skipped. |
+| **Recurring transactions** | |
+| `GET /recurring-transactions?account_id=…` | The account's recurring transactions, with their next due date. |
+| `POST /recurring-transactions` | Makes an existing transaction recurring: `transaction_id`, `frequency` (`WEEKLY`, `BIWEEKLY`, `MONTHLY`, `YEARLY`), optional `end_date`. Occurrences already due are created at once. |
+| `GET /recurring-transactions/{id}` | One recurring transaction. |
+| `PATCH /recurring-transactions/{id}` | Changes name, amount, category group, category, notes or `end_date` (an end date stops it). Applies to the occurrences created from now on. |
+| `DELETE /recurring-transactions/{id}` | Deletes the rule; the transactions it created are kept as ordinary ones. |
+| **Analytics** | |
+| `GET /analytics/summary?account_id=…` | Total expenses and income, net, counts, average and largest expense, optionally between `start_date` and `end_date`. |
+| `GET /analytics/by-category-group?account_id=…` | Totals per category group for `type` (`EXPENSE` by default or `INCOME`), optionally between dates. |
+| **Copilot** | |
+| `POST /copilot/chat` | A question about an account (`message`, `account_id`, optional `conversation_id`) → the whole answer as JSON, with the model and token usage. See [Copilot](#copilot-ai-chat). |
+| `POST /copilot/chat/stream` | Same body; the answer arrives while it is written, as Server-Sent Events. This is what the frontend uses. See [Streaming](#streaming-server-sent-events). |
 
 Requirements: Java 25 and Docker running. If Java 25 is not your default JDK:
 
@@ -107,6 +148,8 @@ curl -X PATCH -H "$AUTH" -H 'Content-Type: application/json' -d '{"end_date": "2
 curl -H "$AUTH" "$API/accounts/$ACCOUNT/alerts"
 ```
 
+#### Alerts
+
 Alerts are computed on every request (nothing is stored). Each one has a stable `id`, a `type`, a `severity` and structured `data`; the client writes the text:
 
 | Type | When |
@@ -146,7 +189,7 @@ Some endpoints count requests in **fixed windows** and answer `429 RATE_LIMIT_EX
 |---|---|---|---|
 | `POST /auth/login` | client IP | 5 / minute | Slows down password guessing. |
 | `POST /auth/refresh`, `/auth/logout` | client IP | 10 / minute, 20 / minute | Protects the token table. |
-| `POST /copilot/chat` | user | 10 / minute and 100 / day | The minute limit stops scripts and loops; the daily one caps the LLM cost. |
+| `POST /copilot/chat`, `/copilot/chat/stream` | user (one counter for both) | 10 / minute and 100 / day | The minute limit stops scripts and loops; the daily one caps the LLM cost. |
 
 How it works (`shared/web/RateLimiter`):
 
@@ -174,10 +217,11 @@ To change a limit, set its variable, e.g. `COPILOT_DAILY_LIMIT=300` in `backend/
 
 - **Streaming**: `POST /api/v1/copilot/chat/stream` (same body) sends the answer while it is written; see [Streaming](#streaming-server-sent-events) below.
 - **Tools**: the model cannot query the database; it calls read-only Java methods (`CopilotTools`): totals, spending by category group, transaction search, budget status and recurring charges. The user and account come from the request, never from the model.
-- **Memory**: messages with the same `conversation_id` (generated by the frontend; one per account, so switching accounts shows that account's chat, and coming back shows the earlier messages; an answer still streaming is cancelled. Chats are kept while the page is open, not in localStorage, because they hold financial data) share history, so follow-up questions work. The last 10 messages go back to the model; history is in memory and lost on restart.
-- **Fail fast**: each LLM call has a 20 s timeout and one retry. An overloaded or unreachable model answers `503 COPILOT_UNAVAILABLE`.
+- **Memory**: messages with the same `conversation_id` share history, so follow-up questions work ("and in October?"). The last 10 messages go back to the model. The history lives in the server's memory: it is lost on restart, and at most 1000 conversations are kept (the least recently used are forgotten first). Without `conversation_id`, every message stands alone.
+- **Frontend chat**: one conversation per account. Switching accounts shows that account's chat and coming back shows the earlier messages; an answer still streaming is cancelled. The **Stop** button (in place of Send while answering) cancels the answer too. Chats are kept while the page is open, not in localStorage, because they hold financial data.
+- **Fail fast**: each LLM request has a 20 s timeout and one retry (only for 408 and 5xx). An overloaded, slow or unreachable model answers `503 COPILOT_UNAVAILABLE`. A model that returns no text (safety filters, output limit) answers `502 COPILOT_EMPTY_RESPONSE`.
 - **Provider quota**: when the model's quota is used up (HTTP 429; Gemini's free tier allows a few requests per model per day, and each question with tools takes about 2), the answer is `503 COPILOT_QUOTA_EXCEEDED` (or that `error` event when streaming) with when to retry, read from the provider's error: `The AI model's usage quota is used up. Try again in 6 h 51 min.` 429 is not retried, since a daily quota would only make the user wait. Gemini's daily quota resets at midnight Pacific time; see your usage at https://ai.dev/rate-limit, or switch `GEMINI_MODEL`, since the quota is per model.
-- **Token usage**: `usage` has the `input_tokens`, `output_tokens`, `total_tokens` (as billed; Gemini adds thinking tokens, so it can exceed input + output) and `llm_calls` of the message, summed over the whole tool loop. Each message also logs one line, even when it fails (ids only, never the text): `Copilot usage: outcome=ok user=… account=… model=… calls=2 input=1830 output=95 total=2010`. The chat shows the total under each answer.
+- **Token usage**: `usage` has the `input_tokens`, `output_tokens`, `total_tokens` (as billed; Gemini adds thinking tokens, so it can exceed input + output) and `llm_calls` of the message, summed over the whole tool loop. Each message also logs exactly one line, even when it fails (ids only, never the text): `Copilot usage: outcome=ok user=… account=… model=… calls=2 input=1830 output=95 total=2010`. `outcome` is `ok`, `empty`, `unknown_tool`, `failed`, `quota` or `cancelled` (the client stopped a streamed answer; the tokens spent until then are counted). The chat shows the total under each answer.
 - **Cost**: `max-output-tokens` and `thinking-level` in `application.yml`, plus the daily limit above. Without billing enabled on the Google project only the free tier is used (Google may use that data to improve its products).
 - **Another model**: change `GEMINI_MODEL`. **Another provider**: change the starter in `pom.xml`, the `spring.ai.*` block in `application.yml`, the API key variable, the chat model type in `CopilotConfig`, and delete `GeminiClientConfig`.
 
@@ -207,14 +251,14 @@ data:{"provider":"google-genai","model":"gemini-...","usage":{"input_tokens":300
 |---|---|---|
 | `delta` | A new piece of text (many of them) | Appends it to the answer bubble |
 | `done` | Finished; carries model and token usage | Shows the tokens and enables the input again |
-| `error` | Failed (`code`, `detail`), e.g. the model is down | Shows the error; it can arrive after some deltas (the answer stopped half-way) |
+| `error` | Failed: `code` (`COPILOT_UNAVAILABLE`, `COPILOT_QUOTA_EXCEEDED` or `COPILOT_EMPTY_RESPONSE`) and `detail` | Shows the error; it can arrive after some deltas (the answer stopped half-way) |
 
-Exactly one `done` or `error` closes the stream. Errors before the stream starts (404 account, 429 rate limit, 400 validation) are normal Problem Details responses.
+Exactly one `done` or `error` closes the stream, unless the client cancels it (closing the connection stops the model too). Errors before the stream starts (404 account, 429 rate limit, 400 validation) are normal Problem Details responses.
 
 Where it lives:
 
 - `CopilotService.stream()` uses Spring AI's `.stream()` instead of `.call()` and turns each chunk into an event (`ChatStreamEvents` defines the three). Tools, memory and token usage work the same as in `/chat`.
-- `frontend/src/services/copilot.ts` (`streamChatMessage`) reads the response piece by piece with `fetch`, because `EventSource` (the browser's SSE reader) cannot send a POST body or the `Authorization` header. `useCopilot` grows the bubble with each delta.
+- `frontend/src/services/copilot.ts` (`streamChatMessage`) reads the response piece by piece with `fetch`, because `EventSource` (the browser's SSE reader) cannot send a POST body or the `Authorization` header. `useCopilot` grows the bubble with each delta, and aborts the request on Stop or when switching accounts.
 - `/chat` (whole answer as JSON) still exists for clients that prefer it; the rate limit counts both endpoints together.
 
 Try it (`-N` prints each event as it arrives):
@@ -252,6 +296,14 @@ npm run dev
 
 Open http://localhost:5173 and log in with the demo user (prefilled in development).
 
+What it has:
+
+- **Sidebar** (collapsible; a drawer on phones): the Dashboard and Transactions views, and the **accounts**. Picking an account switches every view to it. Each account shows the month's spending against its budget and against last month; accounts can be created and edited there.
+- **Dashboard**: metric cards, budget, recurring transactions, spending by category group and the spending trend, for a chosen period.
+- **Transactions**: a calendar (each day shaded by what was spent; click a day to filter) above the list, 10 per page, with search and a category filter. Each row can be viewed, edited, deleted or made recurring.
+- **Header**: add a transaction (optionally repeating) and import a CSV.
+- **Copilot panel**: the account's alerts with their actions (make recurring, update the amount, stop) and the AI chat, streamed, with a Stop button and one conversation per account.
+
 ```bash
 npm run lint     # ESLint
 npm run build    # type check + production build
@@ -267,7 +319,7 @@ Troubleshooting:
 - `POST /api/v1/auth/login` → access token (15 min) + refresh token (14 days, single use).
 - `POST /api/v1/auth/refresh` → new pair; the old refresh token stops working. Reusing a rotated token is treated as theft and revokes every session of the user.
 - `POST /api/v1/auth/logout` (idempotent) and `GET /api/v1/auth/me`.
-- Demo checks: `GET /api/v1/health/protected`, `GET /api/v1/health/admin`.
+- Health: `GET /api/v1/health` and `/health/public` are public; `GET /api/v1/health/protected` (any signed-in user) and `/health/admin` (`ADMIN` only) demonstrate the security levels.
 
 Access tokens are HS256 JWTs validated without a database lookup (issuer, audience, expiry, token type and required claims). Only the `jti` of refresh tokens is stored; expired ones are deleted daily.
 

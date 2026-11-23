@@ -62,6 +62,10 @@
     {
       "key": "recurringTransactionId",
       "value": ""
+    },
+    {
+      "key": "conversationId",
+      "value": ""
     }
   ],
   "item": [
@@ -1149,6 +1153,110 @@
                 }
               ]
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Copilot",
+      "description": "AI chat about an account (Gemini by default). Needs GEMINI_API_KEY in backend/.env. Both endpoints share a per-user limit (10 per minute, 100 per day by default), and every question spends the provider's quota (about 2 model calls each).",
+      "item": [
+        {
+          "name": "Chat (new conversation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"How much did I spend in September?\",\n  \"account_id\": \"{{accountId}}\",\n  \"conversation_id\": \"{{conversationId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/copilot/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "copilot",
+                "chat"
+              ]
+            },
+            "description": "Whole answer as JSON, with `usage` (tokens of every model call of the tool loop). The pre-request script generates a new `conversationId`, so this starts a fresh conversation."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A new conversation each time; the follow-up request reuses this id.",
+                  "pm.collectionVariables.set('conversationId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chat (follow-up, same conversation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"And in October?\",\n  \"account_id\": \"{{accountId}}\",\n  \"conversation_id\": \"{{conversationId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/copilot/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "copilot",
+                "chat"
+              ]
+            },
+            "description": "Reuses `conversationId` from the previous request, so the model remembers it and understands the follow-up. Run **Chat (new conversation)** first."
+          }
+        },
+        {
+          "name": "Chat stream (Server-Sent Events)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream, application/problem+json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"What are my recurring charges?\",\n  \"account_id\": \"{{accountId}}\",\n  \"conversation_id\": \"{{conversationId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/copilot/chat/stream",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "copilot",
+                "chat",
+                "stream"
+              ]
+            },
+            "description": "Same request as Chat, but the answer arrives while it is written: many `delta` events (`{\"text\": ...}`), then `done` (provider, model, usage) or `error` (`code`, `detail`). Postman lists each event as it arrives. Errors before the stream starts (400, 404, 429) are Problem Details, hence the Accept header."
           }
         }
       ]
