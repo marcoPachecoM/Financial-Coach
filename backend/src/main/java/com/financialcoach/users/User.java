@@ -51,6 +51,18 @@ class User {
         // Required by JPA.
     }
 
+    /** A new active user (sign-up). */
+    User(String username, String email, String passwordHash, UserRole role) {
+        this.username = username;
+        this.email = email;
+        this.passwordHash = passwordHash;
+        this.role = role;
+    }
+
+    void changePasswordHash(String newHash) {
+        this.passwordHash = newHash;
+    }
+
     UUID getId() {
         return id;
     }

@@ -8,6 +8,7 @@ PostgreSQL schema of the Spring Boot backend (`backend/`), derived from the API 
 erDiagram
     users ||--o{ refresh_tokens : "has"
     users ||--o{ accounts : "owns"
+    users ||--o{ recovery_codes : "recovers with"
     users ||--o{ import_batches : "uploads"
     accounts ||--o{ transactions : "contains"
     accounts ||--o{ recurring_transactions : "repeats"
@@ -42,6 +43,14 @@ erDiagram
         timestamptz revoked_at "null = active"
         varchar replaced_by_jti
         timestamptz reuse_detected_at
+        timestamptz created_at
+    }
+
+    recovery_codes {
+        uuid id PK
+        uuid user_id FK
+        varchar code_hash "SHA-256, unique"
+        timestamptz used_at "null = still valid"
         timestamptz created_at
     }
 
@@ -208,6 +217,7 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 - **Tags belong to a user** (V9): `tags` holds each user's labels and `transaction_tags` links them to transactions (many to many). Names are compared ignoring case, so "Work" and "work" are one tag, spelled as first created. The application checks that a transaction only gets tags of its own user. A tag that no active transaction uses stays in the table but is not listed by `GET /tags`; deleting a transaction or a user removes its links (`ON DELETE CASCADE`). New tags are inserted with `ON CONFLICT DO NOTHING`, so two requests creating the same tag at once both get it instead of one failing on the unique index. Recurring rules have no tags of their own: each new occurrence copies the tags of the latest occurrence, and a CSV charge that replaces a generated occurrence keeps its tags.
 - **Category budgets are opt-in** (V10): `category_budgets` has a row only for the groups the user wants to watch, so the dashboard never shows 26 bars. Like `accounts.monthly_budget`, the amount applies to every month and the spending is computed from the transactions. They are independent of the account's budget: adding up to more than it is allowed (the frontend only warns). `PUT` replaces them all with a bulk delete followed by inserts, so the unique index never sees two rows of the same group.
 - **Savings goals belong to the user, not to an account** (V11), because savings usually span accounts; the Goals view does not change with the selected account. Progress comes only from the **contributions the user records** (negative ones are withdrawals): the app does not know account balances, and guessing from income minus expenses would be wrong as soon as there are two goals. Nothing derived is stored: saved amount, pace, required monthly amount, projected date and status are computed on every request (`GoalProjection`, a pure class with its own unit tests). The rule that a goal never goes below zero lives in the service, since it depends on the sum of rows.
+- **Recovery codes instead of email** (V12): sign-up returns 8 single-use codes and stores only their SHA-256. The codes have about 60 bits of entropy, so a slow hash like Argon2 is unnecessary, and checking one is a lookup on `ux_recovery_codes_hash`. Using a code is a single conditional `UPDATE ... WHERE used_at IS NULL`, so two requests with the same code cannot both succeed. Generating new codes deletes the old rows.
 - **Alerts are not stored**: `GET /accounts/{id}/alerts` computes them on every request from the budgets and the recurring transactions.
 
 ## Not migrated

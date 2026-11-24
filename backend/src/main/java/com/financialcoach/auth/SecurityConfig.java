@@ -33,9 +33,14 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 class SecurityConfig {
 
-    /** Public, and they never read an access token: login has none, refresh/logout get a refresh token. */
+    /**
+     * Public, and they never read an access token: login, sign-up and password reset have none,
+     * refresh/logout get a refresh token.
+     */
     private static final RequestMatcher TOKEN_ENDPOINTS = new OrRequestMatcher(
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/login"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/register"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/password-reset"),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/refresh"),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/logout"));
 
@@ -62,6 +67,7 @@ class SecurityConfig {
                         .requestMatchers("/api/v1/health", "/api/v1/health/public").permitAll()
                         .requestMatchers(TOKEN_ENDPOINTS).permitAll()
                         .requestMatchers("/api/v1/health/admin").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated());
         return http.build();

@@ -74,6 +74,10 @@
     {
       "key": "contributionId",
       "value": ""
+    },
+    {
+      "key": "recoveryCode",
+      "value": ""
     }
   ],
   "item": [
@@ -159,6 +163,52 @@
     {
       "name": "Auth",
       "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"ana.lopez\",\n  \"email\": \"ana@example.com\",\n  \"password\": \"correct horse battery\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Sign-up: 201 with a token pair and 8 recovery codes (shown only once). 3 per hour per IP."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('accessToken', body.access_token);",
+                  "  pm.collectionVariables.set('refreshToken', body.refresh_token);",
+                  "  pm.collectionVariables.set('recoveryCode', body.recovery_codes[0]);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
         {
           "name": "Login",
           "request": {
@@ -403,6 +453,135 @@
                 "auth",
                 "me"
               ]
+            }
+          }
+        },
+        {
+          "name": "Reset password with a recovery code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/password-reset",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "password-reset"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ana@example.com\",\n  \"recovery_code\": \"{{recoveryCode}}\",\n  \"new_password\": \"a much longer passphrase\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Uses up the code and ends every session. Same 400 INVALID_RECOVERY for any mismatch."
+          }
+        },
+        {
+          "name": "Change password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "change-password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"correct horse battery\",\n  \"new_password\": \"a much longer passphrase\"\n}"
+            },
+            "description": "Returns a new token pair; every other session ends."
+          }
+        },
+        {
+          "name": "Recovery codes left",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/recovery-codes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "recovery-codes"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Generate new recovery codes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/recovery-codes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "recovery-codes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"a much longer passphrase\"\n}"
+            },
+            "description": "The old codes stop working."
+          }
+        },
+        {
+          "name": "Admin: reset a user's password by email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/password-reset",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                "password-reset"
+              ]
+            },
+            "description": "ADMIN only (log in as admin@example.local first): a temporary password shown once; ends the user's sessions.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ana@example.com\"\n}"
             }
           }
         }

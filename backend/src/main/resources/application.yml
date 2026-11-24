@@ -91,6 +91,12 @@ financial-coach:
     # Consecutive failed logins of one email (from any IP) before each new attempt must wait:
     # 30 s, then doubling up to 15 min. A success resets it.
     login-account-failures: ${RATE_LIMIT_LOGIN_ACCOUNT_FAILURES:5}
+    # Sign-ups per client IP and hour (no CAPTCHA: this is the protection against bots).
+    register: ${RATE_LIMIT_REGISTER:3}
+    # Password resets with a recovery code per client IP and minute (failures also count per email).
+    password-reset: ${RATE_LIMIT_PASSWORD_RESET:5}
+    # Password changes and recovery-code requests per signed-in user and minute.
+    account-security: ${RATE_LIMIT_ACCOUNT_SECURITY:10}
     # CSV export and import requests per user and minute (each one reads or writes a whole file).
     csv: ${RATE_LIMIT_CSV:10}
   # Generator of recurring transactions: daily (server time) and once at startup.

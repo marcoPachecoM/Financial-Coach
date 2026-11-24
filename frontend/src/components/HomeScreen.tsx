@@ -21,6 +21,7 @@ import { CategoryBudgetsCard } from "./dashboard/CategoryBudgetsCard";
 import { CategoryBudgetsModal } from "./dashboard/CategoryBudgetsModal";
 import { TransactionsView } from "./transactions/TransactionsView";
 import { GoalsView } from "./goals/GoalsView";
+import { SecurityDialog } from "./auth/SecurityDialog";
 import { useAsync } from "../hooks/useAsync";
 import { getGoals } from "../services/goals";
 import { needsAttention } from "../utils/goalStyles";
@@ -106,6 +107,7 @@ export const HomeScreen: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [viewingTransaction, setViewingTransaction] = useState<Transaction | null>(null);
+  const [isSecurityOpen, setIsSecurityOpen] = useState(false);
   const [accountModal, setAccountModal] = useState<{ open: boolean; account: Account | null }>({
     open: false,
     account: null,
@@ -321,6 +323,7 @@ export const HomeScreen: React.FC = () => {
         onOpenExport={accountList.length > 0 ? () => setIsExportModalOpen(true) : undefined}
         onOpenNewTransaction={() => setIsNewTransactionOpen(true)}
         onLogout={logout}
+        onOpenSecurity={() => setIsSecurityOpen(true)}
       />
 
       <div className="flex flex-1 w-full">
@@ -569,6 +572,8 @@ export const HomeScreen: React.FC = () => {
           }}
         />
       )}
+
+      {isSecurityOpen && <SecurityDialog onClose={() => setIsSecurityOpen(false)} onSay={copilot.say} />}
 
       <AccountFormModal
         key={accountModal.open ? (accountModal.account?.id ?? "new-account") : "closed"}

@@ -30,6 +30,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   }, []);
 
+  const signInWithTokens = useCallback((accessToken: string, refreshToken: string, rememberMe: boolean) => {
+    authStorage.setTokens(accessToken, refreshToken, rememberMe);
+    setIsAuthenticated(true);
+  }, []);
+
   const logout = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -44,7 +49,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, isLoading, login, logout, signInWithTokens }}>
       {children}
     </AuthContext.Provider>
   );

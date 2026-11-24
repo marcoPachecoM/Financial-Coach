@@ -163,6 +163,198 @@ paths:
               schema: { $ref: "#/components/schemas/ProblemDetail" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Create an account (sign-up)
+      description: |
+        Creates an active `CLIENT` and signs it in. The email is not verified
+        (there is no email service). Returns 8 single-use recovery codes, shown
+        only here: they are the way to reset a forgotten password. Rate limited
+        to 3 sign-ups per hour per client IP. Password rules: 10–128 characters,
+        not the email (or its local part) nor the username.
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "201":
+          description: Account created and signed in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Registered" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "409":
+          description: The email or the username is already taken, ignoring case (`CONFLICT`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/auth/password-reset:
+    post:
+      tags: [Auth]
+      summary: Reset a forgotten password with a recovery code
+      description: |
+        The code is used up and every session (refresh token) of the user ends.
+        Unknown email, wrong or used code and inactive user all return the same
+        400 `INVALID_RECOVERY`. Failures count per email like failed logins
+        (from the 5th, each attempt must wait 30 s, doubling up to 15 min), and
+        requests are limited to 5 per minute per client IP. A new password that
+        breaks the rules is rejected before the code is checked, so it is not used up.
+      operationId: resetPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetRequest" }
+      responses:
+        "200":
+          description: Password changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, recovery_codes_remaining]
+                properties:
+                  message: { type: string, example: Password changed. Sign in with the new one. }
+                  recovery_codes_remaining: { type: integer, example: 7 }
+        "400":
+          description: |
+            `VALIDATION_ERROR` (e.g. a weak `new_password`) or `INVALID_RECOVERY`
+            (the email and code do not match).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change the password of the signed-in user
+      description: |
+        Every session of the user ends; the response carries a new token pair so
+        the caller stays signed in. A wrong `current_password` is a
+        `VALIDATION_ERROR` on that field. 10 requests per minute per user,
+        shared with `/auth/recovery-codes`.
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string, minLength: 1, maxLength: 1024 }
+                new_password: { type: string, minLength: 10, maxLength: 128 }
+      responses:
+        "200":
+          description: Changed; a new pair for this session.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/auth/recovery-codes:
+    get:
+      tags: [Auth]
+      summary: How many unused recovery codes the signed-in user has
+      operationId: getRecoveryCodesStatus
+      responses:
+        "200":
+          description: Unused codes left.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [remaining]
+                properties:
+                  remaining: { type: integer, example: 8 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Auth]
+      summary: Generate new recovery codes
+      description: Asks for the password again. The previous codes stop working; the new ones are shown only here.
+      operationId: regenerateRecoveryCodes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [current_password]
+              properties:
+                current_password: { type: string, minLength: 1, maxLength: 1024 }
+      responses:
+        "200":
+          description: The new codes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [recovery_codes]
+                properties:
+                  recovery_codes:
+                    type: array
+                    minItems: 8
+                    maxItems: 8
+                    items: { type: string, example: k7m2-9xqp-h3vt }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/admin/users/password-reset:
+    post:
+      tags: [Auth]
+      summary: "Admin: reset a user's password by email"
+      description: |
+        Last resort when a user lost both the password and the recovery codes.
+        The user is found by email, ignoring case. Sets a random 16-character
+        temporary password, returned only here, and ends every session of the
+        user. `ADMIN` only.
+      operationId: adminResetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email: { type: string, format: email, maxLength: 255, example: ana@example.com }
+      responses:
+        "200":
+          description: The temporary password.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [temporary_password]
+                properties:
+                  temporary_password: { type: string, minLength: 16, maxLength: 16 }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: The caller is not an `ADMIN` (`ROLE_FORBIDDEN`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+        "404":
+          description: No user has that email (`NOT_FOUND`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetail" }
+
   /api/v1/auth/refresh:
     post:
       tags: [Auth]
@@ -1463,6 +1655,7 @@ components:
             - INVALID_TOKEN
             - INVALID_CREDENTIALS
             - INVALID_REFRESH_TOKEN
+            - INVALID_RECOVERY
             - REFRESH_TOKEN_REUSE
             - ROLE_FORBIDDEN
             - NOT_FOUND
@@ -1514,6 +1707,43 @@ components:
       properties:
         email: { type: string, format: email, maxLength: 255, example: client1@example.local }
         password: { type: string, minLength: 1, maxLength: 1024, example: ClientPass123! }
+
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+          pattern: '^[A-Za-z0-9._-]+$'
+          description: Unique ignoring case.
+          example: ana.lopez
+        email: { type: string, format: email, maxLength: 255, description: Unique ignoring case; not verified. }
+        password: { type: string, minLength: 10, maxLength: 128 }
+
+    Registered:
+      type: object
+      required: [access_token, refresh_token, recovery_codes]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        recovery_codes:
+          type: array
+          minItems: 8
+          maxItems: 8
+          description: Single-use codes, shown only once. Case, dashes and spaces do not matter when typed.
+          items: { type: string, example: k7m2-9xqp-h3vt }
+
+    PasswordResetRequest:
+      type: object
+      additionalProperties: false
+      required: [email, recovery_code, new_password]
+      properties:
+        email: { type: string, format: email, maxLength: 255 }
+        recovery_code: { type: string, maxLength: 64, example: k7m2-9xqp-h3vt }
+        new_password: { type: string, minLength: 10, maxLength: 128 }
 
     TokenPair:
       type: object

@@ -5,6 +5,8 @@ interface HeaderProps {
   /** Opens the CSV export dialog; hidden when there is no account yet. */
   onOpenExport?: () => void;
   onLogout: () => void;
+  /** Opens the Security dialog (password and recovery codes). */
+  onOpenSecurity: () => void;
   /** Opens/closes the sidebar (drawer on mobile, icon bar on desktop). */
   onToggleSidebar: () => void;
   /** Opens the "Add transaction" form; hidden when there is no account yet. */
@@ -16,6 +18,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenUpload,
   onOpenExport,
   onLogout,
+  onOpenSecurity,
   onToggleSidebar,
   onOpenNewTransaction,
   activeAccountName = null,
@@ -92,6 +95,14 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
           <span className="hidden sm:inline">Import CSV</span>
           <span className="sm:hidden">Import</span>
+        </button>
+        <button
+          onClick={onOpenSecurity}
+          title="Security"
+          aria-label="Security"
+          className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-transparent hover:border-slate-200 transition-all cursor-pointer"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined !text-[20px]">shield_person</span>
         </button>
         <button
           onClick={onLogout}

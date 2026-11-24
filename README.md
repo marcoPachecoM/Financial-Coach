@@ -31,10 +31,15 @@ All under `/api/v1`. Everything except login, refresh and the public health chec
 | Method and path | What it does |
 |---|---|
 | **Auth** | |
+| `POST /auth/register` | Sign-up: `username`, `email`, `password` (10–128 characters, not the email or username) → `201`, signed in right away, plus 8 single-use **recovery codes** shown only once. `409` when the email or username is taken. No email verification (see [Accounts and recovery without email](#accounts-and-recovery-without-email)). |
 | `POST /auth/login` | Email and password → access token (15 min) and refresh token (14 days, single use). |
 | `POST /auth/refresh` | Refresh token in the `Authorization` header → new pair. The old refresh token stops working; reusing it revokes every session of the user. |
 | `POST /auth/logout` | Revokes the refresh token sent in the header. Idempotent. |
 | `GET /auth/me` | The signed-in user's profile (id, username, email, role, active). |
+| `POST /auth/password-reset` | Forgot password: `email`, `recovery_code`, `new_password`. Uses up the code and ends every session. Any mismatch → `400 INVALID_RECOVERY` with the same message. |
+| `POST /auth/change-password` | `current_password`, `new_password` → a new token pair for this session; every other session ends. |
+| `GET` / `POST /auth/recovery-codes` | How many unused codes are left; `POST` with `current_password` generates 8 new ones (the old ones stop working). |
+| `POST /admin/users/password-reset` | `ADMIN` only: `{"email": "…"}` → a 16-character temporary password, shown once; ends the user's sessions. The last resort when someone lost the password and the codes. |
 | **Health** | |
 | `GET /health`, `GET /health/public` | Public: `{"status": "ok"}` (the first one adds the active Spring profile). `GET /actuator/health` (outside `/api/v1`) also checks the database. |
 | `GET /health/protected`, `GET /health/admin` | Demo checks of the security levels: any signed-in user, and `ADMIN` only (`403` for others). |
@@ -217,6 +222,9 @@ Some endpoints count requests in **fixed windows** and answer `429 RATE_LIMIT_EX
 |---|---|---|---|
 | `POST /auth/login` | client IP | 5 / minute | Slows down password guessing. |
 | `POST /auth/login` | email (any IP) | after 5 failures in a row: wait 30 s, then 1, 2, 4, 8 and at most 15 min | Stops guessing one account's password from many IPs. |
+| `POST /auth/register` | client IP | 3 / hour | The only protection against bots creating accounts (no CAPTCHA). |
+| `POST /auth/password-reset` | client IP, and email (any IP) | 5 / minute; failures count per email like failed logins | Slows down guessing recovery codes. |
+| `POST /auth/change-password`, `/auth/recovery-codes` | user (one counter) | 10 / minute | They check the password, so they could be used to guess it. |
 | `POST /auth/refresh`, `/auth/logout` | client IP | 10 / minute, 20 / minute | Protects the token table. |
 | `GET /transactions/export`, `POST /transactions/upload-csv` | user | 10 / minute each | Each request reads or writes a whole file. |
 | `POST /copilot/chat`, `/copilot/chat/stream` | user (one counter for both) | 10 / minute and 100 / day | The minute limit stops scripts and loops; the daily one caps the LLM cost. |
@@ -356,6 +364,26 @@ Troubleshooting:
 - `POST /api/v1/auth/login` → access token (15 min) + refresh token (14 days, single use).
 - `POST /api/v1/auth/refresh` → new pair; the old refresh token stops working. Reusing a rotated token is treated as theft and revokes every session of the user.
 - `POST /api/v1/auth/logout` (idempotent) and `GET /api/v1/auth/me`.
+- `POST /api/v1/auth/register`, `/password-reset`, `/change-password` and `/recovery-codes`: see below.
+
+### Accounts and recovery without email
+
+The app sends no email, so it costs nothing to run and needs no email provider:
+
+- **Sign-up does not verify the email.** Bots are slowed down by the rate limit (3 sign-ups per hour per IP).
+- **Recovery codes replace "forgot password" emails.** At sign-up the user gets 8 single-use codes (`k7m2-9xqp-h3vt`, 12 characters from an alphabet without look-alikes, about 60 bits each), shown once with Copy and Download buttons; the app opens only after the user confirms they saved them. "Forgot password?" asks for the email, one code and a new password. Only a SHA-256 hash of each code is stored: with that much entropy a slow hash is not needed, and a check is one index lookup. Wrong attempts count per email like failed logins.
+- **Every password change ends all sessions** (reset, change, admin reset). Changing it while signed in returns a new pair, so the current tab stays signed in.
+- **The Security dialog** (shield icon in the header) changes the password and generates new codes; it warns when 2 or fewer are left.
+- **Last resort:** an admin sets a temporary password by the user's email, and the user changes it in Security after signing in:
+
+  ```bash
+  ADMIN_TOKEN=$(curl -s -H 'Content-Type: application/json' \
+       -d '{"email": "admin@example.local", "password": "AdminPass123!"}' $API/auth/login | jq -r .access_token)
+  curl -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+       -d '{"email": "ana@example.com"}' $API/admin/users/password-reset
+  # {"temporary_password": "aB3kPq9xZm2NwR7t"}
+  ```
+- **Adding email later:** recovery goes through `AccountRecoveryChannel`; an email implementation (a reset link sent with Spring Mail through a free SMTP tier such as Resend or Brevo) could replace or complement the codes without changing the endpoints.
 - Health: `GET /api/v1/health` and `/health/public` are public; `GET /api/v1/health/protected` (any signed-in user) and `/health/admin` (`ADMIN` only) demonstrate the security levels.
 
 Access tokens are HS256 JWTs validated without a database lookup (issuer, audience, expiry, token type and required claims). Only the `jti` of refresh tokens is stored; expired ones are deleted daily.
