@@ -23,9 +23,10 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
 
     /**
      * The transaction list: {@code from} inclusive, {@code to} exclusive. {@code pattern} is a
-     * lower-case LIKE pattern matched against name, category and notes ("%" matches everything),
-     * {@code groups} the allowed category groups, and the absolute amount must be within
-     * {@code minAmount}..{@code maxAmount} (inclusive). Order comes from the Pageable.
+     * lower-case LIKE pattern matched against name, category, notes and tag names ("%" matches
+     * everything), {@code groups} the allowed category groups, the absolute amount must be within
+     * {@code minAmount}..{@code maxAmount} (inclusive), and unless {@code anyTag}, the transaction
+     * must have the tag whose lower-case name is {@code tagKey}. Order comes from the Pageable.
      */
     @Query("""
             select t from Transaction t
@@ -34,13 +35,16 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
               and t.categoryGroup in :groups
               and (lower(t.name) like :pattern escape '\\'
                    or lower(coalesce(t.category, '')) like :pattern escape '\\'
-                   or lower(coalesce(t.notes, '')) like :pattern escape '\\')
+                   or lower(coalesce(t.notes, '')) like :pattern escape '\\'
+                   or exists (select 1 from t.tags g where lower(g.name) like :pattern escape '\\'))
               and abs(t.amount) >= :minAmount and abs(t.amount) <= :maxAmount
+              and (:anyTag = true or exists (select 1 from t.tags g where lower(g.name) = :tagKey))
             """)
     Page<Transaction> findPage(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
                                @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
                                @Param("pattern") String pattern, @Param("groups") Collection<CategoryGroup> groups,
                                @Param("minAmount") BigDecimal minAmount, @Param("maxAmount") BigDecimal maxAmount,
+                               @Param("anyTag") boolean anyTag, @Param("tagKey") String tagKey,
                                Pageable pageable);
 
     @Query("select t from Transaction t where t.id = :id and t.userId = :userId")
@@ -79,6 +83,9 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
             where t.recurringTransactionId = :ruleId and t.recurrenceDate = :dueDate
             """)
     Optional<Transaction> findOccurrence(@Param("ruleId") UUID ruleId, @Param("dueDate") LocalDate dueDate);
+
+    /** The latest active occurrence of a rule: new occurrences copy its tags. */
+    Optional<Transaction> findFirstByRecurringTransactionIdOrderByRecurrenceDateDesc(UUID recurringTransactionId);
 
     /** Active transactions of these rules whose occurrence is due in [from, to]. */
     @Query("""
@@ -146,7 +153,7 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
      * entities, so a large export does not fill the persistence context.
      */
     @Query("""
-            select new com.financialcoach.transactions.CsvExportRow(t.occurredAt, t.type, t.name, t.amount,
+            select new com.financialcoach.transactions.CsvExportRow(t.id, t.occurredAt, t.type, t.name, t.amount,
                        t.categoryGroup, t.category, t.accountId, t.notes)
             from Transaction t
             where t.userId = :userId and t.accountId in :accountIds
@@ -156,6 +163,10 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
     Slice<CsvExportRow> exportPage(@Param("userId") UUID userId, @Param("accountIds") Collection<UUID> accountIds,
                                    @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
                                    Pageable pageable);
+
+    /** Tag names of these transactions, as [transaction id, tag name] pairs (one page of the export). */
+    @Query("select t.id, g.name from Transaction t join t.tags g where t.id in :ids")
+    List<Object[]> tagNamesOf(@Param("ids") Collection<UUID> ids);
 
     /** Rows of the CSV export, known before writing it (sent as a header). */
     @Query("""

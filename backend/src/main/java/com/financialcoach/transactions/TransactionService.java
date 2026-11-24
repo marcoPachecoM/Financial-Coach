@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -39,13 +40,16 @@ public class TransactionService {
     private final AccountService accountService;
     private final CategorizationService categorizationService;
     private final RecurringTransactionService recurringService;
+    private final TagService tagService;
 
     TransactionService(TransactionRepository transactions, AccountService accountService,
-                       CategorizationService categorizationService, RecurringTransactionService recurringService) {
+                       CategorizationService categorizationService, RecurringTransactionService recurringService,
+                       TagService tagService) {
         this.transactions = transactions;
         this.accountService = accountService;
         this.categorizationService = categorizationService;
         this.recurringService = recurringService;
+        this.tagService = tagService;
     }
 
     @Transactional(readOnly = true)
@@ -59,6 +63,7 @@ public class TransactionService {
                 TransactionStatistics.likePattern(filter.text()), groups,
                 filter.minAmount() == null ? BigDecimal.ZERO : filter.minAmount(),
                 filter.maxAmount() == null ? NO_MAX_AMOUNT : filter.maxAmount(),
+                filter.tag() == null, filter.tag() == null ? "" : TagService.key(filter.tag()),
                 PageRequest.of(page - 1, size, NEWEST_FIRST));
     }
 
@@ -80,6 +85,8 @@ public class TransactionService {
                 ? new CategoryGroupAssignment(request.categoryGroup(), CategoryGroupSource.USER)
                 : categorizationService.categorize(name);
 
+        List<String> tagNames = request.tags() == null ? List.of() : TagService.validate("tags", request.tags());
+
         Transaction transaction = Transaction.manual(
                 userId,
                 request.accountId(),
@@ -91,6 +98,7 @@ public class TransactionService {
                 group.source(),
                 blankToNull(request.category()),
                 blankToNull(request.notes()));
+        transaction.replaceTags(TagService.pick(tagService.resolve(userId, tagNames), tagNames));
         transaction = transactions.saveAndFlush(transaction);
 
         RecurrenceRequest recurrence = request.recurrence();
@@ -112,6 +120,11 @@ public class TransactionService {
         // because Hibernate could flush an intermediate state that violates a constraint.
         if (request.accountIdProvided()) {
             accountService.requireOwned(userId, required("account_id", request.accountId()));
+        }
+        Set<Tag> newTags = null;
+        if (request.tagsProvided()) {
+            List<String> tagNames = request.tags() == null ? List.of() : TagService.validate("tags", request.tags());
+            newTags = TagService.pick(tagService.resolve(userId, tagNames), tagNames);
         }
 
         if (request.typeProvided()) {
@@ -137,6 +150,9 @@ public class TransactionService {
         }
         if (request.accountIdProvided()) {
             transaction.moveTo(request.accountId());
+        }
+        if (newTags != null) {
+            transaction.replaceTags(newTags);
         }
 
         // Checked on the final state: changing only the type can break the sign rule.

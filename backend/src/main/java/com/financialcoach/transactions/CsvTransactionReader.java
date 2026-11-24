@@ -37,6 +37,10 @@ final class CsvTransactionReader {
     /** Exact header of the contract, in order. */
     static final List<String> HEADER = List.of(
             "Type", "Date", "Time", "Name", "Amount", "Category Group", "Category", "Account", "Notes");
+    /** Optional last column (V9): tag names separated by ";". Files without it stay valid. */
+    static final String TAGS = "Tags";
+    static final List<String> HEADER_WITH_TAGS = java.util.stream.Stream
+            .concat(HEADER.stream(), java.util.stream.Stream.of(TAGS)).toList();
 
     /** Caps the response size when a whole file is wrong; the detail still gives the total. */
     static final int MAX_REPORTED_ERRORS = 100;
@@ -70,12 +74,13 @@ final class CsvTransactionReader {
 
         try (CSVParser parser = CSVParser.parse(text, FORMAT)) {
             Iterator<CSVRecord> records = parser.iterator();
-            checkHeader(records.next());
+            boolean hasTags = checkHeader(records.next());
+            int columns = hasTags ? HEADER_WITH_TAGS.size() : HEADER.size();
             int rowNumber = 0;
             while (records.hasNext()) {
                 rowNumber++;
                 List<ApiFieldError> rowErrors = new ArrayList<>();
-                CsvRow row = parseRow(rowNumber, records.next(), rowErrors);
+                CsvRow row = parseRow(rowNumber, records.next(), columns, rowErrors);
                 if (rowErrors.isEmpty()) {
                     rows.add(row);
                 } else {
@@ -107,21 +112,29 @@ final class CsvTransactionReader {
         }
     }
 
-    private static void checkHeader(CSVRecord header) {
+    /** True when the file has the optional Tags column. */
+    private static boolean checkHeader(CSVRecord header) {
         List<String> names = header.stream().map(String::strip).toList();
-        boolean matches = names.size() == HEADER.size()
-                && IntStream.range(0, HEADER.size())
-                        .allMatch(i -> HEADER.get(i).equalsIgnoreCase(names.get(i)));
-        if (!matches) {
-            throw new ValidationException("file", "header must be: " + String.join(", ", HEADER));
+        if (matches(names, HEADER)) {
+            return false;
         }
+        if (matches(names, HEADER_WITH_TAGS)) {
+            return true;
+        }
+        throw new ValidationException("file",
+                "header must be: " + String.join(", ", HEADER) + " (optionally followed by " + TAGS + ")");
+    }
+
+    private static boolean matches(List<String> names, List<String> expected) {
+        return names.size() == expected.size()
+                && IntStream.range(0, expected.size()).allMatch(i -> expected.get(i).equalsIgnoreCase(names.get(i)));
     }
 
     /** Collects every problem of the row in {@code errors}; the returned row is only valid if none. */
-    private static CsvRow parseRow(int row, CSVRecord record, List<ApiFieldError> errors) {
-        if (record.size() != HEADER.size()) {
+    private static CsvRow parseRow(int row, CSVRecord record, int columns, List<ApiFieldError> errors) {
+        if (record.size() != columns) {
             errors.add(new ApiFieldError(row, "row",
-                    "Expected %d columns, found %d.".formatted(HEADER.size(), record.size())));
+                    "Expected %d columns, found %d.".formatted(columns, record.size())));
             return null;
         }
 
@@ -136,18 +149,33 @@ final class CsvTransactionReader {
         String account = required(row, "Account", CsvFormulas.unescape(text(record, "Account")), 100, errors);
         String notes = optional(row, "Notes", CsvFormulas.unescape(text(record, "Notes")), 1000, errors);
 
+        List<String> tags = columns > HEADER.size() ? parseTags(row, text(record, TAGS), errors) : List.of();
+
         if (amount != null && amount.signum() == 0) {
             fail(row, "Amount", "must not be zero", errors);
         }
         // Same order as the columns, so the zero error sits next to the other Amount errors.
-        errors.sort(Comparator.comparingInt(error -> HEADER.indexOf(error.field())));
+        errors.sort(Comparator.comparingInt(error -> HEADER_WITH_TAGS.indexOf(error.field())));
         return new CsvRow(row, type, occurredAt, name, signedByType(type, amount), categoryGroup, category,
-                account, notes);
+                account, notes, tags);
     }
 
     /** The stripped value of a column; empty string when blank. */
     private static String text(CSVRecord record, String column) {
-        return record.get(HEADER.indexOf(column)).strip();
+        return record.get(HEADER_WITH_TAGS.indexOf(column)).strip();
+    }
+
+    /** "work; trip cancun" → [work, trip cancun]; same rules as the API (TagService). */
+    private static List<String> parseTags(int row, String value, List<ApiFieldError> errors) {
+        List<String> names = java.util.Arrays.stream(CsvFormulas.unescape(value).split(";"))
+                .filter(name -> !name.isBlank())
+                .toList();
+        try {
+            return TagService.validate(TAGS, names);
+        } catch (ValidationException e) {
+            e.errors().forEach(error -> errors.add(new ApiFieldError(row, TAGS, error.message())));
+            return List.of();
+        }
     }
 
     private static TransactionType parseType(int row, String value, List<ApiFieldError> errors) {

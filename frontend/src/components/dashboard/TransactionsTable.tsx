@@ -18,6 +18,10 @@ interface TransactionsTableProps {
   /** Changes after any edit elsewhere (new, edited or deleted transaction): reloads the page. */
   refreshKey: number;
   selectedCategory: string;
+  /** Exact tag to filter by; null for every transaction. */
+  selectedTag: string | null;
+  /** Clicking a tag in a row filters by it. */
+  onSelectTag: (tag: string) => void;
   onOpenUpload: () => void;
   onView: (transaction: Transaction) => void;
   onEdit: (transaction: Transaction) => void;
@@ -50,6 +54,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   endDate,
   refreshKey,
   selectedCategory,
+  selectedTag,
+  onSelectTag,
   onOpenUpload,
   onView,
   onEdit,
@@ -76,7 +82,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     && !(debouncedMin !== null && debouncedMax !== null && debouncedMin > debouncedMax);
 
   // The page belongs to a filter: changing the period, category, search or amounts goes back to page 1.
-  const filterKey = [accountId, startDate, endDate, selectedCategory, text,
+  const filterKey = [accountId, startDate, endDate, selectedCategory, selectedTag, text,
     debouncedValid ? debouncedMin : null, debouncedValid ? debouncedMax : null].join('|');
   const [pageState, setPageState] = useState({ filterKey, page: 1 });
   const requestedPage = pageState.filterKey === filterKey ? pageState.page : 1;
@@ -92,6 +98,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         endDate,
         text: text || null,
         categoryGroup: selectedCategory === 'all' ? null : selectedCategory,
+        tag: selectedTag,
         // While a bound is wrong it is not sent (the inputs say why).
         minAmount: debouncedValid ? debouncedMin : null,
         maxAmount: debouncedValid ? debouncedMax : null,
@@ -213,7 +220,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search merchant, category, notes..."
+              placeholder="Search merchant, category, notes, tags..."
               className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-hidden w-48 sm:w-56 transition-all"
             />
             {searchQuery && (
@@ -303,6 +310,25 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                           {tx.notes && (
                             <span className="text-[11px] text-slate-400" title={tx.notes}>
                               {tx.notes}
+                            </span>
+                          )}
+                          {tx.tags.length > 0 && (
+                            <span className="flex flex-wrap gap-1 mt-0.5">
+                              {tx.tags.map((tag) => (
+                                <button
+                                  key={tag}
+                                  type="button"
+                                  onClick={() => onSelectTag(tag)}
+                                  title={`Show only #${tag}`}
+                                  className={`px-1.5 py-px rounded-full text-[10px] font-medium border cursor-pointer transition-colors ${
+                                    selectedTag?.toLowerCase() === tag.toLowerCase()
+                                      ? 'bg-emerald-600 border-emerald-600 text-white'
+                                      : 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                                  }`}
+                                >
+                                  #{tag}
+                                </button>
+                              ))}
                             </span>
                           )}
                         </div>

@@ -400,7 +400,8 @@ class CsvImportTest extends ApiIntegrationTest {
         @Test
         void wrongHeader() throws Exception {
             expectFileError(upload(alice, "Date,Name,Amount\n2026-01-02,Shop,10\n"),
-                    "header must be: Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes");
+                    "header must be: Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes"
+                            + " (optionally followed by Tags)");
         }
 
         @Test

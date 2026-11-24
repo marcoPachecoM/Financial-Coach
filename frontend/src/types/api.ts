@@ -30,6 +30,8 @@ export interface ApiTransaction {
   notes: string | null;
   /** The recurring transaction this one is an occurrence of; null when it is not recurring. */
   recurring_transaction_id: string | null;
+  /** Tag names, alphabetical. */
+  tags: string[];
   created_at: string;
   updated_at: string;
 }
@@ -47,6 +49,13 @@ export interface ApiTransactionCreateRequest {
   account_id: string;
   notes?: string;
   recurrence?: { frequency: RecurrenceFrequency; end_date?: string };
+  tags?: string[];
+}
+
+/** GET /tags: a tag in use and how many transactions carry it. */
+export interface ApiTagUsage {
+  name: string;
+  transactions: number;
 }
 
 export type RecurrenceFrequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "YEARLY";

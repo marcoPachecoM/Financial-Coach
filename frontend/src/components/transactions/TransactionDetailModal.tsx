@@ -67,6 +67,23 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           {row('Category', transaction.category ?? <span className="text-slate-400">—</span>)}
           {row('Notes', transaction.notes ?? <span className="text-slate-400">—</span>)}
           {row(
+            'Tags',
+            transaction.tags.length > 0 ? (
+              <span className="flex flex-wrap gap-1">
+                {transaction.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              <span className="text-slate-400">—</span>
+            ),
+          )}
+          {row(
             'Recurring',
             transaction.recurringTransactionId ? 'Yes, the next ones are added automatically' : 'No',
           )}

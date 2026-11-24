@@ -15,6 +15,9 @@ erDiagram
     import_batches |o--o{ transactions : "imported"
     category_groups ||--o{ transactions : "classifies"
     category_groups ||--o{ merchant_category_cache : "classifies"
+    users ||--o{ tags : "labels"
+    transactions ||--o{ transaction_tags : "tagged"
+    tags ||--o{ transaction_tags : "used by"
 
     users {
         uuid id PK
@@ -49,6 +52,18 @@ erDiagram
 
     category_groups {
         varchar name PK
+    }
+
+    tags {
+        uuid id PK
+        uuid user_id FK
+        varchar name "unique per user, case-insensitive; no ';'"
+        timestamptz created_at
+    }
+
+    transaction_tags {
+        uuid transaction_id PK,FK
+        uuid tag_id PK,FK
     }
 
     import_batches {
@@ -142,6 +157,7 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 | A linked transaction always says which occurrence it covers | `ck_transactions_recurrence` |
 | At most one active transaction per occurrence | `ux_transactions_recurrence` (partial: deleted rows excluded) |
 | Email and username are unique, ignoring case | `ux_users_email`, `ux_users_username` |
+| Tag names are unique per user, ignoring case, trimmed and without `;` | `ux_tags_user_name`, `ck_tags_name` |
 
 ## Notable decisions
 
@@ -155,6 +171,7 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 - **`merchant_category_cache` is shared** by all users, so a merchant is sent to the LLM only once.
 - **Recurring transactions create their occurrences automatically** (V8). A daily job (and one run at startup) inserts each due occurrence as a transaction with `source = RECURRING`. `next_due_date` only moves forward, so an occurrence the user deleted is not created again. Due dates are always computed from `start_date` (January 31 → February 28 → March 31).
 - **A real charge replaces the automatic one.** When a CSV row matches a rule (same account, type and merchant, within a few days of a due date), the generated transaction is soft-deleted and the CSV row takes its place, with the real amount. `ux_transactions_recurrence` excludes deleted rows so the two can coexist. This avoids counting a subscription twice and lets the alerts detect price changes.
+- **Tags belong to a user** (V9): `tags` holds each user's labels and `transaction_tags` links them to transactions (many to many). Names are compared ignoring case, so "Work" and "work" are one tag, spelled as first created. The application checks that a transaction only gets tags of its own user. A tag that no active transaction uses stays in the table but is not listed by `GET /tags`; deleting a transaction or a user removes its links (`ON DELETE CASCADE`). New tags are inserted with `ON CONFLICT DO NOTHING`, so two requests creating the same tag at once both get it instead of one failing on the unique index. Recurring rules have no tags of their own: each new occurrence copies the tags of the latest occurrence, and a CSV charge that replaces a generated occurrence keeps its tags.
 - **Alerts are not stored**: `GET /accounts/{id}/alerts` computes them on every request from the budget and the recurring transactions.
 
 ## Not migrated

@@ -4,6 +4,7 @@ import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.shared.Money;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -22,6 +23,8 @@ record TransactionResponse(
         String category,
         String notes,
         UUID recurringTransactionId,
+        /* Alphabetical, ignoring case. */
+        List<String> tags,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -39,6 +42,7 @@ record TransactionResponse(
                 transaction.getCategory(),
                 transaction.getNotes(),
                 transaction.getRecurringTransactionId(),
+                transaction.tagNames(),
                 transaction.getCreatedAt(),
                 transaction.getUpdatedAt());
     }

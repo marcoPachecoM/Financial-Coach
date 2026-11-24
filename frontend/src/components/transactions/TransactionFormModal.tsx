@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { createTransaction, updateTransaction } from '../../services/transactions';
+import { getTags } from '../../services/tags';
+import { useAsync } from '../../hooks/useAsync';
+import { TagInput } from '../common/TagInput';
 import { getErrorMessage, getFieldErrors } from '../../services/errors';
 import type { ApiFieldError, RecurrenceFrequency, TransactionType } from '../../types/api';
 import type { Transaction } from '../../types/transaction';
@@ -66,6 +69,9 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<ApiFieldError[]>([]);
+  const [tags, setTags] = useState<string[]>(() => transaction?.tags ?? []);
+  // Every tag of the user (not only this account's), offered while typing.
+  const tagSuggestions = useAsync(getTags, isOpen ? 'tags' : null);
 
   if (!isOpen) return null;
 
@@ -78,6 +84,7 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
 
   const close = () => {
     setForm(EMPTY);
+    setTags([]);
     setDatetime(nowForInput());
     setError(null);
     setFieldErrors([]);
@@ -101,6 +108,7 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
         categoryGroup: form.categoryGroup || undefined,
         category: form.category,
         notes: form.notes,
+        tags,
         recurrence: form.repeat ? { frequency: form.repeat, endDate: form.endDate || undefined } : undefined,
       };
       const saved = transaction ? await updateTransaction(transaction.id, input) : await createTransaction(input);
@@ -289,6 +297,17 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
               onChange={(e) => set('notes', e.target.value)}
               className={inputClass}
             />
+          </div>
+
+          <div>
+            <label className={labelClass} htmlFor="tx-tags">Tags</label>
+            <TagInput
+              id="tx-tags"
+              tags={tags}
+              onChange={setTags}
+              suggestions={(tagSuggestions.data ?? []).map((t) => t.name)}
+            />
+            {fieldError('tags')}
           </div>
 
           {error && (

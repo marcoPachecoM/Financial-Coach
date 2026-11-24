@@ -1,10 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { RecurrenceFrequency } from '../../types/api';
 import type { Transaction } from '../../types/transaction';
 import { formatFullDate } from '../../utils/formatters';
 import { TransactionsTable } from '../dashboard/TransactionsTable';
 import { CategoryFilters } from '../dashboard/CategoryFilters';
 import { CalendarFilter } from './CalendarFilter';
+import { useAsync } from '../../hooks/useAsync';
+import { getTags } from '../../services/tags';
+
+/** Chips shown at most: the most used tags. The search box finds any other. */
+const MAX_TAG_CHIPS = 12;
 
 interface TransactionsViewProps {
   accountId: string;
@@ -40,6 +45,19 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   onSelectDay,
   ...tableActions
 }) => {
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [tagAccount, setTagAccount] = useState(accountId);
+  // Another account has other tags: forget the selected one (adjusted during render, as React recommends).
+  if (accountId !== tagAccount) {
+    setTagAccount(accountId);
+    setSelectedTag(null);
+  }
+  // The account's tags, most used first; reloaded after any edit (refreshKey).
+  const tags = useAsync(() => getTags(accountId), accountId ? `${accountId}|${refreshKey}` : null);
+  const tagChips = (tags.data ?? []).slice(0, MAX_TAG_CHIPS);
+  const toggleTag = (tag: string) =>
+    setSelectedTag((current) => (current?.toLowerCase() === tag.toLowerCase() ? null : tag));
+
   const monthPrefix = `${month.getFullYear()}-${pad(month.getMonth() + 1)}`;
   const lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   // The period the table asks the server for: the selected day, or the whole month shown.
@@ -83,6 +101,41 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         <CategoryFilters categories={groups} selectedCategory={selectedCategory} onSelectCategory={onSelectCategory} />
       )}
 
+      {(tagChips.length > 0 || selectedTag) && (
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by tag">
+          <span className="text-xs font-semibold text-slate-500 mr-1">Tags</span>
+          {selectedTag && !tagChips.some((t) => t.name.toLowerCase() === selectedTag.toLowerCase()) && (
+            <button
+              type="button"
+              aria-pressed="true"
+              onClick={() => setSelectedTag(null)}
+              className="px-2.5 py-1 rounded-full text-xs font-medium border bg-emerald-600 border-emerald-600 text-white cursor-pointer"
+            >
+              #{selectedTag} ✕
+            </button>
+          )}
+          {tagChips.map((tag) => {
+            const active = selectedTag?.toLowerCase() === tag.name.toLowerCase();
+            return (
+              <button
+                key={tag.name}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleTag(tag.name)}
+                title={`${tag.transactions} transaction${tag.transactions === 1 ? '' : 's'}`}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
+                  active
+                    ? 'bg-emerald-600 border-emerald-600 text-white'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-emerald-50 hover:border-emerald-300'
+                }`}
+              >
+                #{tag.name}
+                <span className={`ml-1 ${active ? 'text-emerald-100' : 'text-slate-400'}`}>{tag.transactions}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <TransactionsTable
         title={title}
         accountId={accountId}
@@ -90,6 +143,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         endDate={endDate}
         refreshKey={refreshKey}
         selectedCategory={selectedCategory}
+        selectedTag={selectedTag}
+        onSelectTag={toggleTag}
         {...tableActions}
       />
     </div>

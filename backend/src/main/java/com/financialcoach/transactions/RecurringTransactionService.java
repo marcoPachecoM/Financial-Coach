@@ -12,6 +12,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -167,16 +168,25 @@ class RecurringTransactionService {
 
     /** Creates (or links) the occurrences of {@code rule} due on or before {@code today}. */
     private void generate(RecurringTransaction rule, LocalDate today) {
+        // Tags are not part of the rule: each new occurrence copies those of the latest one, so
+        // retagging the last occurrence changes the next ones.
+        Set<Tag> tags = null; // read once, when the first occurrence is due
         int count = 0;
         while (rule.getNextDueDate() != null && !rule.getNextDueDate().isAfter(today)
                 && count < MAX_OCCURRENCES_PER_RUN) {
             LocalDate due = rule.getNextDueDate();
             if (transactions.findOccurrence(rule.getId(), due).isEmpty()) {
+                if (tags == null) {
+                    tags = latestTags(rule);
+                }
                 Optional<Transaction> realCharge = findRealCharge(rule, due);
                 if (realCharge.isPresent()) {
                     realCharge.get().linkTo(rule, due);
+                    realCharge.get().addTags(tags);
                 } else {
-                    transactions.save(Transaction.generated(rule, due));
+                    Transaction occurrence = Transaction.generated(rule, due);
+                    occurrence.replaceTags(tags);
+                    transactions.save(occurrence);
                 }
             }
             rule.advance();
@@ -184,6 +194,12 @@ class RecurringTransactionService {
         }
         rules.save(rule);
         transactions.flush();
+    }
+
+    private Set<Tag> latestTags(RecurringTransaction rule) {
+        return transactions.findFirstByRecurringTransactionIdOrderByRecurrenceDateDesc(rule.getId())
+                .map(transaction -> Set.copyOf(transaction.getTags()))
+                .orElse(Set.of());
     }
 
     /** An unlinked transaction of the same merchant close to {@code due}; the closest one wins. */

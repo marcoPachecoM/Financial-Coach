@@ -3,6 +3,7 @@ package com.financialcoach.transactions;
 import com.financialcoach.categorization.CategoryGroup;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * One valid data row of an uploaded CSV ({@code CsvTransactionRow} in openapi.yaml), already
@@ -12,5 +13,5 @@ import java.time.LocalDateTime;
  * @param row data row number, starting at 1 (header excluded), used in error messages
  */
 record CsvRow(int row, TransactionType type, LocalDateTime occurredAt, String name, BigDecimal amount,
-              CategoryGroup categoryGroup, String category, String account, String notes) {
+              CategoryGroup categoryGroup, String category, String account, String notes, List<String> tags) {
 }

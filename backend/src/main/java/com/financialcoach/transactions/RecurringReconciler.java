@@ -58,6 +58,8 @@ class RecurringReconciler {
                 if (existing == null || existing.isGenerated()) {
                     if (existing != null) {
                         existing.markDeleted(now);
+                        // The real charge keeps the tags the generated occurrence had.
+                        transaction.addTags(existing.getTags());
                     }
                     transaction.linkTo(rule, due.get());
                     covered.put(occurrence, transaction);

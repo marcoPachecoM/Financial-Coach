@@ -392,7 +392,7 @@ paths:
         - $ref: "#/components/parameters/EndDate"
         - name: q
           in: query
-          description: Text contained in the name, the category or the notes (case-insensitive).
+          description: Text contained in the name, the category, the notes or a tag name (case-insensitive).
           schema: { type: string, maxLength: 100 }
         - name: category_group
           in: query
@@ -408,6 +408,10 @@ paths:
           in: query
           description: Upper bound of the absolute amount, inclusive.
           schema: { type: string, pattern: '^\d{1,12}(\.\d{1,2})?$', example: "200" }
+        - name: tag
+          in: query
+          description: Name of a tag the transaction must have (case-insensitive). `q` also searches tag names.
+          schema: { type: string, maxLength: 40, example: trip-cancun }
       responses:
         "200":
           description: One page of transactions.
@@ -516,8 +520,8 @@ paths:
       summary: Export transactions as a CSV file
       description: |
         Downloads the user's transactions, oldest first, in the same format the import reads
-        (`Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes`), UTF-8
-        with a byte order mark so spreadsheets show accents.
+        (`Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes, Tags`), UTF-8
+        with a byte order mark so spreadsheets show accents. `Tags` lists the tag names separated by `; `.
 
         - Without `account_id`, every account of the user (the `Account` column tells them apart).
         - `Amount` uses the bank convention: expenses negative, income positive. On import,
@@ -569,7 +573,9 @@ paths:
       description: |
         The file must be UTF-8 (a leading byte order mark is accepted) and have a
         header row with these columns, in this order (case-insensitive):
-        `Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes`.
+        `Type, Date, Time, Name, Amount, Category Group, Category, Account, Notes`, optionally
+        followed by `Tags` (tag names separated by `;`, same rules as the API; missing tags are
+        created). Files without the `Tags` column stay valid.
         Each data row is described by the `CsvTransactionRow` schema. Values are
         trimmed; empty optional values are stored as null. Maximum file size is 1 MiB.
 
@@ -748,6 +754,35 @@ paths:
           description: Recurring transaction deleted. No body.
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/RecurringTransactionNotFound" }
+
+  /api/v1/tags:
+    get:
+      tags: [Transactions]
+      summary: List the user's tags in use
+      description: |
+        Tags carried by at least one (not deleted) transaction, most used first, for
+        autocompletion and filter chips. With `account_id`, only that account's transactions count.
+      operationId: listTags
+      parameters:
+        - name: account_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Tags in use.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [name, transactions]
+                  properties:
+                    name: { type: string, example: trip-cancun }
+                    transactions: { type: integer, example: 4 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
 
   /api/v1/analytics/summary:
     get:
@@ -1357,6 +1392,11 @@ components:
           format: uuid
           readOnly: true
           description: The recurring transaction this one is an occurrence of; null when it is not recurring.
+        tags:
+          type: array
+          items: { type: string }
+          description: Tag names, alphabetical (ignoring case).
+          example: [food, trip-cancun]
         created_at:
           type: string
           format: date-time
@@ -1427,6 +1467,15 @@ components:
           maxLength: 1000
         recurrence:
           $ref: "#/components/schemas/RecurrenceRequest"
+        tags:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 40 }
+          description: |
+            Tag names. Each is trimmed (inner spaces collapsed, a leading "#" removed) and compared
+            ignoring case; new names create a tag for the user, known ones reuse it. At most 10
+            distinct tags, up to 40 characters each, without ";".
+          example: [trip-cancun, food]
 
     RecurrenceFrequency:
       type: string
@@ -1595,6 +1644,16 @@ components:
         category: { type: [string, "null"], maxLength: 100 }
         account_id: { type: string, format: uuid }
         notes: { type: [string, "null"], maxLength: 1000 }
+        tags:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 40 }
+          description: |
+            Replaces every tag of the transaction; an empty list or null removes them all.
+            Tag names. Each is trimmed (inner spaces collapsed, a leading "#" removed) and compared
+            ignoring case; new names create a tag for the user, known ones reuse it. At most 10
+            distinct tags, up to 40 characters each, without ";".
+          example: [trip-cancun, food]
 
     CsvTransactionRow:
       type: object

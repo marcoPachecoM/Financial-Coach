@@ -30,7 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class MigrationsTest {
 
-    private static final int EXPECTED_VERSIONED_MIGRATIONS = 8;
+    private static final int EXPECTED_VERSIONED_MIGRATIONS = 9;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -61,7 +61,8 @@ class MigrationsTest {
 
         assertThat(tables).contains(
                 "users", "refresh_tokens", "accounts", "category_groups",
-                "import_batches", "transactions", "merchant_category_cache", "recurring_transactions");
+                "import_batches", "transactions", "merchant_category_cache", "recurring_transactions",
+                "tags", "transaction_tags");
     }
 
     @Test
