@@ -117,6 +117,38 @@ class CategorizationTest extends ApiIntegrationTest {
     }
 
     @Test
+    void rowsWithOtherInTheFileAreCategorizedLikeEmptyOnes() throws Exception {
+        when(classifier.classify(anyCollection())).thenReturn(Map.of("cinepolis", CategoryGroup.ENTERTAINMENT));
+
+        upload(alice, "bank.csv", """
+                Expense,2026-09-05 10:00:00,10:00,Cinepolis,100,Other,Movies,Card,
+                Expense,2026-09-06 10:00:00,10:00,La Tiendita,50,Other,,Card,
+                Expense,2026-09-07 10:00:00,10:00,Unknown merchant,20,Other,,Card,
+                Expense,2026-09-08 10:00:00,10:00,Liverpool,30,Shopping,,Card,
+                """)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.records_categorized").value(2));
+
+        assertThat(sentToLlm()).containsExactlyInAnyOrder("cinepolis", "unknown merchant");
+        assertThat(jdbc.queryForList("""
+                SELECT category_group || '/' || category_group_source || '/' || coalesce(category, '')
+                FROM transactions ORDER BY datetime""", String.class))
+                .containsExactly("Entertainment/LLM/Movies", "Food/LLM/", "Other/CSV/", "Shopping/CSV/");
+    }
+
+    @Test
+    void anOtherRowStaysOtherWhenTheUserChoseOtherForThatMerchant() throws Exception {
+        categorization.rememberUserChoice(alice.id(), "Cinepolis", CategoryGroup.OTHER);
+
+        upload(alice, "bank.csv", "Expense,2026-09-05 10:00:00,10:00,CINEPOLIS,100,Other,,Card,\n")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.records_categorized").value(0));
+
+        verify(classifier, never()).classify(anyCollection());
+        assertThat(jdbc.queryForObject("SELECT category_group FROM transactions", String.class)).isEqualTo("Other");
+    }
+
+    @Test
     void aFailingLlmLeavesOtherAndTheImportSucceeds() throws Exception {
         // The real classifier never throws; an empty answer is what a failure looks like.
         when(classifier.classify(anyCollection())).thenReturn(Map.of());

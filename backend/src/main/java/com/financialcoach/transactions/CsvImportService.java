@@ -3,6 +3,7 @@ package com.financialcoach.transactions;
 import com.financialcoach.accounts.AccountService;
 import com.financialcoach.accounts.ResolvedAccounts;
 import com.financialcoach.categorization.CategorizationService;
+import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.categorization.CategoryGroupAssignment;
 import com.financialcoach.categorization.CategoryGroupSource;
 import com.financialcoach.categorization.Categorizations;
@@ -87,21 +88,24 @@ class CsvImportService {
             newFingerprints.add(fingerprint);
         }
 
-        // Only rows the file left without a group are categorized, all in one go (one LLM round at most).
+        // Rows the file left without a group, or with Other (the bank could not tell either), are
+        // categorized, all in one go (one LLM round at most). Any other group in the file is kept.
         Categorizations categorized = categorizationService.categorizeAll(userId, newRows.stream()
-                .filter(row -> row.categoryGroup() == null).map(CsvRow::name).toList());
+                .filter(CsvImportService::needsCategorizing).map(CsvRow::name).toList());
         int automaticallyCategorized = 0;
         for (int i = 0; i < newRows.size(); i++) {
             CsvRow row = newRows.get(i);
             String fingerprint = newFingerprints.get(i);
-            CategoryGroupAssignment group;
-            if (row.categoryGroup() != null) {
-                group = new CategoryGroupAssignment(row.categoryGroup(), CategoryGroupSource.CSV);
-            } else {
-                group = categorized.of(row.name());
-                if (!categorized.isFallback(row.name())) {
+            CategoryGroupAssignment fromFile = new CategoryGroupAssignment(row.categoryGroup(), CategoryGroupSource.CSV);
+            CategoryGroupAssignment group = fromFile;
+            if (needsCategorizing(row)) {
+                CategoryGroupAssignment found = categorized.of(row.name());
+                boolean gotAGroup = !categorized.isFallback(row.name()) && found.group() != CategoryGroup.OTHER;
+                if (gotAGroup) {
                     automaticallyCategorized++;
                 }
+                // When nothing better than Other is known, an Other row keeps the file's value.
+                group = gotAGroup || row.categoryGroup() == null ? found : fromFile;
             }
             newTransactions.add(Transaction.fromCsv(
                     userId, accounts.idFor(row.account()), row.type(), row.occurredAt(), row.name(), row.amount(),
@@ -122,6 +126,11 @@ class CsvImportService {
         importBatches.flush();
         return new CsvUploadResponse(newTransactions.size(), rows.size() - newTransactions.size(),
                 recurringMatched, automaticallyCategorized, accounts.created());
+    }
+
+    /** Empty and Other both mean the file does not know the group. */
+    private static boolean needsCategorizing(CsvRow row) {
+        return row.categoryGroup() == null || row.categoryGroup() == CategoryGroup.OTHER;
     }
 
     /** Only the base name is kept: some browsers send the full client path. */

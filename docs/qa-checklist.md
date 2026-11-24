@@ -15,6 +15,7 @@ Backend running with a real `GEMINI_API_KEY` (the copilot and the AI categorizat
 ## Import and categorization
 - [ ] Import a CSV **with** groups: rows keep their group; the copilot says "Imported N…" (also for the very first import of a new user).
 - [ ] Import a bank CSV with an **empty** `Category Group`: rows get sensible groups; the copilot says "N categorized automatically"; the backend log has one `categorization:` line.
+- [ ] Import rows with `Other` as the group: known merchants get a real group; one you corrected to Other yourself stays Other.
 - [ ] Import the same file again: everything is skipped as already imported.
 - [ ] Change the group of one transaction, then add another of the same merchant with "Automatic": it uses your choice.
 - [ ] Export (one account and all accounts, a period): the file opens in a spreadsheet with the Tags column; an empty period shows the notice.
