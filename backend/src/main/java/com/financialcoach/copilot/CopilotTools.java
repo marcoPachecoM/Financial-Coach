@@ -17,6 +17,9 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
 import com.financialcoach.accounts.AccountService;
+import com.financialcoach.analytics.CategoryBudgetReport;
+import com.financialcoach.analytics.CategoryBudgetService;
+import com.financialcoach.analytics.CategoryBudgetUsage;
 import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.shared.DateRange;
 import com.financialcoach.shared.Money;
@@ -48,15 +51,17 @@ class CopilotTools {
     private final TransactionStatistics statistics;
     private final RecurringReport recurringReport;
     private final AccountService accountService;
+    private final CategoryBudgetService categoryBudgetService;
     private final Clock clock;
     private final UUID userId;
     private final UUID accountId;
 
     CopilotTools(TransactionStatistics statistics, RecurringReport recurringReport, AccountService accountService,
-                 Clock clock, UUID userId, UUID accountId) {
+                 CategoryBudgetService categoryBudgetService, Clock clock, UUID userId, UUID accountId) {
         this.statistics = statistics;
         this.recurringReport = recurringReport;
         this.accountService = accountService;
+        this.categoryBudgetService = categoryBudgetService;
         this.clock = clock;
         this.userId = userId;
         this.accountId = accountId;
@@ -133,8 +138,9 @@ class CopilotTools {
     }
 
     @Tool(description = """
-            Monthly budget of the account for one month: budget, spent, remaining and percentage used.
-            Only expenses count. Use it for budget questions.""")
+            Monthly budget of the account for one month: budget, spent, remaining and percentage used,
+            plus the budgets per category group when the account has any (e.g. "how am I doing with
+            my food budget?"). Only expenses count. Use it for budget questions.""")
     String budgetStatus(@ToolParam(description = "Month, yyyy-MM. Usually the current month.") String month) {
         YearMonth yearMonth;
         try {
@@ -144,14 +150,38 @@ class CopilotTools {
         }
         BigDecimal spent = statistics.totals(userId, accountId, DateRange.of(yearMonth)).expenseTotal();
         Optional<BigDecimal> budget = accountService.monthlyBudget(userId, accountId);
+        String account;
         if (budget.isEmpty()) {
-            return "The account has no monthly budget. Spent in %s: %s.".formatted(yearMonth, money(spent));
+            account = "The account has no monthly budget. Spent in %s: %s.".formatted(yearMonth, money(spent));
+        } else {
+            BigDecimal limit = budget.get();
+            account = "Month %s. Budget: %s. Spent: %s. Remaining: %s. Used: %s.".formatted(
+                    yearMonth, money(limit), money(spent), money(limit.subtract(spent)), percent(spent, limit));
         }
-        BigDecimal limit = budget.get();
-        String used = limit.signum() == 0 ? "n/a"
+        return account + categoryBudgets(yearMonth);
+    }
+
+    /** Lines of the category budgets, most used first; empty when the account has none. */
+    private String categoryBudgets(YearMonth month) {
+        CategoryBudgetReport report = categoryBudgetService.usage(userId, accountId, month);
+        if (report.budgets().isEmpty()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder("\nCategory budgets:");
+        for (CategoryBudgetUsage usage : report.budgets()) {
+            out.append("\n- %s: spent %s of %s (%s, %s)".formatted(usage.categoryGroup().label(),
+                    money(usage.spent()), money(usage.budget()), percent(usage.spent(), usage.budget()),
+                    usage.status().name().toLowerCase(Locale.ROOT).replace('_', ' ')));
+        }
+        BigDecimal withoutBudget = report.unbudgeted().stream()
+                .map(CategoryGroupTotal::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        out.append("\nSpent in groups without a budget: %s.".formatted(money(withoutBudget)));
+        return out.toString();
+    }
+
+    private static String percent(BigDecimal spent, BigDecimal limit) {
+        return limit.signum() == 0 ? "n/a"
                 : spent.multiply(BigDecimal.valueOf(100)).divide(limit, 1, RoundingMode.HALF_UP) + "%";
-        return "Month %s. Budget: %s. Spent: %s. Remaining: %s. Used: %s.".formatted(
-                yearMonth, money(limit), money(spent), money(limit.subtract(spent)), used);
     }
 
     @Tool(description = """

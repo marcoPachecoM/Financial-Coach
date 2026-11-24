@@ -22,7 +22,7 @@ The original Flask backend was replaced by the Spring Boot one and removed from 
 
 ## 2. Backend
 
-Modules: **authentication** (JWT access and refresh tokens), **accounts** with an optional monthly budget, **transactions** (typed in or imported from CSV), **recurring transactions** (the next occurrences are created automatically every day), **analytics** (summary, spending by category group, monthly budget), **alerts** and the AI **copilot**. Transactions have a **category group** from a closed list of 26 (assigned from the merchant cache when missing, falling back to `Other`; an LLM step is planned) and an optional free-text **category** inside it (e.g. group `Utilities`, category `Gas`). See [docs/database.md](docs/database.md) for the data model.
+Modules: **authentication** (JWT access and refresh tokens), **accounts** with an optional monthly budget, **transactions** (typed in or imported from CSV), **recurring transactions** (the next occurrences are created automatically every day), **analytics** (summary, spending by category group, monthly budget and budgets per category group), **alerts** and the AI **copilot**. Transactions have a **category group** from a closed list of 26 (assigned from the merchant cache when missing, falling back to `Other`; an LLM step is planned) and an optional free-text **category** inside it (e.g. group `Utilities`, category `Gas`). See [docs/database.md](docs/database.md) for the data model.
 
 ### Endpoints
 
@@ -43,6 +43,8 @@ All under `/api/v1`. Everything except login, refresh and the public health chec
 | `POST /accounts` | Creates one: `name` (unique per user, else `409`) and optional `monthly_budget`. |
 | `GET /accounts/{id}` | One account. |
 | `PATCH /accounts/{id}` | Renames it or changes the budget; `"monthly_budget": null` removes the budget. |
+| `GET /accounts/{id}/category-budgets?month=YYYY-MM` | Budgets per category group with the month's spending (budget, spent, remaining, percentage used, status), closest to the limit first, plus the groups with spending and no budget. Default month: the current one. |
+| `PUT /accounts/{id}/category-budgets` | Replaces every category budget: `{"budgets": [{"category_group": "Food", "monthly_amount": "5000"}]}`; groups left out lose theirs, `[]` removes them all. |
 | `GET /accounts/{id}/budget?month=YYYY-MM` | The month's expenses against the budget: budget, spent, remaining, percentage used and status (`ON_TRACK` below 80 %, `WARNING` up to 100 %, `EXCEEDED` above, `NO_BUDGET`). Default month: the current one. |
 | `GET /accounts/{id}/alerts?month=YYYY-MM` | The month's [alerts](#alerts), most severe first. Default month: the current one. |
 | **Transactions** | |
@@ -137,6 +139,8 @@ curl -H "$AUTH" "$API/analytics/summary?account_id=$ACCOUNT&start_date=2026-11-0
 curl -H "$AUTH" "$API/analytics/by-category-group?account_id=$ACCOUNT&type=EXPENSE"
 curl -H "$AUTH" "$API/analytics/daily?account_id=$ACCOUNT&start_date=2026-11-01&end_date=2026-11-30"
 curl -H "$AUTH" "$API/accounts/$ACCOUNT/budget?month=2026-11"
+curl -H "$AUTH" -X PUT -H "Content-Type: application/json" \
+     -d '{"budgets": [{"category_group": "Food", "monthly_amount": "5000"}]}' $API/accounts/$ACCOUNT/category-budgets
 
 # Recurring: Netflix every month from September. The occurrences already due
 # (October, November) are created at once; the next ones, every day at 00:05.
@@ -161,6 +165,7 @@ Alerts are computed on every request (nothing is stored). Each one has a stable 
 | Type | When |
 |---|---|
 | `BUDGET_WARNING` / `BUDGET_EXCEEDED` | The month's expenses reach 80 % / exceed the account's budget. |
+| `CATEGORY_BUDGET_WARNING` / `CATEGORY_BUDGET_EXCEEDED` | Same, for each category group with a budget (e.g. Food at 84 %). |
 | `RECURRING_UPCOMING` | A recurring transaction is due in the next 7 days. |
 | `RECURRING_MISSING` | An occurrence was created automatically, but an imported bank statement that already covers its date does not show it. |
 | `RECURRING_PRICE_CHANGED` | A real charge of a recurring transaction has another amount. |
@@ -230,7 +235,7 @@ To change a limit, set its variable, e.g. `COPILOT_DAILY_LIMIT=300` in `backend/
 `POST /api/v1/copilot/chat` with `{"message": "...", "account_id": "...", "conversation_id": "..."}` returns `{"response", "provider", "model", "usage"}`.
 
 - **Streaming**: `POST /api/v1/copilot/chat/stream` (same body) sends the answer while it is written; see [Streaming](#streaming-server-sent-events) below.
-- **Tools**: the model cannot query the database; it calls read-only Java methods (`CopilotTools`): totals, spending by category group, transaction search, budget status, recurring charges and the month-end forecast. The forecast is computed in Java (spent so far + recurring charges still due this month + the daily average of the other expenses × days left), so the model only explains the numbers instead of doing the arithmetic. The user and account come from the request, never from the model.
+- **Tools**: the model cannot query the database; it calls read-only Java methods (`CopilotTools`): totals, spending by category group, transaction search, budget status (including the category budgets), recurring charges and the month-end forecast. The forecast is computed in Java (spent so far + recurring charges still due this month + the daily average of the other expenses × days left), so the model only explains the numbers instead of doing the arithmetic. The user and account come from the request, never from the model.
 - **Prompt injection**: transaction names and categories come from bank files and user input, so a row could contain instructions ("ignore your rules..."). The system prompt tells the model that tool results are data, never instructions. Even if it obeyed, the tools are read-only and scoped to the user's account.
 - **Tool loop limit**: Spring AI's tool loop has no limit of its own, and the rate limit counts HTTP requests, not model calls. A model that keeps asking for tools is stopped after `COPILOT_MAX_LLM_CALLS` calls (5): `502 COPILOT_CALL_LIMIT`, logged as `outcome=call_limit`.
 - **Memory**: messages with the same `conversation_id` share history, so follow-up questions work ("and in October?"). The last 10 messages go back to the model. The history lives in the server's memory: it is lost on restart, and at most 1000 conversations are kept (the least recently used are forgotten first). Without `conversation_id`, every message stands alone.
@@ -315,7 +320,7 @@ Open http://localhost:5173 and log in with the demo user (prefilled in developme
 What it has:
 
 - **Sidebar** (collapsible; a drawer on phones): the Dashboard and Transactions views, and the **accounts**. Picking an account switches every view to it. Each account shows the month's spending against its budget and against last month; accounts can be created and edited there.
-- **Dashboard**: metric cards, budget, recurring transactions, spending by category group and the spending trend, for a chosen period. Every figure comes already added up from the `/analytics` endpoints (the calendar too), so the browser never downloads the whole history: the page stays as fast with years of transactions as with a month.
+- **Dashboard**: metric cards, budget, **category budgets** (only the categories you set a limit for, closest to the limit first, with a "Manage" dialog to pick them), recurring transactions, spending by category group and the spending trend, for a chosen period. Every figure comes already added up from the `/analytics` endpoints (the calendar too), so the browser never downloads the whole history: the page stays as fast with years of transactions as with a month.
 - **Tags**: a field with suggestions in the transaction form; each row shows its tags (click one to filter), the most used tags appear as chips above the list, and the search box also finds tags.
 - **Transactions**: a calendar (each day shaded by what was spent; click a day to filter) above the list, with search, a category filter and an amount range (e.g. $50–$200). The list asks the server for one page of 10 with every filter applied, so it does not load the whole history; typing waits 300 ms before sending the request. Each row can be viewed, edited, deleted or made recurring.
 - **Header**: add a transaction (optionally repeating), import a CSV, and export one (a dialog to pick one account or all, and a period).

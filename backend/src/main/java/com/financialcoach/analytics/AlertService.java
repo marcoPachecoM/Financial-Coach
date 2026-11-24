@@ -30,11 +30,14 @@ import org.springframework.transaction.annotation.Transactional;
 class AlertService {
 
     private final BudgetService budgetService;
+    private final CategoryBudgetService categoryBudgetService;
     private final RecurringReport recurringReport;
     private final Clock clock;
 
-    AlertService(BudgetService budgetService, RecurringReport recurringReport, Clock clock) {
+    AlertService(BudgetService budgetService, CategoryBudgetService categoryBudgetService,
+                 RecurringReport recurringReport, Clock clock) {
         this.budgetService = budgetService;
+        this.categoryBudgetService = categoryBudgetService;
         this.recurringReport = recurringReport;
         this.clock = clock;
     }
@@ -47,6 +50,8 @@ class AlertService {
 
         List<AlertResponse> alerts = new ArrayList<>();
         budgetAlert(budget).ifPresent(alerts::add);
+        categoryBudgetService.usage(userId, accountId, month).budgets()
+                .forEach(usage -> categoryBudgetAlert(month, usage).ifPresent(alerts::add));
         recurring.missing().forEach(charge -> alerts.add(missing(charge)));
         recurring.priceChanges().forEach(change -> alerts.add(priceChanged(change)));
         recurring.upcoming().forEach(charge -> alerts.add(upcoming(charge)));
@@ -76,6 +81,28 @@ class AlertService {
                 "percentage_used", budget.percentageUsed());
         AlertSeverity severity = type == AlertType.BUDGET_EXCEEDED ? AlertSeverity.CRITICAL : AlertSeverity.WARNING;
         return Optional.of(new AlertResponse(type + ":" + budget.month(), type, severity, data, null));
+    }
+
+    /** Same thresholds as the account's budget; the id names the group, one alert per group. */
+    private static Optional<AlertResponse> categoryBudgetAlert(YearMonth month, CategoryBudgetUsage usage) {
+        AlertType type = switch (usage.status()) {
+            case EXCEEDED -> AlertType.CATEGORY_BUDGET_EXCEEDED;
+            case WARNING -> AlertType.CATEGORY_BUDGET_WARNING;
+            case ON_TRACK, NO_BUDGET -> null;
+        };
+        if (type == null) {
+            return Optional.empty();
+        }
+        Map<String, Object> data = data(
+                "month", month.toString(),
+                "category_group", usage.categoryGroup().label(),
+                "budget", Money.format(usage.budget()),
+                "spent", Money.format(usage.spent()),
+                "remaining", Money.format(usage.remaining()),
+                "percentage_used", usage.percentageUsed() == null ? null : usage.percentageUsed().toPlainString());
+        AlertSeverity severity = type == AlertType.CATEGORY_BUDGET_EXCEEDED ? AlertSeverity.CRITICAL : AlertSeverity.WARNING;
+        String id = type + ":" + month + ":" + usage.categoryGroup().label();
+        return Optional.of(new AlertResponse(id, type, severity, data, null));
     }
 
     private static AlertResponse missing(MissingCharge charge) {

@@ -46,6 +46,21 @@ const describe = (alert: ApiAlert): Pick<Insight, 'icon' | 'title' | 'descriptio
           (d.percentage_used !== null ? ` (${percent(d.percentage_used)} utilized)` : '') +
           ` · ${money(d.remaining)} over budget.`,
       };
+    case 'CATEGORY_BUDGET_WARNING':
+      return {
+        icon: 'warning',
+        title: `${text(d.category_group)} is close to its budget for ${monthName(d.month)}.`,
+        description: `Current: ${money(d.spent)} / ${money(d.budget)} (${percent(d.percentage_used)} utilized)`,
+      };
+    case 'CATEGORY_BUDGET_EXCEEDED':
+      return {
+        icon: 'error',
+        title: `${text(d.category_group)} is over its budget for ${monthName(d.month)}.`,
+        description:
+          `Spent ${money(d.spent)} of ${money(d.budget)}` +
+          (d.percentage_used !== null ? ` (${percent(d.percentage_used)} utilized)` : '') +
+          ` · ${money(d.remaining)} over budget.`,
+      };
     case 'RECURRING_MISSING':
       return {
         icon: 'search_off',

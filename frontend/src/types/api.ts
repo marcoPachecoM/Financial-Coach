@@ -93,6 +93,8 @@ export interface ApiRecurringTransactionUpdate {
 export type AlertType =
   | "BUDGET_EXCEEDED"
   | "BUDGET_WARNING"
+  | "CATEGORY_BUDGET_EXCEEDED"
+  | "CATEGORY_BUDGET_WARNING"
   | "RECURRING_MISSING"
   | "RECURRING_PRICE_CHANGED"
   | "RECURRING_UPCOMING"
@@ -149,6 +151,21 @@ export interface ApiCategoryGroupBreakdown {
 }
 
 export type BudgetStatus = "ON_TRACK" | "WARNING" | "EXCEEDED" | "NO_BUDGET";
+
+/** GET/PUT /accounts/{id}/category-budgets. */
+export interface ApiCategoryBudgets {
+  account_id: string;
+  month: string;
+  budgets: {
+    category_group: string;
+    budget: string;
+    spent: string;
+    remaining: string;
+    percentage_used: string | null;
+    status: BudgetStatus;
+  }[];
+  unbudgeted: { category_group: string; spent: string; count: number }[];
+}
 
 export interface ApiBudgetUsage {
   account_id: string;
