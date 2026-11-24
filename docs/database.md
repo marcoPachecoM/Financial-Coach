@@ -18,6 +18,8 @@ erDiagram
     category_groups ||--o{ transactions : "classifies"
     category_groups ||--o{ merchant_category_cache : "classifies"
     users ||--o{ tags : "labels"
+    users ||--o{ savings_goals : "saves for"
+    savings_goals ||--o{ goal_contributions : "funded by"
     transactions ||--o{ transaction_tags : "tagged"
     tags ||--o{ transaction_tags : "used by"
 
@@ -54,6 +56,25 @@ erDiagram
 
     category_groups {
         varchar name PK
+    }
+
+    savings_goals {
+        uuid id PK
+        uuid user_id FK
+        varchar name "unique per user, case-insensitive"
+        numeric target_amount "> 0"
+        date target_date "null = no deadline"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    goal_contributions {
+        uuid id PK
+        uuid goal_id FK
+        numeric amount "negative = withdrawal"
+        date contributed_on
+        varchar note
+        timestamptz created_at
     }
 
     category_budgets {
@@ -163,6 +184,8 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 | CSV rows always have a fingerprint, manual rows never do | `ck_transactions_fingerprint` |
 | Budgets are not negative | `ck_accounts_monthly_budget`, `ck_category_budgets_amount` |
 | One budget per category group and account | `ux_category_budgets_account_group` |
+| Goal names are unique per user, ignoring case; targets are positive | `ux_savings_goals_user_name`, `ck_savings_goals_target_amount` |
+| A contribution moves money (not zero) | `ck_goal_contributions_amount` |
 | A recurring transaction belongs to an account of the same user | `fk_recurring_transactions_account` |
 | An occurrence belongs to a rule of its own account | `fk_transactions_recurring_transaction` (composite FK on `recurring_transaction_id, account_id`) |
 | A linked transaction always says which occurrence it covers | `ck_transactions_recurrence` |
@@ -184,6 +207,7 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 - **A real charge replaces the automatic one.** When a CSV row matches a rule (same account, type and merchant, within a few days of a due date), the generated transaction is soft-deleted and the CSV row takes its place, with the real amount. `ux_transactions_recurrence` excludes deleted rows so the two can coexist. This avoids counting a subscription twice and lets the alerts detect price changes.
 - **Tags belong to a user** (V9): `tags` holds each user's labels and `transaction_tags` links them to transactions (many to many). Names are compared ignoring case, so "Work" and "work" are one tag, spelled as first created. The application checks that a transaction only gets tags of its own user. A tag that no active transaction uses stays in the table but is not listed by `GET /tags`; deleting a transaction or a user removes its links (`ON DELETE CASCADE`). New tags are inserted with `ON CONFLICT DO NOTHING`, so two requests creating the same tag at once both get it instead of one failing on the unique index. Recurring rules have no tags of their own: each new occurrence copies the tags of the latest occurrence, and a CSV charge that replaces a generated occurrence keeps its tags.
 - **Category budgets are opt-in** (V10): `category_budgets` has a row only for the groups the user wants to watch, so the dashboard never shows 26 bars. Like `accounts.monthly_budget`, the amount applies to every month and the spending is computed from the transactions. They are independent of the account's budget: adding up to more than it is allowed (the frontend only warns). `PUT` replaces them all with a bulk delete followed by inserts, so the unique index never sees two rows of the same group.
+- **Savings goals belong to the user, not to an account** (V11), because savings usually span accounts; the Goals view does not change with the selected account. Progress comes only from the **contributions the user records** (negative ones are withdrawals): the app does not know account balances, and guessing from income minus expenses would be wrong as soon as there are two goals. Nothing derived is stored: saved amount, pace, required monthly amount, projected date and status are computed on every request (`GoalProjection`, a pure class with its own unit tests). The rule that a goal never goes below zero lives in the service, since it depends on the sum of rows.
 - **Alerts are not stored**: `GET /accounts/{id}/alerts` computes them on every request from the budgets and the recurring transactions.
 
 ## Not migrated

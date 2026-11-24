@@ -3,7 +3,7 @@ import type { Account } from '../../types/account';
 import type { AccountSpending } from '../../hooks/useDashboardData';
 import { AccountsSection } from './AccountsSection';
 
-export type View = 'dashboard' | 'transactions';
+export type View = 'dashboard' | 'transactions' | 'goals';
 
 interface SidebarProps {
   view: View;
@@ -20,11 +20,14 @@ interface SidebarProps {
   onSelectAccount: (accountId: string) => void;
   onEditAccount: (account: Account) => void;
   onCreateAccount: () => void;
+  /** Goals behind or overdue: a badge on the Goals item (the dashboard stays as it is). */
+  goalsNeedingAttention: number;
 }
 
 const NAV: { id: View; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: 'space_dashboard' },
   { id: 'transactions', label: 'Transactions', icon: 'receipt_long' },
+  { id: 'goals', label: 'Goals', icon: 'flag' },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -40,6 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectAccount,
   onEditAccount,
   onCreateAccount,
+  goalsNeedingAttention,
 }) => {
   // In the drawer everything is shown; on desktop the collapsed bar shows icons only.
   const compact = collapsed && !mobileOpen;
@@ -48,6 +52,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <nav className="space-y-1">
       {NAV.map((item) => {
         const active = view === item.id;
+        const badge = item.id === 'goals' && goalsNeedingAttention > 0 ? goalsNeedingAttention : 0;
+        const badgeLabel = `${badge} goal${badge === 1 ? '' : 's'} need${badge === 1 ? 's' : ''} attention`;
         return (
           <button
             key={item.id}
@@ -55,13 +61,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onChangeView(item.id);
               onCloseMobile();
             }}
-            title={item.label}
-            className={`w-full flex items-center gap-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+            title={badge ? `${item.label} · ${badgeLabel}` : item.label}
+            aria-label={badge ? `${item.label}, ${badgeLabel}` : undefined}
+            className={`relative w-full flex items-center gap-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
               compact ? 'justify-center p-2.5' : 'px-3 py-2.5'
             } ${active ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
           >
             <span className="material-symbols-outlined !text-[20px]">{item.icon}</span>
             {!compact && item.label}
+            {badge > 0 &&
+              (compact ? (
+                <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-4 text-center">
+                  {badge}
+                </span>
+              ) : (
+                <span
+                  className={`ml-auto min-w-5 h-5 px-1.5 rounded-full text-[11px] font-bold leading-5 text-center ${
+                    active ? 'bg-white text-amber-700' : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {badge}
+                </span>
+              ))}
           </button>
         );
       })}

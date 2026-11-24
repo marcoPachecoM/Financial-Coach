@@ -45,6 +45,10 @@ tags:
       startup). A charge imported from a CSV replaces the occurrence created
       automatically, so the bank's charge and the automatic one are never both counted.
   - name: Analytics
+  - name: Goals
+    description: |
+      Savings goals of the user (not tied to an account). Progress comes from the
+      contributions the user records; the projection is computed on every request.
   - name: Copilot
 
 security:
@@ -916,6 +920,155 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/AccountNotFound" }
 
+  /api/v1/goals:
+    get:
+      tags: [Goals]
+      summary: The user's savings goals with their progress and projection
+      description: |
+        Goals belong to the user, not to an account. Sorted by `status` in the
+        order OVERDUE, BEHIND, ON_TRACK, NO_TARGET_DATE, COMPLETED (the ones
+        needing attention first), then by creation. Accepts no query parameters.
+      operationId: listGoals
+      responses:
+        "200":
+          description: Every goal of the user.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Goal" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Goals]
+      summary: Create a savings goal
+      operationId: createGoal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GoalCreateRequest" }
+      responses:
+        "201":
+          description: Created. `Location` points to the new goal.
+          headers:
+            Location: { schema: { type: string, format: uri } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Goal" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/GoalNameConflict" }
+
+  /api/v1/goals/{goal_id}:
+    parameters:
+      - $ref: "#/components/parameters/GoalIdPath"
+    get:
+      tags: [Goals]
+      summary: One savings goal
+      operationId: getGoal
+      responses:
+        "200":
+          description: The goal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Goal" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/GoalNotFound" }
+    patch:
+      tags: [Goals]
+      summary: Change the name, the target or the target date
+      description: |
+        Only the fields sent change; `"target_date": null` removes the date.
+      operationId: updateGoal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GoalUpdateRequest" }
+      responses:
+        "200":
+          description: The updated goal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Goal" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/GoalNotFound" }
+        "409": { $ref: "#/components/responses/GoalNameConflict" }
+    delete:
+      tags: [Goals]
+      summary: Delete a goal and its contributions
+      operationId: deleteGoal
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/GoalNotFound" }
+
+  /api/v1/goals/{goal_id}/contributions:
+    parameters:
+      - $ref: "#/components/parameters/GoalIdPath"
+    get:
+      tags: [Goals]
+      summary: Money put into (or taken out of) a goal
+      operationId: listGoalContributions
+      responses:
+        "200":
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GoalContribution" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/GoalNotFound" }
+    post:
+      tags: [Goals]
+      summary: Add money to a goal, or withdraw it
+      description: |
+        A negative `amount` is a withdrawal; it cannot take out more than what
+        was saved (`VALIDATION_ERROR` on `amount`). Answers with the goal and
+        its new progress.
+      operationId: addGoalContribution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GoalContributionRequest" }
+      responses:
+        "201":
+          description: Saved; the goal with its new progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Goal" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/GoalNotFound" }
+
+  /api/v1/goals/{goal_id}/contributions/{contribution_id}:
+    parameters:
+      - $ref: "#/components/parameters/GoalIdPath"
+      - name: contribution_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Goals]
+      summary: Delete a contribution
+      description: |
+        Answers with the goal and its new progress. Fails with `VALIDATION_ERROR`
+        when it would leave the goal below zero (a later withdrawal needs it).
+      operationId: deleteGoalContribution
+      responses:
+        "200":
+          description: Deleted; the goal with its new progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Goal" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/GoalNotFound" }
+
   /api/v1/copilot/chat:
     post:
       tags: [Copilot]
@@ -1051,6 +1204,11 @@ components:
         iat, nbf, exp. The server stores only its jti.
 
   parameters:
+    GoalIdPath:
+      name: goal_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     AccountId:
       name: account_id
       in: query
@@ -1161,6 +1319,28 @@ components:
             status: 404
             detail: Transaction not found.
             code: NOT_FOUND
+    GoalNotFound:
+      description: Goal (or contribution) does not exist or belongs to another user (`NOT_FOUND`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: Goal not found.
+            code: NOT_FOUND
+    GoalNameConflict:
+      description: The caller already has a goal with that name (`CONFLICT`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            detail: A goal with this name already exists.
+            code: CONFLICT
     RecurringTransactionNotFound:
       description: Recurring transaction does not exist or belongs to another user (`NOT_FOUND`).
       content:
@@ -1351,6 +1531,116 @@ components:
         email: { type: string, format: email }
         role: { $ref: "#/components/schemas/UserRole" }
         is_active: { type: boolean }
+
+    GoalStatus:
+      type: string
+      enum: [OVERDUE, BEHIND, ON_TRACK, NO_TARGET_DATE, COMPLETED]
+      description: |
+        - `COMPLETED`: saved at least the target (checked first, even past the date).
+        - `OVERDUE`: the target date passed without reaching the target.
+        - `ON_TRACK`: at the current pace, `projected_date` is on or before `target_date`.
+        - `BEHIND`: `projected_date` is after `target_date`, or there is no pace yet.
+        - `NO_TARGET_DATE`: no date; only the projection applies.
+
+    Goal:
+      type: object
+      required: [id, name, target_amount, target_date, saved, remaining, percentage, monthly_pace,
+                 required_monthly, projected_date, status, created_at]
+      description: |
+        Progress and projection are computed on every request from the contributions.
+        A "month" is 30 days. `monthly_pace` is what was put in during the last 90 days,
+        per month; a goal younger than that (counting from its creation or its first,
+        possibly backdated, contribution) uses its age as the window, at least 30 days.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 100, example: Trip to Japan }
+        target_amount: { $ref: "#/components/schemas/PositiveMoney" }
+        target_date: { type: [string, "null"], format: date, example: "2027-06-30" }
+        saved:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          description: Sum of the contributions (withdrawals subtract).
+          example: "18000.00"
+        remaining:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          description: target_amount - saved, never below 0.
+          example: "22000.00"
+        percentage:
+          allOf: [{ $ref: "#/components/schemas/Percentage" }]
+          description: saved / target_amount. Can exceed 100.
+          example: "45.00"
+        monthly_pace:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Money put in per month lately; zero or negative when nothing (or less) went in.
+          example: "2100.00"
+        required_monthly:
+          oneOf:
+            - $ref: "#/components/schemas/PositiveMoney"
+            - type: "null"
+          description: |
+            remaining / calendar months left until target_date (at least 1), rounded up.
+            Null without a date, once overdue or completed.
+          example: "2750.00"
+        projected_date:
+          type: [string, "null"]
+          format: date
+          description: today + remaining / monthly_pace. Null when the pace is not positive or the goal is completed.
+          example: "2027-08-14"
+        status: { $ref: "#/components/schemas/GoalStatus" }
+        created_at: { type: string, format: date-time }
+
+    GoalCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, target_amount]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, description: Unique per user, case-insensitive. }
+        target_amount:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          description: Greater than 0.
+          example: "40000.00"
+        target_date:
+          type: [string, "null"]
+          format: date
+          description: Optional; not in the past.
+
+    GoalUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        target_amount: { $ref: "#/components/schemas/PositiveMoney" }
+        target_date:
+          type: [string, "null"]
+          format: date
+          description: Not in the past; null removes the date.
+
+    GoalContributionRequest:
+      type: object
+      additionalProperties: false
+      required: [amount]
+      properties:
+        amount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Not zero. Negative is a withdrawal.
+          example: "500.00"
+        date:
+          type: string
+          format: date
+          description: Defaults to today; not in the future.
+        note: { type: [string, "null"], maxLength: 200, example: Bonus }
+
+    GoalContribution:
+      type: object
+      required: [id, amount, date, note, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        amount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Negative for a withdrawal.
+        date: { type: string, format: date }
+        note: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
 
     Account:
       type: object
