@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isAxiosError } from "axios";
-import { INITIAL_CHAT_MESSAGES } from "../data/mockInsights";
+import { INITIAL_CHAT_MESSAGES } from "../data/chatSuggestions";
 import { streamChatMessage } from "../services/copilot";
 import { getErrorMessage } from "../services/errors";
 import { makeRecurring, stopRecurring, updateRecurring } from "../services/recurring";

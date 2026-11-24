@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SUGGESTION_CHIPS } from '../../data/mockInsights';
+import { SUGGESTION_CHIPS } from '../../data/chatSuggestions';
 
 interface ChatBoxProps {
   onSendMessage: (text: string) => void;
