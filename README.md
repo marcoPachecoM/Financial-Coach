@@ -61,7 +61,8 @@ All under `/api/v1`. Everything except login, refresh and the public health chec
 | `PATCH /recurring-transactions/{id}` | Changes name, amount, category group, category, notes or `end_date` (an end date stops it). Applies to the occurrences created from now on. |
 | `DELETE /recurring-transactions/{id}` | Deletes the rule; the transactions it created are kept as ordinary ones. |
 | **Analytics** | |
-| `GET /analytics/summary?account_id=…` | Total expenses and income, net, counts, average and largest expense, optionally between `start_date` and `end_date`. |
+| `GET /analytics/summary?account_id=…` | Total expenses and income, net, counts, average and largest expense, and the dates of the first and last transaction, optionally between `start_date` and `end_date`. |
+| `GET /analytics/daily?account_id=…` | One entry per day with transactions (expense total and count, transactions of any type), optionally between dates and of one `category_group`. Feeds the calendar and the spending trend. |
 | `GET /analytics/by-category-group?account_id=…` | Totals per category group for `type` (`EXPENSE` by default or `INCOME`), optionally between dates. |
 | **Copilot** | |
 | `POST /copilot/chat` | A question about an account (`message`, `account_id`, optional `conversation_id`) → the whole answer as JSON, with the model and token usage. See [Copilot](#copilot-ai-chat). |
@@ -134,6 +135,7 @@ curl -H "$AUTH" -OJ "$API/transactions/export?account_id=$ACCOUNT&start_date=202
 # Analytics and budget
 curl -H "$AUTH" "$API/analytics/summary?account_id=$ACCOUNT&start_date=2026-11-01&end_date=2026-11-30"
 curl -H "$AUTH" "$API/analytics/by-category-group?account_id=$ACCOUNT&type=EXPENSE"
+curl -H "$AUTH" "$API/analytics/daily?account_id=$ACCOUNT&start_date=2026-11-01&end_date=2026-11-30"
 curl -H "$AUTH" "$API/accounts/$ACCOUNT/budget?month=2026-11"
 
 # Recurring: Netflix every month from September. The occurrences already due
@@ -313,7 +315,7 @@ Open http://localhost:5173 and log in with the demo user (prefilled in developme
 What it has:
 
 - **Sidebar** (collapsible; a drawer on phones): the Dashboard and Transactions views, and the **accounts**. Picking an account switches every view to it. Each account shows the month's spending against its budget and against last month; accounts can be created and edited there.
-- **Dashboard**: metric cards, budget, recurring transactions, spending by category group and the spending trend, for a chosen period.
+- **Dashboard**: metric cards, budget, recurring transactions, spending by category group and the spending trend, for a chosen period. Every figure comes already added up from the `/analytics` endpoints (the calendar too), so the browser never downloads the whole history: the page stays as fast with years of transactions as with a month.
 - **Tags**: a field with suggestions in the transaction form; each row shows its tags (click one to filter), the most used tags appear as chips above the list, and the search box also finds tags.
 - **Transactions**: a calendar (each day shaded by what was spent; click a day to filter) above the list, with search, a category filter and an amount range (e.g. $50–$200). The list asks the server for one page of 10 with every filter applied, so it does not load the whole history; typing waits 300 ms before sending the request. Each row can be viewed, edited, deleted or made recurring.
 - **Header**: add a transaction (optionally repeating), import a CSV, and export one (a dialog to pick one account or all, and a period).

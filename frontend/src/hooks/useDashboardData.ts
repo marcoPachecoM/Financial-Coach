@@ -1,8 +1,8 @@
 import { getAccounts, getBudgetUsage } from "../services/accounts";
 import { getAlerts } from "../services/alerts";
 import { getRecurringTransactions } from "../services/recurring";
-import { getAnalyticsByCategoryGroup, getAnalyticsSummary } from "../services/analytics";
-import { getAllTransactions, type TransactionFilters } from "../services/transactions";
+import { getAnalyticsByCategoryGroup, getAnalyticsSummary, getDailyTotals } from "../services/analytics";
+import type { TransactionFilters } from "../services/transactions";
 import { getCurrentUser } from "../services/users";
 import { useAsync } from "./useAsync";
 import type { BudgetUsage } from "../types/budget";
@@ -15,8 +15,26 @@ export const useAccounts = () => useAsync(getAccounts, "accounts");
 
 export const useCurrentUser = () => useAsync(getCurrentUser, "me");
 
-export const useTransactions = (filters: TransactionFilters | null) =>
-  useAsync(() => getAllTransactions(filters!), filtersKey(filters));
+/** First and last transaction of the account: the date presets are anchored to them. */
+export const useActivitySpan = (accountId: string | null) =>
+  useAsync(() => getAnalyticsSummary({ accountId: accountId! }), accountId ? `span|${accountId}` : null);
+
+/**
+ * Daily totals of the period (spending trend), optionally of one category group. While another
+ * period or group loads, the previous totals of the same account stay (no empty chart flashing).
+ */
+export const useDailyTotals = (filters: TransactionFilters | null, categoryGroup: string | null) => {
+  const result = useAsync(
+    async () => ({ accountId: filters!.accountId, days: await getDailyTotals(filters!, categoryGroup) }),
+    filters ? `${filtersKey(filters)}|${categoryGroup ?? ""}` : null,
+  );
+  const shown = result.data ?? result.previousData;
+  return {
+    days: shown && shown.accountId === filters?.accountId ? shown.days : [],
+    error: result.error,
+    refetch: result.refetch,
+  };
+};
 
 export const useAnalyticsSummary = (filters: TransactionFilters | null) =>
   useAsync(() => getAnalyticsSummary(filters!), filtersKey(filters));

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import type { RecurrenceFrequency } from '../../types/api';
 import type { Transaction } from '../../types/transaction';
 import { formatFullDate } from '../../utils/formatters';
@@ -7,6 +7,7 @@ import { CategoryFilters } from '../dashboard/CategoryFilters';
 import { CalendarFilter } from './CalendarFilter';
 import { useAsync } from '../../hooks/useAsync';
 import { getTags } from '../../services/tags';
+import { getCategoryGroupsInPeriod, getDailyTotals } from '../../services/analytics';
 
 /** Chips shown at most: the most used tags. The search box finds any other. */
 const MAX_TAG_CHIPS = 12;
@@ -15,8 +16,6 @@ interface TransactionsViewProps {
   accountId: string;
   /** Changes after any edit: the table reloads its page. */
   refreshKey: number;
-  /** Every transaction of the account: for the calendar and the category chips (the table loads its own page). */
-  transactions: Transaction[];
   month: Date;
   selectedDay: string | null;
   selectedCategory: string;
@@ -32,11 +31,14 @@ interface TransactionsViewProps {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
+/** A result loaded for another account is never shown. */
+const sameAccount = <T extends { accountId: string }>(result: T | undefined, accountId: string) =>
+  result?.accountId === accountId ? result : undefined;
+
 /** Calendar on top; below, the transactions of the selected day (or of the month shown). */
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
   accountId,
   refreshKey,
-  transactions,
   month,
   selectedDay,
   selectedCategory,
@@ -63,20 +65,24 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   // The period the table asks the server for: the selected day, or the whole month shown.
   const startDate = selectedDay ?? `${monthPrefix}-01`;
   const endDate = selectedDay ?? `${monthPrefix}-${pad(lastDay)}`;
-  const visible = useMemo(
-    () =>
-      transactions.filter((tx) =>
-        selectedDay ? tx.datetime.startsWith(selectedDay) : tx.datetime.startsWith(monthPrefix),
-      ),
-    [transactions, selectedDay, monthPrefix],
-  );
 
-  // Groups present in the period, most used first.
-  const groups = useMemo(() => {
-    const counts = new Map<string, number>();
-    visible.forEach((tx) => counts.set(tx.categoryGroup, (counts.get(tx.categoryGroup) ?? 0) + 1));
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([group]) => group);
-  }, [visible]);
+  // Totals computed by the server. While the next month loads, the previous result stays on
+  // screen (only if it is of this account), so the calendar and the chips do not flicker.
+  const monthDays = useAsync(
+    async () => ({
+      accountId,
+      days: await getDailyTotals({ accountId, startDate: `${monthPrefix}-01`, endDate: `${monthPrefix}-${pad(lastDay)}` }),
+    }),
+    accountId ? `days|${accountId}|${monthPrefix}|${refreshKey}` : null,
+  );
+  const calendarDays = sameAccount(monthDays.data ?? monthDays.previousData, accountId)?.days ?? [];
+
+  // Groups present in the period (day or month), most used first.
+  const periodGroups = useAsync(
+    async () => ({ accountId, groups: await getCategoryGroupsInPeriod({ accountId, startDate, endDate }) }),
+    accountId ? `groups|${accountId}|${startDate}|${endDate}|${refreshKey}` : null,
+  );
+  const groups = sameAccount(periodGroups.data ?? periodGroups.previousData, accountId)?.groups ?? [];
 
   const title = selectedDay
     ? formatFullDate(selectedDay)
@@ -92,7 +98,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       <CalendarFilter
         month={month}
         selectedDay={selectedDay}
-        transactions={transactions}
+        days={calendarDays}
         onChangeMonth={onChangeMonth}
         onSelectDay={onSelectDay}
       />

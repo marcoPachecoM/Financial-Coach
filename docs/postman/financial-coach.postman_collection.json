@@ -1185,6 +1185,45 @@
               ]
             }
           }
+        },
+        {
+          "name": "Daily totals",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/daily?account_id={{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "daily"
+              ],
+              "query": [
+                {
+                  "key": "account_id",
+                  "value": "{{accountId}}"
+                },
+                {
+                  "key": "category_group",
+                  "value": "Food",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2026-09-01",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2026-09-30",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "One entry per day with transactions, oldest first: feeds the calendar and the spending trend."
+          }
         }
       ]
     },

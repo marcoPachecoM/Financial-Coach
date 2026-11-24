@@ -30,6 +30,17 @@ export interface CategoryStyle {
   description: string;
 }
 
+/** One day with transactions (GET /analytics/daily). */
+export interface DailyTotal {
+  /** "YYYY-MM-DD". */
+  date: string;
+  /** Positive. */
+  expenseTotal: number;
+  expenseCount: number;
+  /** Of any type. */
+  transactionCount: number;
+}
+
 export interface CategoryGroupSummaryItem {
   categoryGroup: string;
   /** Positive amount. */

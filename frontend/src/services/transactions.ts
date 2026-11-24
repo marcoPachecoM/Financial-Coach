@@ -10,10 +10,6 @@ import type {
 } from "../types/api";
 import type { Transaction } from "../types/transaction";
 
-/** Largest page the API allows. */
-const PAGE_SIZE = 100;
-/** Safety limit for the dashboard: 50 pages = 5,000 transactions. */
-const MAX_PAGES = 50;
 
 export interface TransactionFilters {
   accountId: string;
@@ -102,28 +98,6 @@ export const updateTransaction = async (id: string, input: NewTransaction): Prom
 /** Soft delete: an occurrence of a recurring transaction is not created again. */
 export const deleteTransaction = async (id: string): Promise<void> => {
   await api.delete(`/transactions/${id}`);
-};
-
-/**
- * Every transaction of the account in the period, newest first. The charts need the whole
- * period, so pages are fetched until the API says there are no more.
- */
-export const getAllTransactions = async ({
-  accountId,
-  startDate,
-  endDate,
-}: TransactionFilters): Promise<Transaction[]> => {
-  const all: Transaction[] = [];
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const res = await api.get<ApiTransactionPage>("/transactions", {
-      params: { account_id: accountId, start_date: startDate, end_date: endDate, page, size: PAGE_SIZE },
-    });
-    all.push(...res.data.content.map(toTransaction));
-    if (!res.data.has_more) {
-      break;
-    }
-  }
-  return all;
 };
 
 export interface TransactionPageQuery {

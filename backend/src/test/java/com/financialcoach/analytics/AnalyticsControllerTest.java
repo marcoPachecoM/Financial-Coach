@@ -1,6 +1,8 @@
 package com.financialcoach.analytics;
 
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -19,6 +21,7 @@ class AnalyticsControllerTest extends ApiIntegrationTest {
 
     private static final String SUMMARY = "/api/v1/analytics/summary";
     private static final String BY_CATEGORY_GROUP = "/api/v1/analytics/by-category-group";
+    private static final String DAILY = "/api/v1/analytics/daily";
 
     private AnalyticsTestData data;
     private TestUser alice;
@@ -60,7 +63,9 @@ class AnalyticsControllerTest extends ApiIntegrationTest {
                     .andExpect(jsonPath("$.expense_count").value(3))
                     .andExpect(jsonPath("$.income_count").value(2))
                     .andExpect(jsonPath("$.average_expense").value("133.33"))
-                    .andExpect(jsonPath("$.largest_expense").value("250.50"));
+                    .andExpect(jsonPath("$.largest_expense").value("250.50"))
+                    .andExpect(jsonPath("$.first_date").value("2026-01-02"))
+                    .andExpect(jsonPath("$.last_date").value("2026-02-01"));
         }
 
         @Test
@@ -69,7 +74,9 @@ class AnalyticsControllerTest extends ApiIntegrationTest {
                     .andExpect(jsonPath("$.total_expenses").value("300.00"))
                     .andExpect(jsonPath("$.expense_count").value(2))
                     .andExpect(jsonPath("$.total_income").value("20000.00"))
-                    .andExpect(jsonPath("$.income_count").value(1));
+                    .andExpect(jsonPath("$.income_count").value(1))
+                    .andExpect(jsonPath("$.first_date").value("2026-01-10"))
+                    .andExpect(jsonPath("$.last_date").value("2026-01-31"));
         }
 
         @Test
@@ -89,7 +96,9 @@ class AnalyticsControllerTest extends ApiIntegrationTest {
                     .andExpect(jsonPath("$.expense_count").value(0))
                     .andExpect(jsonPath("$.income_count").value(0))
                     .andExpect(jsonPath("$.average_expense").value("0.00"))
-                    .andExpect(jsonPath("$.largest_expense").value("0.00"));
+                    .andExpect(jsonPath("$.largest_expense").value("0.00"))
+                    .andExpect(jsonPath("$.first_date").value(nullValue()))
+                    .andExpect(jsonPath("$.last_date").value(nullValue()));
         }
 
         @Test
@@ -183,6 +192,64 @@ class AnalyticsControllerTest extends ApiIntegrationTest {
         void anotherUsersAccountIsNotFound() throws Exception {
             byCategoryGroup(alice, "account_id=" + bobCard).andExpect(status().isNotFound());
         }
+    }
+
+    @Nested
+    class Daily {
+
+        @Test
+        void oneEntryPerDayWithTransactionsOldestFirst() throws Exception {
+            data.expense(alice, card, "2026-01-02T20:00:00", "30.00", "Food");
+
+            daily(alice, "account_id=" + card)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[*].date", contains(
+                            "2026-01-02", "2026-01-10", "2026-01-15", "2026-01-31", "2026-02-01")))
+                    // Two expenses on the 2nd; a day with only income spends nothing but still counts.
+                    .andExpect(jsonPath("$[0].expense_total").value("130.00"))
+                    .andExpect(jsonPath("$[0].expense_count").value(2))
+                    .andExpect(jsonPath("$[0].transaction_count").value(2))
+                    .andExpect(jsonPath("$[2].expense_total").value("0.00"))
+                    .andExpect(jsonPath("$[2].expense_count").value(0))
+                    .andExpect(jsonPath("$[2].transaction_count").value(1));
+        }
+
+        @Test
+        void filtersByDateAndCategoryGroup() throws Exception {
+            daily(alice, "account_id=%s&start_date=2026-01-10&end_date=2026-01-31".formatted(card))
+                    .andExpect(jsonPath("$[*].date", contains("2026-01-10", "2026-01-15", "2026-01-31")));
+            daily(alice, "account_id=%s&category_group=Food".formatted(card))
+                    .andExpect(jsonPath("$[*].date", contains("2026-01-02", "2026-01-31")))
+                    .andExpect(jsonPath("$[1].expense_total").value("49.50"));
+        }
+
+        @Test
+        void emptyPeriodIsAnEmptyList() throws Exception {
+            daily(alice, "account_id=%s&start_date=2030-01-01".formatted(card))
+                    .andExpect(status().isOk())
+                    .andExpect(content().json("[]"));
+        }
+
+        @Test
+        void invalidCategoryGroup() throws Exception {
+            daily(alice, "account_id=%s&category_group=Rockets".formatted(card))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errors[0].field").value("category_group"));
+        }
+
+        @Test
+        void anotherUsersAccountIsNotFound() throws Exception {
+            daily(alice, "account_id=" + bobCard).andExpect(status().isNotFound());
+        }
+
+        @Test
+        void unknownParametersAreRejected() throws Exception {
+            daily(alice, "account_id=%s&type=EXPENSE".formatted(card)).andExpect(status().isBadRequest());
+        }
+    }
+
+    private ResultActions daily(TestUser user, String query) throws Exception {
+        return mvc.perform(get(DAILY + "?" + query).with(as(user)));
     }
 
     private ResultActions summary(TestUser user, String query) throws Exception {

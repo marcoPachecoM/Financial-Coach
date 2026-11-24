@@ -832,6 +832,35 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/AccountNotFound" }
 
+  /api/v1/analytics/daily:
+    get:
+      tags: [Analytics]
+      summary: Totals per day
+      description: |
+        One entry per day with transactions, oldest first; days without transactions are left out.
+        Feeds the calendar and the spending trend, so the client never downloads the transactions
+        themselves. Soft-deleted transactions are excluded.
+      operationId: getAnalyticsDaily
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+        - name: category_group
+          in: query
+          description: Only transactions of this category group count (one of the 26 labels), e.g. `Food`.
+          schema: { type: string, example: Food }
+        - $ref: "#/components/parameters/StartDate"
+        - $ref: "#/components/parameters/EndDate"
+      responses:
+        "200":
+          description: Days with transactions, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DailyTotal" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+
   /api/v1/copilot/chat:
     post:
       tags: [Copilot]
@@ -1739,7 +1768,8 @@ components:
 
     AnalyticsSummary:
       type: object
-      required: [total_expenses, total_income, net, expense_count, income_count, average_expense, largest_expense]
+      required: [total_expenses, total_income, net, expense_count, income_count, average_expense, largest_expense,
+                 first_date, last_date]
       properties:
         total_expenses:
           allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
@@ -1759,6 +1789,31 @@ components:
         largest_expense:
           allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
           example: "1721.94"
+        first_date:
+          type: [string, "null"]
+          format: date
+          description: Date of the first transaction in the period; null when there are none.
+          example: "2026-01-02"
+        last_date:
+          type: [string, "null"]
+          format: date
+          description: Date of the last transaction in the period; null when there are none.
+          example: "2026-11-21"
+
+    DailyTotal:
+      type: object
+      required: [date, expense_total, expense_count, transaction_count]
+      properties:
+        date: { type: string, format: date, example: "2026-11-21" }
+        expense_total:
+          allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+          description: Sum of the day's expenses; "0.00" when it only has income.
+          example: "350.00"
+        expense_count: { type: integer, example: 3 }
+        transaction_count:
+          type: integer
+          description: Transactions of any type that day.
+          example: 4
 
     CategoryGroupBreakdown:
       type: object

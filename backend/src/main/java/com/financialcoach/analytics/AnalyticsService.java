@@ -1,8 +1,10 @@
 package com.financialcoach.analytics;
 
+import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.shared.DateRange;
 import com.financialcoach.shared.Money;
 import com.financialcoach.transactions.CategoryGroupTotal;
+import com.financialcoach.transactions.DateSpan;
 import com.financialcoach.transactions.TransactionStatistics;
 import com.financialcoach.transactions.TransactionTotals;
 import com.financialcoach.transactions.TransactionType;
@@ -27,6 +29,7 @@ class AnalyticsService {
 
     AnalyticsSummaryResponse summary(UUID userId, UUID accountId, DateRange range) {
         TransactionTotals totals = statistics.totals(userId, accountId, range);
+        DateSpan span = statistics.dateSpan(userId, accountId, range);
 
         BigDecimal average = totals.expenseCount() == 0
                 ? BigDecimal.ZERO
@@ -39,7 +42,17 @@ class AnalyticsService {
                 totals.expenseCount(),
                 totals.incomeCount(),
                 Money.format(average),
-                Money.format(totals.largestExpense()));
+                Money.format(totals.largestExpense()),
+                span.first() == null ? null : span.first().toLocalDate(),
+                span.last() == null ? null : span.last().toLocalDate());
+    }
+
+    /** Days with transactions, oldest first; with {@code categoryGroup}, only that group counts. */
+    List<DailyTotalResponse> daily(UUID userId, UUID accountId, DateRange range, CategoryGroup categoryGroup) {
+        return statistics.dailyTotals(userId, accountId, range, categoryGroup).stream()
+                .map(day -> new DailyTotalResponse(day.date(), Money.format(day.expenseTotal()), day.expenseCount(),
+                        day.transactionCount()))
+                .toList();
     }
 
     /** Percentages are of the total of the selected type; they may not add up to exactly 100 after rounding. */

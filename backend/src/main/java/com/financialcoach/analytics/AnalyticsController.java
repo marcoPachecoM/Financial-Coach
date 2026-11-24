@@ -1,7 +1,9 @@
 package com.financialcoach.analytics;
 
 import com.financialcoach.auth.AuthenticatedUser;
+import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.shared.DateRange;
+import com.financialcoach.shared.error.ValidationException;
 import com.financialcoach.shared.web.QueryParameters;
 import com.financialcoach.transactions.TransactionType;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,6 +25,7 @@ class AnalyticsController {
 
     private static final Set<String> SUMMARY_PARAMETERS = Set.of("account_id", "start_date", "end_date");
     private static final Set<String> BY_CATEGORY_GROUP_PARAMETERS = Set.of("account_id", "type", "start_date", "end_date");
+    private static final Set<String> DAILY_PARAMETERS = Set.of("account_id", "category_group", "start_date", "end_date");
 
     private final AnalyticsService analyticsService;
 
@@ -54,5 +57,32 @@ class AnalyticsController {
                                                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         QueryParameters.requireOnly(request, BY_CATEGORY_GROUP_PARAMETERS);
         return analyticsService.byCategoryGroup(user.id(), accountId, type, DateRange.between(startDate, endDate));
+    }
+
+    /** Calendar and spending trend: one entry per day with transactions. */
+    @GetMapping("/daily")
+    List<DailyTotalResponse> daily(@AuthenticationPrincipal AuthenticatedUser user,
+                                   HttpServletRequest request,
+                                   @RequestParam("account_id") UUID accountId,
+                                   @RequestParam(name = "category_group", required = false) String categoryGroup,
+                                   @RequestParam(name = "start_date", required = false)
+                                   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+                                   @RequestParam(name = "end_date", required = false)
+                                   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        QueryParameters.requireOnly(request, DAILY_PARAMETERS);
+        DateRange range = DateRange.between(startDate, endDate);
+        return analyticsService.daily(user.id(), accountId, range, categoryGroup(categoryGroup));
+    }
+
+    /** Same labels as the transaction list ("Food", "House"...); blank means every group. */
+    private static CategoryGroup categoryGroup(String label) {
+        if (label == null || label.isBlank()) {
+            return null;
+        }
+        try {
+            return CategoryGroup.fromLabel(label.strip());
+        } catch (IllegalArgumentException e) {
+            throw new ValidationException("category_group", "must be one of the category groups");
+        }
     }
 }
