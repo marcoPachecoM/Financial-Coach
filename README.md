@@ -46,7 +46,7 @@ All under `/api/v1`. Everything except login, refresh and the public health chec
 | `GET /accounts/{id}/budget?month=YYYY-MM` | The month's expenses against the budget: budget, spent, remaining, percentage used and status (`ON_TRACK` below 80 %, `WARNING` up to 100 %, `EXCEEDED` above, `NO_BUDGET`). Default month: the current one. |
 | `GET /accounts/{id}/alerts?month=YYYY-MM` | The month's [alerts](#alerts), most severe first. Default month: the current one. |
 | **Transactions** | |
-| `GET /transactions?account_id=…` | Newest first, paginated (`page` from 1, `size` 1–100, default 10), optionally between `start_date` and `end_date`. |
+| `GET /transactions?account_id=…` | Newest first, paginated (`page` from 1, `size` 1–100, default 10). Optional filters, all applied by the server: `start_date` and `end_date`; `q` (text in the name, category or notes); `category_group`; `min_amount` and `max_amount` (absolute amount, inclusive, so `$50–$200` works for expenses and income). |
 | `POST /transactions` | Creates one. Expenses have a positive amount, income a negative one. Without `category_group` it is assigned automatically. With `recurrence` (`frequency`, optional `end_date`) it also becomes a recurring transaction. |
 | `GET /transactions/{id}` | One transaction. |
 | `PATCH /transactions/{id}` | Changes the fields sent; `category` and `notes` can be cleared with `null`. |
@@ -313,7 +313,7 @@ What it has:
 
 - **Sidebar** (collapsible; a drawer on phones): the Dashboard and Transactions views, and the **accounts**. Picking an account switches every view to it. Each account shows the month's spending against its budget and against last month; accounts can be created and edited there.
 - **Dashboard**: metric cards, budget, recurring transactions, spending by category group and the spending trend, for a chosen period.
-- **Transactions**: a calendar (each day shaded by what was spent; click a day to filter) above the list, 10 per page, with search and a category filter. Each row can be viewed, edited, deleted or made recurring.
+- **Transactions**: a calendar (each day shaded by what was spent; click a day to filter) above the list, with search, a category filter and an amount range (e.g. $50–$200). The list asks the server for one page of 10 with every filter applied, so it does not load the whole history; typing waits 300 ms before sending the request. Each row can be viewed, edited, deleted or made recurring.
 - **Header**: add a transaction (optionally repeating), import a CSV, and export one (a dialog to pick one account or all, and a period).
 - **Copilot panel**: the account's alerts with their actions (make recurring, update the amount, stop) and the AI chat, streamed, with a Stop button and one conversation per account.
 

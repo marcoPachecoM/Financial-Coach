@@ -21,14 +21,26 @@ import com.financialcoach.categorization.CategoryGroup;
  */
 interface TransactionRepository extends JpaRepository<Transaction, UUID> {
 
-    /** {@code from} inclusive, {@code to} exclusive. Order comes from the Pageable. */
+    /**
+     * The transaction list: {@code from} inclusive, {@code to} exclusive. {@code pattern} is a
+     * lower-case LIKE pattern matched against name, category and notes ("%" matches everything),
+     * {@code groups} the allowed category groups, and the absolute amount must be within
+     * {@code minAmount}..{@code maxAmount} (inclusive). Order comes from the Pageable.
+     */
     @Query("""
             select t from Transaction t
             where t.userId = :userId and t.accountId = :accountId
               and t.occurredAt >= :from and t.occurredAt < :to
+              and t.categoryGroup in :groups
+              and (lower(t.name) like :pattern escape '\\'
+                   or lower(coalesce(t.category, '')) like :pattern escape '\\'
+                   or lower(coalesce(t.notes, '')) like :pattern escape '\\')
+              and abs(t.amount) >= :minAmount and abs(t.amount) <= :maxAmount
             """)
     Page<Transaction> findPage(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
                                @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
+                               @Param("pattern") String pattern, @Param("groups") Collection<CategoryGroup> groups,
+                               @Param("minAmount") BigDecimal minAmount, @Param("maxAmount") BigDecimal maxAmount,
                                Pageable pageable);
 
     @Query("select t from Transaction t where t.id = :id and t.userId = :userId")

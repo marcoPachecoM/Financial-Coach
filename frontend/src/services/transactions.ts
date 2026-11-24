@@ -121,6 +121,47 @@ export const getAllTransactions = async ({
   return all;
 };
 
+export interface TransactionPageQuery {
+  accountId: string;
+  /** Inclusive dates "YYYY-MM-DD"; null means no limit. */
+  startDate: string | null;
+  endDate: string | null;
+  /** Contained in the name, category or notes. */
+  text: string | null;
+  categoryGroup: string | null;
+  /** Bounds of the absolute amount, inclusive. */
+  minAmount: number | null;
+  maxAmount: number | null;
+  /** From 1. */
+  page: number;
+  size: number;
+}
+
+export interface TransactionPage {
+  transactions: Transaction[];
+  page: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+/** GET /transactions with every filter applied by the server, newest first: one page. */
+export const getTransactionPage = async (query: TransactionPageQuery): Promise<TransactionPage> => {
+  const params: Record<string, string | number> = { account_id: query.accountId, page: query.page, size: query.size };
+  if (query.startDate) params.start_date = query.startDate;
+  if (query.endDate) params.end_date = query.endDate;
+  if (query.text) params.q = query.text;
+  if (query.categoryGroup) params.category_group = query.categoryGroup;
+  if (query.minAmount !== null) params.min_amount = query.minAmount.toFixed(2);
+  if (query.maxAmount !== null) params.max_amount = query.maxAmount.toFixed(2);
+  const res = await api.get<ApiTransactionPage>("/transactions", { params });
+  return {
+    transactions: res.data.content.map(toTransaction),
+    page: res.data.page,
+    totalElements: res.data.total_elements,
+    totalPages: res.data.total_pages,
+  };
+};
+
 export interface CsvExportOptions {
   /** null exports every account of the user. */
   accountId: string | null;

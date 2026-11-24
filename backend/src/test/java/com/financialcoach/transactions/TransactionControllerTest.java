@@ -282,6 +282,82 @@ class TransactionControllerTest extends ApiIntegrationTest {
         }
     }
 
+    /** Filters of the list on top of the account and dates: text, category group and amount range. */
+    @Nested
+    class FilterTransactions {
+
+        @BeforeEach
+        void createFour() throws Exception {
+            create("2026-03-01T09:00", "EXPENSE", "Oxxo", "45.00", "Food", null, "snacks for the trip");
+            create("2026-03-02T09:00", "EXPENSE", "Engigas", "232.50", "Utilities", "Gas", null);
+            create("2026-03-03T09:00", "INCOME", "Payroll", "-150.00", "Salary", null, "bonus");
+            create("2026-03-04T09:00", "EXPENSE", "Cinemex", "200.00", "Entertainment", null, null);
+        }
+
+        @Test
+        void amountRangeIsInclusiveAndUsesTheAbsoluteAmount() throws Exception {
+            // The 150.00 income counts like an expense of 150.00; 200.00 is on the upper bound.
+            names("min_amount=50&max_amount=200").andExpect(jsonPath("$.content[*].name", contains("Cinemex", "Payroll")));
+        }
+
+        @Test
+        void eachBoundAloneWorks() throws Exception {
+            names("min_amount=200").andExpect(jsonPath("$.content[*].name", contains("Cinemex", "Engigas")));
+            names("max_amount=45").andExpect(jsonPath("$.content[*].name", contains("Oxxo")));
+        }
+
+        @Test
+        void textMatchesNameCategoryAndNotesIgnoringCase() throws Exception {
+            names("q=GAS").andExpect(jsonPath("$.content[*].name", contains("Engigas")));
+            names("q=trip").andExpect(jsonPath("$.content[*].name", contains("Oxxo")));
+            // LIKE wildcards are plain text.
+            names("q=%25").andExpect(jsonPath("$.total_elements").value(0));
+        }
+
+        @Test
+        void filtersByCategoryGroup() throws Exception {
+            names("category_group=Salary").andExpect(jsonPath("$.content[*].name", contains("Payroll")));
+        }
+
+        @Test
+        void filtersCombineAndThePageCountsOnlyTheMatches() throws Exception {
+            // 100 or more: Engigas, Payroll, Cinemex. Containing "e": Engigas and Cinemex.
+            names("min_amount=100&q=e&size=1")
+                    .andExpect(jsonPath("$.content[*].name", contains("Cinemex")))
+                    .andExpect(jsonPath("$.total_elements").value(2))
+                    .andExpect(jsonPath("$.total_pages").value(2));
+        }
+
+        @Test
+        void rejectsInvalidFiltersAllAtOnce() throws Exception {
+            names("min_amount=-5&max_amount=abc&category_group=Nope")
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errors[*].field", contains("category_group", "min_amount", "max_amount")));
+        }
+
+        @Test
+        void rejectsAnInvertedAmountRange() throws Exception {
+            names("min_amount=300&max_amount=100")
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errors[0].field").value("max_amount"));
+        }
+
+        private ResultActions names(String query) throws Exception {
+            return mvc.perform(get(TRANSACTIONS + "?account_id=" + aliceCard + "&" + query).with(as(alice)));
+        }
+
+        private void create(String datetime, String type, String name, String amount, String group, String category,
+                            String notes) throws Exception {
+            String json = """
+                    {"type": "%s", "datetime": "%s", "name": "%s", "amount": "%s", "category_group": "%s",
+                     "category": %s, "notes": %s, "account_id": "%s"}
+                    """.formatted(type, datetime, name, amount, group,
+                    category == null ? "null" : "\"" + category + "\"",
+                    notes == null ? "null" : "\"" + notes + "\"", aliceCard);
+            postTransaction(alice, json).andExpect(status().isCreated());
+        }
+    }
+
     @Nested
     class GetOne {
 

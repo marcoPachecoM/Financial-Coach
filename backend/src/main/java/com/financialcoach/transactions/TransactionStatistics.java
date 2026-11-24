@@ -92,7 +92,8 @@ public class TransactionStatistics {
     }
 
     /** "%text%" in lower case, with LIKE wildcards in the text escaped (the queries use escape '\\'). */
-    private static String likePattern(String text) {
+    /** A lower-case LIKE pattern containing {@code text}, wildcards escaped; "%" when blank. */
+    static String likePattern(String text) {
         if (text == null || text.isBlank()) {
             return "%";
         }

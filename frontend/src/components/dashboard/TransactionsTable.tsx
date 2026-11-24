@@ -1,15 +1,22 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import type { Transaction } from '../../types/transaction';
 import type { RecurrenceFrequency } from '../../types/api';
 import { FREQUENCY_LABELS } from '../../types/recurring';
 import { CategoryBadge } from '../common/Badge';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { useAsync } from '../../hooks/useAsync';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { getTransactionPage } from '../../services/transactions';
 
 interface TransactionsTableProps {
   /** Heading, e.g. the day or month shown. */
   title?: string;
-  transactions: Transaction[];
-  loading?: boolean;
+  accountId: string;
+  /** Inclusive dates "YYYY-MM-DD" of the period shown (the selected day, or the month). */
+  startDate: string;
+  endDate: string;
+  /** Changes after any edit elsewhere (new, edited or deleted transaction): reloads the page. */
+  refreshKey: number;
   selectedCategory: string;
   onOpenUpload: () => void;
   onView: (transaction: Transaction) => void;
@@ -23,13 +30,25 @@ const FREQUENCIES = Object.keys(FREQUENCY_LABELS) as RecurrenceFrequency[];
 
 const ITEMS_PER_PAGE = 10;
 
+/** An amount bound typed by the user: null when empty, NaN when not a valid non-negative number. */
+const parseBound = (value: string): number | null => {
+  if (value.trim() === '') return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0 ? amount : Number.NaN;
+};
+
+const amountInput =
+  'w-20 pl-5 pr-2 py-1.5 text-xs bg-slate-50 border rounded-xl focus:bg-white outline-hidden transition-all [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none';
+
 const actionButton =
   'p-1.5 rounded-lg text-slate-400 transition-colors cursor-pointer';
 
 export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   title = 'Transactions',
-  transactions,
-  loading = false,
+  accountId,
+  startDate,
+  endDate,
+  refreshKey,
   selectedCategory,
   onOpenUpload,
   onView,
@@ -38,42 +57,63 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   onMakeRecurring,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const min = parseBound(minAmount);
+  const max = parseBound(maxAmount);
+  const minInvalid = Number.isNaN(min);
+  const maxInvalid = Number.isNaN(max);
+  const rangeInverted = min !== null && max !== null && !minInvalid && !maxInvalid && min > max;
+  /** While a bound is wrong, the amount filter is not applied (the inputs say why). */
+  const amountFilterValid = !minInvalid && !maxInvalid && !rangeInverted;
   /** Transaction whose "Make recurring" menu is open. */
   const [menuFor, setMenuFor] = useState<string | null>(null);
-  // The page belongs to a filter: changing the category or the search goes back to page 1.
-  const filterKey = `${title}|${selectedCategory}|${searchQuery}`;
+  // Typing waits 300 ms before asking the server; the inputs still update at once.
+  const text = useDebouncedValue(searchQuery.trim());
+  const debouncedMin = useDebouncedValue(min);
+  const debouncedMax = useDebouncedValue(max);
+  const debouncedValid = !Number.isNaN(debouncedMin) && !Number.isNaN(debouncedMax)
+    && !(debouncedMin !== null && debouncedMax !== null && debouncedMin > debouncedMax);
+
+  // The page belongs to a filter: changing the period, category, search or amounts goes back to page 1.
+  const filterKey = [accountId, startDate, endDate, selectedCategory, text,
+    debouncedValid ? debouncedMin : null, debouncedValid ? debouncedMax : null].join('|');
   const [pageState, setPageState] = useState({ filterKey, page: 1 });
   const requestedPage = pageState.filterKey === filterKey ? pageState.page : 1;
   const setCurrentPage = (update: (page: number) => number) =>
     setPageState({ filterKey, page: update(requestedPage) });
 
-  // Filter transactions based on selected category & search query
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter((tx) => {
-      // 1. Category filter
-      if (selectedCategory !== 'all' && tx.categoryGroup !== selectedCategory) {
-        return false;
-      }
-
-      // 2. Search: merchant, category, group, notes or amount
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        return [tx.name, tx.categoryGroup, tx.category, tx.notes, Math.abs(tx.amount).toFixed(2)]
-          .some((value) => value?.toLowerCase().includes(q));
-      }
-
-      return true;
-    });
-  }, [transactions, selectedCategory, searchQuery]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE));
-  // Also stays valid when the data shrinks (e.g. another account is selected).
-  const currentPage = Math.min(requestedPage, totalPages);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const displayedTransactions = filteredTransactions.slice(
-    startIndex,
-    startIndex + ITEMS_PER_PAGE,
+  // Every filter and the pagination run in the backend: only the 10 rows shown are loaded.
+  const result = useAsync(
+    () =>
+      getTransactionPage({
+        accountId,
+        startDate,
+        endDate,
+        text: text || null,
+        categoryGroup: selectedCategory === 'all' ? null : selectedCategory,
+        // While a bound is wrong it is not sent (the inputs say why).
+        minAmount: debouncedValid ? debouncedMin : null,
+        maxAmount: debouncedValid ? debouncedMax : null,
+        page: requestedPage,
+        size: ITEMS_PER_PAGE,
+      }),
+    // No account yet (accounts still loading): nothing to ask for.
+    accountId ? `${filterKey}|${requestedPage}|${refreshKey}` : null,
   );
+  // The previous page stays on screen while the next one loads, instead of flashing "Loading".
+  const page = result.data ?? result.previousData;
+  const loading = result.loading;
+  const totalElements = page?.totalElements ?? 0;
+  const totalPages = Math.max(1, page?.totalPages ?? 1);
+  const currentPage = requestedPage;
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const displayedTransactions = page?.transactions ?? [];
+
+  // After deleting the last row of the last page, that page no longer exists: go to the new last one.
+  if (result.data && result.data.transactions.length === 0 && requestedPage > 1 && result.data.totalPages < requestedPage) {
+    setPageState({ filterKey, page: Math.max(1, result.data.totalPages) });
+  }
 
   const handlePrevPage = () => {
     setCurrentPage((prev) => Math.max(prev - 1, 1));
@@ -91,7 +131,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-bold text-slate-900 font-sans">{title}</h3>
             <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono">
-              {filteredTransactions.length} records
+              {totalElements} records
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -99,8 +139,72 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           </p>
         </div>
 
-        {/* Search & Actions */}
-        <div className="flex items-center gap-2.5">
+        {/* Amount range, search & actions */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1.5" role="group" aria-label="Filter by amount range">
+              <span className="text-xs text-slate-500 font-medium">Amount</span>
+              <div className="relative">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.01"
+                  value={minAmount}
+                  onChange={(e) => setMinAmount(e.target.value)}
+                  placeholder="Min"
+                  aria-label="Minimum amount"
+                  aria-invalid={minInvalid || rangeInverted}
+                  className={`${amountInput} ${
+                    minInvalid || rangeInverted
+                      ? 'border-rose-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                      : 'border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
+                  }`}
+                />
+              </div>
+              <span className="text-xs text-slate-400" aria-hidden="true">–</span>
+              <div className="relative">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.01"
+                  value={maxAmount}
+                  onChange={(e) => setMaxAmount(e.target.value)}
+                  placeholder="Max"
+                  aria-label="Maximum amount"
+                  aria-invalid={maxInvalid || rangeInverted}
+                  className={`${amountInput} ${
+                    maxInvalid || rangeInverted
+                      ? 'border-rose-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                      : 'border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
+                  }`}
+                />
+              </div>
+              {(minAmount || maxAmount) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMinAmount('');
+                    setMaxAmount('');
+                  }}
+                  aria-label="Clear amount range"
+                  title="Clear amount range"
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined !text-[16px]">close</span>
+                </button>
+              )}
+            </div>
+            {!amountFilterValid && (
+              <p role="alert" className="text-[11px] text-rose-600 mt-1">
+                {rangeInverted ? 'Min must be less than or equal to max.' : 'Amounts must be 0 or more.'}
+              </p>
+            )}
+          </div>
+
           <div className="relative">
             <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 !text-[18px]">
               search
@@ -137,7 +241,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-sm">
-            {displayedTransactions.length === 0 ? (
+            {result.error && !page ? (
+              <tr>
+                <td colSpan={5} role="alert" className="py-12 text-center text-sm text-rose-600">
+                  {result.error}
+                </td>
+              </tr>
+            ) : displayedTransactions.length === 0 ? (
               <tr>
                 <td colSpan={5} className="py-12 text-center text-slate-400">
                   <div className="flex flex-col items-center justify-center">
@@ -290,9 +400,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       {/* Table Footer with Pagination Controls */}
       <div className="px-5 md:px-6 py-3.5 bg-slate-50/60 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
         <span className="font-mono text-slate-500">
-          Showing {filteredTransactions.length > 0 ? startIndex + 1 : 0} -{' '}
-          {Math.min(startIndex + ITEMS_PER_PAGE, filteredTransactions.length)} of{' '}
-          {filteredTransactions.length} transactions
+          Showing {totalElements > 0 ? startIndex + 1 : 0} -{' '}
+          {Math.min(startIndex + ITEMS_PER_PAGE, totalElements)} of{' '}
+          {totalElements} transactions
+          {loading && page && <span className="ml-2 text-slate-400">· updating…</span>}
         </span>
 
         {/* Pagination Navigation */}
@@ -317,9 +428,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
           <button
             onClick={handleNextPage}
-            disabled={currentPage === totalPages || filteredTransactions.length === 0}
+            disabled={currentPage >= totalPages || totalElements === 0}
             className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-              currentPage === totalPages || filteredTransactions.length === 0
+              currentPage >= totalPages || totalElements === 0
                 ? 'border-slate-200 text-slate-300 bg-slate-50 cursor-not-allowed'
                 : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-2xs cursor-pointer active:scale-95'
             }`}

@@ -1,6 +1,7 @@
 package com.financialcoach.transactions;
 
 import com.financialcoach.accounts.AccountService;
+import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.categorization.CategorizationService;
 import com.financialcoach.categorization.CategoryGroupAssignment;
 import com.financialcoach.categorization.CategoryGroupSource;
@@ -12,6 +13,9 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -27,6 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class TransactionService {
 
     /** Newest first; id breaks ties so pages are stable when several share a datetime. */
+    /** Above any amount the API accepts (12 digits and 2 decimals): "no upper bound". */
+    private static final BigDecimal NO_MAX_AMOUNT = new BigDecimal("999999999999.99");
     private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("occurredAt"), Sort.Order.desc("id"));
 
     private final TransactionRepository transactions;
@@ -43,9 +49,16 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
-    Page<Transaction> list(UUID userId, UUID accountId, int page, int size, DateRange range) {
+    Page<Transaction> list(UUID userId, UUID accountId, int page, int size, DateRange range,
+                           TransactionListFilter filter) {
         accountService.requireOwned(userId, accountId);
+        Collection<CategoryGroup> groups = filter.categoryGroup() == null
+                ? Arrays.asList(CategoryGroup.values())
+                : Set.of(filter.categoryGroup());
         return transactions.findPage(userId, accountId, range.from(), range.to(),
+                TransactionStatistics.likePattern(filter.text()), groups,
+                filter.minAmount() == null ? BigDecimal.ZERO : filter.minAmount(),
+                filter.maxAmount() == null ? NO_MAX_AMOUNT : filter.maxAmount(),
                 PageRequest.of(page - 1, size, NEWEST_FIRST));
     }
 

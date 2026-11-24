@@ -1,7 +1,11 @@
 package com.financialcoach.transactions;
 
 import com.financialcoach.auth.AuthenticatedUser;
+import com.financialcoach.categorization.CategoryGroup;
 import com.financialcoach.shared.DateRange;
+import com.financialcoach.shared.Money;
+import com.financialcoach.shared.error.ApiFieldError;
+import com.financialcoach.shared.error.ValidationException;
 import com.financialcoach.shared.error.PayloadTooLargeException;
 import com.financialcoach.shared.web.QueryParameters;
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,10 +13,14 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
+import java.math.BigDecimal;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -39,7 +47,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 @RequestMapping("/api/v1/transactions")
 class TransactionController {
 
-    private static final Set<String> LIST_PARAMETERS = Set.of("account_id", "page", "size", "start_date", "end_date");
+    private static final Set<String> LIST_PARAMETERS = Set.of("account_id", "page", "size", "start_date", "end_date",
+            "q", "category_group", "min_amount", "max_amount");
     static final String ROW_COUNT_HEADER = "X-Row-Count";
     private static final Set<String> EXPORT_PARAMETERS = Set.of("account_id", "start_date", "end_date");
 
@@ -66,10 +75,49 @@ class TransactionController {
                                  @RequestParam(name = "start_date", required = false)
                                  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
                                  @RequestParam(name = "end_date", required = false)
-                                 @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+                                 @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+                                 @RequestParam(name = "q", required = false) @Size(max = 100) String text,
+                                 @RequestParam(name = "category_group", required = false) String categoryGroup,
+                                 @RequestParam(name = "min_amount", required = false) String minAmount,
+                                 @RequestParam(name = "max_amount", required = false) String maxAmount) {
         QueryParameters.requireOnly(request, LIST_PARAMETERS);
-        return TransactionPageResponse.from(
-                transactionService.list(user.id(), accountId, page, size, DateRange.between(startDate, endDate)));
+        DateRange range = DateRange.between(startDate, endDate);
+        TransactionListFilter filter = listFilter(text, categoryGroup, minAmount, maxAmount);
+        return TransactionPageResponse.from(transactionService.list(user.id(), accountId, page, size, range, filter));
+    }
+
+    /** Checks the optional filters of the list; every problem is reported at once (400). */
+    private static TransactionListFilter listFilter(String text, String categoryGroup, String minAmount,
+                                                    String maxAmount) {
+        List<ApiFieldError> errors = new ArrayList<>();
+        CategoryGroup group = null;
+        if (categoryGroup != null && !categoryGroup.isBlank()) {
+            try {
+                group = CategoryGroup.fromLabel(categoryGroup.strip());
+            } catch (IllegalArgumentException e) {
+                errors.add(ApiFieldError.of("category_group", "must be one of the category groups"));
+            }
+        }
+        BigDecimal min = amountBound("min_amount", minAmount, errors);
+        BigDecimal max = amountBound("max_amount", maxAmount, errors);
+        if (min != null && max != null && min.compareTo(max) > 0) {
+            errors.add(ApiFieldError.of("max_amount", "must be greater than or equal to min_amount"));
+        }
+        if (!errors.isEmpty()) {
+            throw new ValidationException(errors);
+        }
+        return new TransactionListFilter(text == null || text.isBlank() ? null : text, group, min, max);
+    }
+
+    private static BigDecimal amountBound(String field, String value, List<ApiFieldError> errors) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        if (!value.strip().matches(Money.POSITIVE_PATTERN)) {
+            errors.add(ApiFieldError.of(field, Money.POSITIVE_MESSAGE));
+            return null;
+        }
+        return Money.parse(value.strip());
     }
 
     @PostMapping

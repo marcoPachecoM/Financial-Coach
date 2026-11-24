@@ -41,6 +41,8 @@ export function useAsync<T>(load: () => Promise<T>, key: string | null) {
     data: current?.data,
     error: current?.error ?? null,
     loading: key !== null && (current === null || current.version !== version),
+    /** The last data loaded, even for an older key: keeps a table filled while the next page loads. */
+    previousData: result?.data,
     refetch,
   };
 }
