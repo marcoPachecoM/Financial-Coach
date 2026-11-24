@@ -22,7 +22,7 @@ The original Flask backend was replaced by the Spring Boot one and removed from 
 
 ## 2. Backend
 
-Modules: **authentication** (JWT access and refresh tokens), **accounts** with an optional monthly budget, **transactions** (typed in or imported from CSV), **recurring transactions** (the next occurrences are created automatically every day), **analytics** (summary, spending by category group, monthly budget and budgets per category group), **alerts** and the AI **copilot**. Transactions have a **category group** from a closed list of 26 (assigned from the merchant cache when missing, falling back to `Other`; an LLM step is planned) and an optional free-text **category** inside it (e.g. group `Utilities`, category `Gas`). See [docs/database.md](docs/database.md) for the data model.
+Modules: **authentication** (JWT access and refresh tokens), **accounts** with an optional monthly budget, **transactions** (typed in or imported from CSV), **recurring transactions** (the next occurrences are created automatically every day), **analytics** (summary, spending by category group, monthly budget and budgets per category group), **alerts** and the AI **copilot**. Transactions have a **category group** from a closed list of 26 (assigned automatically when missing; see [Automatic categorization](#automatic-categorization)) and an optional free-text **category** inside it (e.g. group `Utilities`, category `Gas`). See [docs/database.md](docs/database.md) for the data model.
 
 ### Endpoints
 
@@ -54,12 +54,12 @@ All under `/api/v1`. Everything except login, refresh and the public health chec
 | `GET /accounts/{id}/alerts?month=YYYY-MM` | The month's [alerts](#alerts), most severe first. Default month: the current one. |
 | **Transactions** | |
 | `GET /transactions?account_id=…` | Newest first, paginated (`page` from 1, `size` 1–100, default 10). Optional filters, all applied by the server: `start_date` and `end_date`; `q` (text in the name, category, notes or a tag); `category_group`; `tag` (one exact tag); `min_amount` and `max_amount` (absolute amount, inclusive, so `$50–$200` works for expenses and income). |
-| `POST /transactions` | Creates one. Expenses have a positive amount, income a negative one. Without `category_group` it is assigned automatically. With `recurrence` (`frequency`, optional `end_date`) it also becomes a recurring transaction. Optional `tags` (names; new ones are created, known ones reused ignoring case; at most 10, up to 40 characters, no `;`). |
+| `POST /transactions` | Creates one. Expenses have a positive amount, income a negative one. Without `category_group` it is assigned automatically ([how](#automatic-categorization)); a group chosen here or in an edit is remembered for that merchant. With `recurrence` (`frequency`, optional `end_date`) it also becomes a recurring transaction. Optional `tags` (names; new ones are created, known ones reused ignoring case; at most 10, up to 40 characters, no `;`). |
 | `GET /transactions/{id}` | One transaction. |
 | `PATCH /transactions/{id}` | Changes the fields sent; `category` and `notes` can be cleared with `null`. `tags` replaces every tag (`[]` removes them). The next occurrences of a recurring transaction copy the tags of the latest one. |
 | `DELETE /transactions/{id}` | Deletes it (soft delete: it disappears from every list and total). If it was an occurrence of a recurring transaction, that occurrence is not created again. |
 | `GET /transactions/export` | Downloads the transactions as CSV in the import format, oldest first: one account (`account_id`) or all of them, optionally between `start_date` and `end_date`. Expenses negative, income positive. Text that looks like a spreadsheet formula gets a leading `'` (CSV injection), which the import removes. |
-| `POST /transactions/upload-csv` | Multipart `file`. Header: `Type,Date,Time,Name,Amount,Category Group,Category,Account,Notes`, optionally followed by `Tags` (names separated by `;`). All or nothing: every row is validated first (errors listed per row), then accounts that do not exist yet are created and duplicates are skipped: rows already imported, and rows identical to an existing transaction (same account, date and time to the second, name and amount), so an exported file can be imported again. |
+| `POST /transactions/upload-csv` | Multipart `file`. Header: `Type,Date,Time,Name,Amount,Category Group,Category,Account,Notes`, optionally followed by `Tags` (names separated by `;`). All or nothing: every row is validated first (errors listed per row), then accounts that do not exist yet are created and duplicates are skipped: rows already imported, and rows identical to an existing transaction (same account, date and time to the second, name and amount), so an exported file can be imported again. Rows with an empty `Category Group` are categorized automatically (`records_categorized` in the response). |
 | `GET /tags` | The user's tags in use, most used first, with how many transactions carry each; `account_id` limits the count to one account. |
 | **Recurring transactions** | |
 | `GET /recurring-transactions?account_id=…` | The account's recurring transactions, with their next due date. |
@@ -204,6 +204,8 @@ Configuration (environment variables; the `dev` profile provides a development s
 | `REFRESH_TOKEN_CLEANUP_CRON` | `0 30 3 * * *` | Daily deletion of refresh tokens expired more than a day ago. |
 | `GEMINI_API_KEY` | none (required) | Key of the copilot's LLM ([Google AI Studio](https://aistudio.google.com/apikey)). Tests use a fake one. |
 | `GEMINI_MODEL` | `gemini-4-hydrogen` | Any model of your key; a lighter one (e.g. `gemini-flash-lite-latest`) is faster and less often overloaded. |
+| `CATEGORIZATION_LLM_ENABLED` | `true` | Ask the LLM for the group of new merchants. `false`: they get `Other` (no API calls). |
+| `CATEGORIZATION_BATCH_SIZE` / `CATEGORIZATION_MAX_CALLS` | `100` / `3` | Merchants per LLM call, and calls per import or form request (merchants beyond get `Other`). |
 | `COPILOT_REQUESTS_PER_MINUTE` | `10` | Chat messages per user and minute. |
 | `COPILOT_DAILY_LIMIT` | `100` | Chat messages per user and day: caps what the LLM can cost. |
 | `COPILOT_MAX_LLM_CALLS` | `5` | Calls to the model for one message (the tool loop; a normal question takes 2 or 3). Above it the message stops with `502 COPILOT_CALL_LIMIT`. |
@@ -250,6 +252,17 @@ The per-email login limit (`auth/LoginThrottle`) works differently: it counts co
 Limitations: a client can send a full window's worth at 10:00:59 and another at 10:01:00 (fixed windows allow that burst), and the counters live in memory, so they reset on restart and each instance counts on its own. Behind a reverse proxy, set `server.forward-headers-strategy` so the real client IP is used.
 
 To change a limit, set its variable, e.g. `COPILOT_DAILY_LIMIT=300` in `backend/.env`, and restart.
+
+### Automatic categorization
+
+A transaction without a category group (an empty `Category Group` in the CSV, or "Automatic" in the form) gets one from the first of these that knows its merchant, matched by its normalized name (`NETFLIX.COM #123` → `netflix com`):
+
+1. **The user's corrections**: whenever they choose or change a transaction's group, it is remembered for that merchant (`user_merchant_categories`), only for them.
+2. **The shared merchant cache** (`merchant_category_cache`): every merchant the LLM classified before, for any user.
+3. **The LLM**: every merchant still unknown goes in **one call** (up to 100 per call, 3 calls per import), and the answers are cached. A strict check keeps only exact labels for merchants that were sent.
+4. **`Other`**, when the LLM is disabled, fails or is unsure. The import never fails because of it.
+
+Rows with a group in the file keep it and never reach the LLM. **Cost:** each merchant is classified once in the app's lifetime, so a first import of a bank statement takes about 1,000 tokens in one request, and later ones only send the new merchants (usually none). **Privacy:** only the normalized merchant name is sent (digits removed): never amounts, dates, accounts, notes or user data. **Why corrections are per user:** written to the shared cache, one user could change everyone's categorization. The log shows one `categorization:` line per call with its tokens.
 
 ### Copilot (AI chat)
 

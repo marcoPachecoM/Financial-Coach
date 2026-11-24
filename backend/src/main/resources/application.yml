@@ -99,6 +99,13 @@ financial-coach:
     account-security: ${RATE_LIMIT_ACCOUNT_SECURITY:10}
     # CSV export and import requests per user and minute (each one reads or writes a whole file).
     csv: ${RATE_LIMIT_CSV:10}
+  # Category groups for transactions without one: the user's corrections, the shared merchant cache,
+  # then the LLM (only normalized merchant names are sent, many per call), else Other.
+  categorization:
+    llm-enabled: ${CATEGORIZATION_LLM_ENABLED:true}
+    batch-size: ${CATEGORIZATION_BATCH_SIZE:100}
+    # LLM calls per import or form request; merchants beyond get Other.
+    max-calls-per-request: ${CATEGORIZATION_MAX_CALLS:3}
   # Generator of recurring transactions: daily (server time) and once at startup.
   recurring:
     scheduler-enabled: ${RECURRING_SCHEDULER_ENABLED:true}

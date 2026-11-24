@@ -11,6 +11,9 @@ spring:
 financial-coach:
   jwt:
     secret: test-only-jwt-secret-0123456789abcdef
+  # Gemini is never called: merchants not in the caches get Other (CategorizationTest mocks the classifier).
+  categorization:
+    llm-enabled: false
   # Tests call RecurringTransactionService.generateDue with fixed dates instead.
   recurring:
     scheduler-enabled: false

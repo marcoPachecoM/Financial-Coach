@@ -2388,7 +2388,7 @@ components:
 
     CsvUploadResponse:
       type: object
-      required: [records_imported, records_duplicated, recurring_matched, accounts_created]
+      required: [records_imported, records_duplicated, recurring_matched, records_categorized, accounts_created]
       properties:
         records_imported:
           type: integer
@@ -2405,6 +2405,13 @@ components:
             merchant, dated close to a due date. Each one replaces the occurrence that
             had been created automatically (which is deleted), or covers a future one.
           example: 2
+        records_categorized:
+          type: integer
+          description: |
+            Imported rows with an empty `Category Group` that got a group automatically:
+            from the user's earlier corrections, the shared merchant cache or the LLM.
+            The other empty ones got `Other`. Rows with a group in the file keep it.
+          example: 41
         accounts_created:
           type: array
           description: Accounts created because the CSV referenced names that did not exist.
