@@ -51,6 +51,9 @@ public class CopilotService {
             - Plain text only, no Markdown (no asterisks, no headings); use "- " for lists.
             - Answer in the user's language, briefly (a few sentences or a short list).
             - Do not give investment, tax or legal advice.
+            - Transactions can have tags (labels like trip-cancun or work). When the user mentions a
+              tag (#work) or a trip, event or project, filter by tag; if unsure of its name, call
+              spendingByTag first. For a tag, omit the dates unless the user gives a period.
             - Earlier messages of the conversation may be included: use them to understand follow-up
               questions ("and in August?"), but get the numbers again from the tools.
             """;
@@ -58,7 +61,7 @@ public class CopilotService {
     /** Answer given when the model calls a tool that does not exist (Spring AI throws). */
     private static final String UNKNOWN_TOOL_ANSWER =
             "I can't answer that yet. I can tell you your totals, spending by category, "
-                    + "search transactions by merchant, your budget and your recurring charges.";
+                    + "search transactions by merchant or tag, spending by tag, your budget and your recurring charges.";
 
     private final ChatClient chatClient;
     private final MessageChatMemoryAdvisor memoryAdvisor;
