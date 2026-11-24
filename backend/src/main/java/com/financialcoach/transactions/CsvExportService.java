@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.Writer;
 import java.text.Normalizer;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -77,8 +79,9 @@ class CsvExportService {
             for (int page = 0; ; page++) {
                 Slice<CsvExportRow> rows = transactions.exportPage(export.userId(), export.accountIds(),
                         export.range().from(), export.range().to(), PageRequest.of(page, PAGE_SIZE));
+                Map<UUID, List<String>> tags = tagsOf(rows.getContent());
                 for (CsvExportRow row : rows) {
-                    csv.write(row, export.accountNames().get(row.accountId()));
+                    csv.write(row, export.accountNames().get(row.accountId()), tags.getOrDefault(row.id(), List.of()));
                     count++;
                 }
                 if (!rows.hasNext()) {
@@ -94,6 +97,19 @@ class CsvExportService {
                 export.startDate() == null ? "any" : export.startDate(),
                 export.endDate() == null ? "any" : export.endDate(), count);
         return count;
+    }
+
+    /** Tag names per transaction of one page, alphabetical: one query for the whole page. */
+    private Map<UUID, List<String>> tagsOf(List<CsvExportRow> rows) {
+        if (rows.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, List<String>> tags = new HashMap<>();
+        for (Object[] pair : transactions.tagNamesOf(rows.stream().map(CsvExportRow::id).toList())) {
+            tags.computeIfAbsent((UUID) pair[0], id -> new ArrayList<>()).add((String) pair[1]);
+        }
+        tags.values().forEach(names -> names.sort(String.CASE_INSENSITIVE_ORDER));
+        return tags;
     }
 
     /** e.g. financial-coach-debit-card-2026-11-01-to-2026-11-30.csv */

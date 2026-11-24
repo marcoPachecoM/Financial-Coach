@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -46,6 +47,10 @@ record TransactionCreateRequest(
 
         /* Optional: repeat this transaction automatically (creates a recurring transaction). */
         @Valid
-        RecurrenceRequest recurrence
+        RecurrenceRequest recurrence,
+
+        /* Optional tag names; new ones are created for the user (see TagService). */
+        @Size(max = 50)
+        List<String> tags
 ) {
 }

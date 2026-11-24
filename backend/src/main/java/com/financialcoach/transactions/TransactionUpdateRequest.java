@@ -6,6 +6,7 @@ import com.financialcoach.shared.Money;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -57,6 +58,21 @@ final class TransactionUpdateRequest {
         this.datetime = datetime;
         this.datetimeProvided = true;
     }
+
+    @Size(max = 50)
+    private List<String> tags;
+    private boolean tagsProvided;
+
+    /** Replaces every tag; an empty list or null removes them all. */
+    @JsonProperty("tags")
+    void setTags(List<String> tags) {
+        this.tags = tags;
+        this.tagsProvided = true;
+    }
+
+    List<String> tags() { return tags; }
+
+    boolean tagsProvided() { return tagsProvided; }
 
     @JsonProperty("name")
     void setName(String name) {
@@ -120,6 +136,7 @@ final class TransactionUpdateRequest {
 
     boolean hasNoChanges() {
         return !typeProvided && !datetimeProvided && !nameProvided && !amountProvided
-                && !categoryGroupProvided && !categoryProvided && !accountIdProvided && !notesProvided;
+                && !categoryGroupProvided && !categoryProvided && !accountIdProvided && !notesProvided
+                && !tagsProvided;
     }
 }

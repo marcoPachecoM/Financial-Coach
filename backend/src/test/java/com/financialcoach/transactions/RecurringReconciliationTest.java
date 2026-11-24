@@ -51,7 +51,8 @@ class RecurringReconciliationTest extends ApiIntegrationTest {
         // Netflix every 5th since September: September (typed), October and November (generated).
         mvc.perform(post("/api/v1/transactions").with(as(alice)).contentType(MediaType.APPLICATION_JSON).content("""
                         {"type": "EXPENSE", "datetime": "2026-09-05T12:30", "name": "Netflix", "amount": "199",
-                         "category_group": "Services", "account_id": "%s", "recurrence": {"frequency": "MONTHLY"}}
+                         "category_group": "Services", "account_id": "%s", "tags": ["subscriptions"],
+                         "recurrence": {"frequency": "MONTHLY"}}
                         """.formatted(card)))
                 .andExpect(status().isCreated());
     }
@@ -71,6 +72,19 @@ class RecurringReconciliationTest extends ApiIntegrationTest {
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM transactions WHERE source = 'RECURRING' AND deleted_at IS NOT NULL", Integer.class))
                 .isEqualTo(1);
+    }
+
+    @Test
+    void theRealChargeKeepsTheTagsOfTheGeneratedOne() throws Exception {
+        upload("Expense,2026-11-06 03:10:00,03:10,NETFLIX.COM 866-579,-219.00,Services,,Debit card,\n")
+                .andExpect(jsonPath("$.recurring_matched").value(1));
+
+        syncDatabase();
+        assertThat(jdbc.queryForList("""
+                SELECT g.name FROM transactions t
+                JOIN transaction_tags tt ON tt.transaction_id = t.id JOIN tags g ON g.id = tt.tag_id
+                WHERE t.source = 'CSV' AND t.deleted_at IS NULL
+                """, String.class)).containsExactly("subscriptions");
     }
 
     @Test

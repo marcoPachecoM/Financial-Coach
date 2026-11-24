@@ -29,7 +29,10 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 class CsvExportTest extends ApiIntegrationTest {
 
     private static final String EXPORT = "/api/v1/transactions/export";
+    /** Import header (without Tags): what the tests upload. */
     private static final String HEADER = "Type,Date,Time,Name,Amount,Category Group,Category,Account,Notes";
+    /** The export always adds the Tags column. */
+    private static final String EXPORT_HEADER = HEADER + ",Tags";
     private static final String BOM = "﻿";
 
     @Autowired
@@ -62,9 +65,9 @@ class CsvExportTest extends ApiIntegrationTest {
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
 
         // Bank signs: expenses negative, income positive. Values with a comma are quoted.
-        assertThat(body).isEqualTo(BOM + HEADER + "\r\n"
-                + "Income,2026-09-24 06:55:57,06:55,Payroll,25000.00,Salary,,Debit card,\"September, bonus\"\r\n"
-                + "Expense,2026-09-25 15:58:12,15:58,Engigas,-232.50,Utilities,Gas,Debit card,\r\n");
+        assertThat(body).isEqualTo(BOM + EXPORT_HEADER + "\r\n"
+                + "Income,2026-09-24 06:55:57,06:55,Payroll,25000.00,Salary,,Debit card,\"September, bonus\",\r\n"
+                + "Expense,2026-09-25 15:58:12,15:58,Engigas,-232.50,Utilities,Gas,Debit card,,\r\n");
     }
 
     @Test
@@ -145,7 +148,7 @@ class CsvExportTest extends ApiIntegrationTest {
         String body = mvc.perform(export(carol)).andExpect(status().isOk())
                 .andExpect(header().string("X-Row-Count", "0"))
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        assertThat(body).isEqualTo(BOM + HEADER + "\r\n");
+        assertThat(body).isEqualTo(BOM + EXPORT_HEADER + "\r\n");
     }
 
     @Test

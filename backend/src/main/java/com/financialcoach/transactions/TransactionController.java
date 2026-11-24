@@ -48,7 +48,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 class TransactionController {
 
     private static final Set<String> LIST_PARAMETERS = Set.of("account_id", "page", "size", "start_date", "end_date",
-            "q", "category_group", "min_amount", "max_amount");
+            "q", "category_group", "min_amount", "max_amount", "tag");
     static final String ROW_COUNT_HEADER = "X-Row-Count";
     private static final Set<String> EXPORT_PARAMETERS = Set.of("account_id", "start_date", "end_date");
 
@@ -79,16 +79,17 @@ class TransactionController {
                                  @RequestParam(name = "q", required = false) @Size(max = 100) String text,
                                  @RequestParam(name = "category_group", required = false) String categoryGroup,
                                  @RequestParam(name = "min_amount", required = false) String minAmount,
-                                 @RequestParam(name = "max_amount", required = false) String maxAmount) {
+                                 @RequestParam(name = "max_amount", required = false) String maxAmount,
+                                 @RequestParam(name = "tag", required = false) @Size(max = 41) String tag) {
         QueryParameters.requireOnly(request, LIST_PARAMETERS);
         DateRange range = DateRange.between(startDate, endDate);
-        TransactionListFilter filter = listFilter(text, categoryGroup, minAmount, maxAmount);
+        TransactionListFilter filter = listFilter(text, categoryGroup, minAmount, maxAmount, tag);
         return TransactionPageResponse.from(transactionService.list(user.id(), accountId, page, size, range, filter));
     }
 
     /** Checks the optional filters of the list; every problem is reported at once (400). */
     private static TransactionListFilter listFilter(String text, String categoryGroup, String minAmount,
-                                                    String maxAmount) {
+                                                    String maxAmount, String tag) {
         List<ApiFieldError> errors = new ArrayList<>();
         CategoryGroup group = null;
         if (categoryGroup != null && !categoryGroup.isBlank()) {
@@ -106,7 +107,8 @@ class TransactionController {
         if (!errors.isEmpty()) {
             throw new ValidationException(errors);
         }
-        return new TransactionListFilter(text == null || text.isBlank() ? null : text, group, min, max);
+        String tagName = tag == null || TagService.clean(tag).isEmpty() ? null : tag;
+        return new TransactionListFilter(text == null || text.isBlank() ? null : text, group, min, max, tagName);
     }
 
     private static BigDecimal amountBound(String field, String value, List<ApiFieldError> errors) {

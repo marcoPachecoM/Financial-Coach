@@ -224,6 +224,30 @@ class RecurringTransactionsTest extends ApiIntegrationTest {
         }
 
         @Test
+        void occurrencesCopyTheTagsOfTheLatestOne() throws Exception {
+            String body = mvc.perform(post(TRANSACTIONS).with(as(alice)).contentType(MediaType.APPLICATION_JSON).content("""
+                            {"type": "EXPENSE", "datetime": "2026-09-05T12:30", "name": "Netflix", "amount": "199",
+                             "category_group": "Services", "account_id": "%s", "tags": ["subscriptions"],
+                             "recurrence": {"frequency": "MONTHLY"}}
+                            """.formatted(aliceCard)))
+                    .andExpect(status().isCreated())
+                    .andReturn().getResponse().getContentAsString();
+            assertThat(JsonPath.<List<String>>read(body, "$.tags")).containsExactly("subscriptions");
+            assertThat(tagsByOccurrence()).containsExactly(
+                    "2026-09-05 subscriptions", "2026-10-05 subscriptions", "2026-11-05 subscriptions");
+
+            // Retagging the latest occurrence changes the next ones.
+            String november = jdbc.queryForObject(
+                    "SELECT id FROM transactions WHERE recurrence_date = '2026-11-05'", String.class);
+            mvc.perform(patch(TRANSACTIONS + "/" + november).with(as(alice)).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"tags\": [\"subscriptions\", \"streaming\"]}"))
+                    .andExpect(status().isOk());
+            service.generateDue(LocalDate.of(2026, 12, 5));
+
+            assertThat(tagsByOccurrence()).last().isEqualTo("2026-12-05 streaming,subscriptions");
+        }
+
+        @Test
         void aDeletedOccurrenceIsNotCreatedAgain() throws Exception {
             createNetflix("2026-09-05T12:30", "\"frequency\": \"MONTHLY\"").andExpect(status().isCreated());
             String october = jdbc.queryForObject(
@@ -363,6 +387,20 @@ class RecurringTransactionsTest extends ApiIntegrationTest {
         return jdbc.queryForList("""
                 SELECT * FROM transactions WHERE name = 'Netflix' AND deleted_at IS NULL ORDER BY datetime
                 """);
+    }
+
+    /** "recurrence_date tag,tag" of each active Netflix occurrence, oldest first. */
+    private List<String> tagsByOccurrence() {
+        syncDatabase();
+        return jdbc.queryForList("""
+                SELECT t.recurrence_date || ' ' || coalesce(string_agg(g.name, ',' ORDER BY g.name), '')
+                FROM transactions t
+                LEFT JOIN transaction_tags tt ON tt.transaction_id = t.id
+                LEFT JOIN tags g ON g.id = tt.tag_id
+                WHERE t.name = 'Netflix' AND t.deleted_at IS NULL
+                GROUP BY t.id, t.recurrence_date
+                ORDER BY t.recurrence_date
+                """, String.class);
     }
 
     private List<Map<String, Object>> transactionsOf(UUID accountId) {

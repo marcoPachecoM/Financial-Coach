@@ -44,16 +44,18 @@ class CsvImportService {
     private final AccountService accountService;
     private final CategorizationService categorizationService;
     private final RecurringReconciler recurringReconciler;
+    private final TagService tagService;
     private final Clock clock;
 
     CsvImportService(TransactionRepository transactions, ImportBatchRepository importBatches,
                      AccountService accountService, CategorizationService categorizationService,
-                     RecurringReconciler recurringReconciler, Clock clock) {
+                     RecurringReconciler recurringReconciler, TagService tagService, Clock clock) {
         this.transactions = transactions;
         this.importBatches = importBatches;
         this.accountService = accountService;
         this.categorizationService = categorizationService;
         this.recurringReconciler = recurringReconciler;
+        this.tagService = tagService;
         this.clock = clock;
     }
 
@@ -72,6 +74,7 @@ class CsvImportService {
         ImportBatch batch = importBatches.save(new ImportBatch(userId, filename));
         Map<String, CategoryGroupAssignment> groupByName = new HashMap<>();
         List<Transaction> newTransactions = new ArrayList<>();
+        List<CsvRow> newRows = new ArrayList<>();
 
         for (int i = 0; i < rows.size(); i++) {
             CsvRow row = rows.get(i);
@@ -86,6 +89,13 @@ class CsvImportService {
                     userId, accounts.idFor(row.account()), row.type(), row.occurredAt(), row.name(), row.amount(),
                     group.group(), group.source(), row.category(), row.notes(),
                     batch.getId(), fingerprint));
+            newRows.add(row);
+        }
+
+        // Tags of the new rows only: a skipped duplicate does not create tags. One lookup for the file.
+        Map<String, Tag> tags = tagService.resolve(userId, newRows.stream().flatMap(r -> r.tags().stream()).toList());
+        for (int i = 0; i < newTransactions.size(); i++) {
+            newTransactions.get(i).replaceTags(TagService.pick(tags, newRows.get(i).tags()));
         }
 
         int recurringMatched = recurringReconciler.reconcile(

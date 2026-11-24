@@ -612,10 +612,40 @@
                   "value": "200",
                   "disabled": true,
                   "description": "Absolute amount, inclusive"
+                },
+                {
+                  "key": "tag",
+                  "value": "trip-cancun",
+                  "disabled": true,
+                  "description": "One exact tag"
                 }
               ]
             },
             "description": "Newest first. Both dates are inclusive (enable them in Params)."
+          }
+        },
+        {
+          "name": "List tags",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/tags?account_id={{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tags"
+              ],
+              "query": [
+                {
+                  "key": "account_id",
+                  "value": "{{accountId}}",
+                  "description": "Disable to count every account"
+                }
+              ]
+            },
+            "description": "Tags in use, most used first, with the number of transactions of each."
           }
         },
         {
@@ -639,7 +669,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"EXPENSE\",\n  \"datetime\": \"2026-09-25T15:58\",\n  \"name\": \"Engigas\",\n  \"amount\": \"232.50\",\n  \"category_group\": \"Utilities\",\n  \"category\": \"Gas\",\n  \"account_id\": \"{{accountId}}\",\n  \"notes\": \"Tanque depto\"\n}",
+              "raw": "{\n  \"type\": \"EXPENSE\",\n  \"datetime\": \"2026-09-25T15:58\",\n  \"name\": \"Engigas\",\n  \"amount\": \"232.50\",\n  \"category_group\": \"Utilities\",\n  \"category\": \"Gas\",\n  \"account_id\": \"{{accountId}}\",\n  \"notes\": \"Tanque depto\",\n  \"tags\": [\n    \"trip-cancun\",\n    \"food\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

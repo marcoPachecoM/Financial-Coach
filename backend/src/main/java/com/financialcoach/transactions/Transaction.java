@@ -6,13 +6,25 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.SQLRestriction;
@@ -98,6 +110,18 @@ class Transaction {
     private Instant updatedAt;
 
     private Instant deletedAt;
+
+    /**
+     * Tags (V9). Loaded with the transaction, because responses always include them and the open
+     * session ends with the service call; {@code @BatchSize} loads the tags of a whole page in one
+     * query instead of one per row.
+     */
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(name = "transaction_tags",
+            joinColumns = @JoinColumn(name = "transaction_id"),
+            inverseJoinColumns = @JoinColumn(name = "tag_id"))
+    @BatchSize(size = 100)
+    private Set<Tag> tags = new HashSet<>();
 
     protected Transaction() {
         // Required by JPA.
@@ -196,6 +220,40 @@ class Transaction {
 
     void markDeleted(Instant when) {
         this.deletedAt = when;
+    }
+
+    /** Replaces every tag; they must belong to the transaction's user (TagService resolves them). */
+    void replaceTags(Collection<Tag> newTags) {
+        tags.clear();
+        tags.addAll(newTags);
+    }
+
+    /**
+     * Adds the tags it does not have yet, without going over the limit per transaction: an
+     * occurrence of a recurring transaction gets the tags of the earlier ones this way.
+     */
+    void addTags(Collection<Tag> more) {
+        Set<UUID> present = new HashSet<>();
+        tags.forEach(tag -> present.add(tag.getId()));
+        for (Tag tag : more) {
+            if (tags.size() >= TagService.MAX_PER_TRANSACTION) {
+                return;
+            }
+            if (present.add(tag.getId())) {
+                tags.add(tag);
+            }
+        }
+    }
+
+    Set<Tag> getTags() {
+        return Collections.unmodifiableSet(tags);
+    }
+
+    /** Tag names in alphabetical order, ignoring case. */
+    List<String> tagNames() {
+        return tags.stream().map(Tag::getName)
+                .sorted(Comparator.comparing((String name) -> name.toLowerCase(Locale.ROOT)))
+                .toList();
     }
 
     UUID getId() {

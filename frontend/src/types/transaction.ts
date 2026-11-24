@@ -20,6 +20,8 @@ export interface Transaction {
   notes: string | null;
   /** Set when the transaction is an occurrence of a recurring transaction. */
   recurringTransactionId: string | null;
+  /** Tag names, alphabetical. */
+  tags: string[];
 }
 
 export interface CategoryStyle {

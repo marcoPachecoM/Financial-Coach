@@ -34,6 +34,7 @@ const toTransaction = (tx: ApiTransaction): Transaction => ({
   category: tx.category,
   notes: tx.notes,
   recurringTransactionId: tx.recurring_transaction_id,
+  tags: tx.tags ?? [],
 });
 
 /** What the "Add transaction" form collects. */
@@ -50,6 +51,8 @@ export interface NewTransaction {
   category?: string;
   notes?: string;
   recurrence?: { frequency: RecurrenceFrequency; endDate?: string };
+  /** Tag names; new ones are created by the API. */
+  tags?: string[];
 }
 
 /** The API wants EXPENSE positive and INCOME negative (the form only asks for the figure). */
@@ -66,6 +69,7 @@ export const createTransaction = async (input: NewTransaction): Promise<Transact
     ...(input.categoryGroup ? { category_group: input.categoryGroup } : {}),
     ...(input.category?.trim() ? { category: input.category.trim() } : {}),
     ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
+    ...(input.tags?.length ? { tags: input.tags } : {}),
     ...(input.recurrence
       ? {
           recurrence: {
@@ -90,6 +94,7 @@ export const updateTransaction = async (id: string, input: NewTransaction): Prom
     ...(input.categoryGroup ? { category_group: input.categoryGroup } : {}),
     category: input.category?.trim() || null,
     notes: input.notes?.trim() || null,
+    tags: input.tags ?? [],
   });
   return toTransaction(res.data);
 };
@@ -126,8 +131,10 @@ export interface TransactionPageQuery {
   /** Inclusive dates "YYYY-MM-DD"; null means no limit. */
   startDate: string | null;
   endDate: string | null;
-  /** Contained in the name, category or notes. */
+  /** Contained in the name, category, notes or a tag. */
   text: string | null;
+  /** Exact tag name. */
+  tag: string | null;
   categoryGroup: string | null;
   /** Bounds of the absolute amount, inclusive. */
   minAmount: number | null;
@@ -151,6 +158,7 @@ export const getTransactionPage = async (query: TransactionPageQuery): Promise<T
   if (query.endDate) params.end_date = query.endDate;
   if (query.text) params.q = query.text;
   if (query.categoryGroup) params.category_group = query.categoryGroup;
+  if (query.tag) params.tag = query.tag;
   if (query.minAmount !== null) params.min_amount = query.minAmount.toFixed(2);
   if (query.maxAmount !== null) params.max_amount = query.maxAmount.toFixed(2);
   const res = await api.get<ApiTransactionPage>("/transactions", { params });
