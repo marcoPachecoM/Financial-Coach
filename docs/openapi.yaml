@@ -340,6 +340,61 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/AccountNotFound" }
 
+  /api/v1/accounts/{account_id}/category-budgets:
+    parameters:
+      - $ref: "#/components/parameters/AccountIdPath"
+    get:
+      tags: [Accounts]
+      summary: Budgets per category group and their usage
+      description: |
+        Only the category groups with a budget appear in `budgets`, closest to
+        (or furthest over) the limit first. `spent` is the sum of the group's
+        EXPENSE transactions in the month; income does not offset it. Same
+        statuses as the account's budget; with a budget of 0, `percentage_used`
+        is `null` and any spending is `EXCEEDED`. `unbudgeted` lists the groups
+        with expenses that month and no budget, largest first.
+      operationId: getCategoryBudgets
+      parameters:
+        - name: month
+          in: query
+          description: Calendar month. Defaults to the current month (server time zone).
+          schema:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+            example: "2026-11"
+      responses:
+        "200":
+          description: Category budgets with the month's spending.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoryBudgets" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+    put:
+      tags: [Accounts]
+      summary: Replace every category budget of the account
+      description: |
+        The groups left out lose their budget; an empty list removes them all.
+        A budget applies to every calendar month. Answers with the current
+        month's usage. An unknown or repeated `category_group` is a
+        `VALIDATION_ERROR` on `budgets[i].category_group`.
+      operationId: replaceCategoryBudgets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryBudgetsRequest" }
+      responses:
+        "200":
+          description: Saved; the current month's usage.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoryBudgets" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/AccountNotFound" }
+
   /api/v1/accounts/{account_id}/alerts:
     parameters:
       - $ref: "#/components/parameters/AccountIdPath"
@@ -1387,6 +1442,71 @@ components:
             NO_BUDGET when the account has no monthly budget. Compared on exact
             amounts, not on the rounded `percentage_used` (79.999 % is ON_TRACK).
 
+    CategoryBudgetsRequest:
+      type: object
+      additionalProperties: false
+      required: [budgets]
+      properties:
+        budgets:
+          type: array
+          maxItems: 26
+          items:
+            type: object
+            additionalProperties: false
+            required: [category_group, monthly_amount]
+            properties:
+              category_group:
+                type: string
+                description: One of the 26 labels, exact spelling, e.g. `Food`.
+                example: Food
+              monthly_amount:
+                allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+                example: "5000.00"
+
+    CategoryBudgets:
+      type: object
+      required: [account_id, month, budgets, unbudgeted]
+      properties:
+        account_id: { type: string, format: uuid }
+        month:
+          type: string
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          example: "2026-11"
+        budgets:
+          type: array
+          description: The groups with a budget, closest to (or over) the limit first.
+          items:
+            type: object
+            required: [category_group, budget, spent, remaining, percentage_used, status]
+            properties:
+              category_group: { $ref: "#/components/schemas/CategoryGroup" }
+              budget: { $ref: "#/components/schemas/PositiveMoney" }
+              spent:
+                allOf: [{ $ref: "#/components/schemas/PositiveMoney" }]
+                description: Sum of the group's EXPENSE amounts in the month.
+              remaining:
+                allOf: [{ $ref: "#/components/schemas/Money" }]
+                description: budget - spent. Negative when the budget is exceeded.
+              percentage_used:
+                oneOf:
+                  - $ref: "#/components/schemas/Percentage"
+                  - type: "null"
+                description: Null for a budget of 0.
+              status:
+                type: string
+                enum: [ON_TRACK, WARNING, EXCEEDED]
+                description: Same thresholds as `BudgetUsage.status`.
+        unbudgeted:
+          type: array
+          description: Groups with expenses in the month and no budget, largest first.
+          items:
+            type: object
+            required: [category_group, spent, count]
+            properties:
+              category_group: { $ref: "#/components/schemas/CategoryGroup" }
+              spent: { $ref: "#/components/schemas/PositiveMoney" }
+              count: { type: integer, example: 7 }
+
     Transaction:
       type: object
       description: |
@@ -1601,13 +1721,17 @@ components:
 
     AlertType:
       type: string
-      enum: [BUDGET_EXCEEDED, BUDGET_WARNING, RECURRING_MISSING, RECURRING_PRICE_CHANGED,
-             RECURRING_UPCOMING, SUBSCRIPTION_AUDIT, RECURRING_SUGGESTED]
+      enum: [BUDGET_EXCEEDED, BUDGET_WARNING, CATEGORY_BUDGET_EXCEEDED, CATEGORY_BUDGET_WARNING,
+             RECURRING_MISSING, RECURRING_PRICE_CHANGED, RECURRING_UPCOMING, SUBSCRIPTION_AUDIT,
+             RECURRING_SUGGESTED]
       description: |
         Fields of `data` per type (money as strings, dates as `yyyy-MM-dd`):
 
         - `BUDGET_EXCEEDED` (CRITICAL) / `BUDGET_WARNING` (WARNING, from 80 %):
           `month`, `budget`, `spent`, `remaining`, `percentage_used`.
+        - `CATEGORY_BUDGET_EXCEEDED` (CRITICAL) / `CATEGORY_BUDGET_WARNING` (WARNING,
+          from 80 %): one per category group with a budget. `month`,
+          `category_group`, `budget`, `spent`, `remaining`, `percentage_used`.
         - `RECURRING_MISSING` (WARNING): an occurrence created automatically
           that the imported bank statements do not show, although they already
           cover its date (maybe the subscription was cancelled).

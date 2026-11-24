@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import type { BudgetStatus } from '../../types/api';
 import type { BudgetUsage } from '../../types/budget';
 import { formatCurrency } from '../../utils/formatters';
+import { BUDGET_STATUS_STYLES } from '../../utils/budgetStyles';
 
 interface BudgetCardProps {
   usage?: BudgetUsage;
@@ -9,13 +9,6 @@ interface BudgetCardProps {
   /** Saves the account's monthly budget (null removes it). Rejects with a message on error. */
   onSaveBudget: (monthlyBudget: number | null) => Promise<void>;
 }
-
-const STATUS_STYLES: Record<BudgetStatus, { label: string; bar: string; badge: string }> = {
-  ON_TRACK: { label: 'On track', bar: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  WARNING: { label: 'Close to the limit', bar: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
-  EXCEEDED: { label: 'Over budget', bar: 'bg-rose-500', badge: 'bg-rose-50 text-rose-700 border-rose-200' },
-  NO_BUDGET: { label: 'No budget', bar: 'bg-slate-300', badge: 'bg-slate-100 text-slate-600 border-slate-200' },
-};
 
 const monthLabel = (month: string) =>
   new Date(`${month}-01T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -35,7 +28,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({ usage, loading, onSaveBu
     );
   }
 
-  const style = STATUS_STYLES[usage.status];
+  const style = BUDGET_STATUS_STYLES[usage.status];
   const width = Math.min(100, usage.percentageUsed ?? 0);
 
   const startEditing = () => {

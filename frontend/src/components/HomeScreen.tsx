@@ -17,6 +17,8 @@ import { SpendingByCategoryChart } from "./dashboard/SpendingByCategoryChart";
 import { CopilotPanel } from "./copilot/CopilotPanel";
 import { Sidebar, type View } from "./sidebar/Sidebar";
 import { AccountFormModal } from "./sidebar/AccountFormModal";
+import { CategoryBudgetsCard } from "./dashboard/CategoryBudgetsCard";
+import { CategoryBudgetsModal } from "./dashboard/CategoryBudgetsModal";
 import { TransactionsView } from "./transactions/TransactionsView";
 import { TransactionDetailModal } from "./transactions/TransactionDetailModal";
 import type { Account } from "../types/account";
@@ -33,6 +35,7 @@ import {
   useAlerts,
   useAnalyticsSummary,
   useBudgetUsage,
+  useCategoryBudgets,
   useCategoryGroupSummary,
   useCurrentUser,
   useRecurringTransactions,
@@ -153,6 +156,8 @@ export const HomeScreen: React.FC = () => {
   const categories = useCategoryGroupSummary(periodFilters);
   const daily = useDailyTotals(periodFilters, selectedCategory === "all" ? null : selectedCategory);
   const budget = useBudgetUsage(accountId);
+  const categoryBudgets = useCategoryBudgets(accountId);
+  const [isCategoryBudgetsOpen, setIsCategoryBudgetsOpen] = useState(false);
   const recurring = useRecurringTransactions(accountId);
   const alerts = useAlerts(accountId);
   const categorySummary = useMemo(() => categories.data ?? [], [categories.data]);
@@ -170,6 +175,7 @@ export const HomeScreen: React.FC = () => {
     summary.refetch();
     categories.refetch();
     budget.refetch();
+    categoryBudgets.refetch();
     recurring.refetch();
     alerts.refetch();
     spending.refetch();
@@ -446,6 +452,12 @@ export const HomeScreen: React.FC = () => {
 
                 <BudgetCard usage={budget.data} loading={budget.loading} onSaveBudget={handleSaveBudget} />
 
+                <CategoryBudgetsCard
+                  data={categoryBudgets.data}
+                  loading={categoryBudgets.loading}
+                  onManage={() => setIsCategoryBudgetsOpen(true)}
+                />
+
                 <RecurringCard
                   rules={recurringList}
                   loading={recurring.loading}
@@ -525,6 +537,22 @@ export const HomeScreen: React.FC = () => {
           setEditingTransaction(tx);
         }}
       />
+
+      {accountId && categoryBudgets.data && (
+        <CategoryBudgetsModal
+          key={isCategoryBudgetsOpen ? `category-budgets-${accountId}` : "closed"}
+          isOpen={isCategoryBudgetsOpen}
+          accountId={accountId}
+          current={categoryBudgets.data}
+          accountBudget={budget.data?.budget ?? null}
+          onClose={() => setIsCategoryBudgetsOpen(false)}
+          onSaved={() => {
+            // Alerts and the copilot depend on the budgets too.
+            refreshAll();
+            copilot.say("Saved your category budgets.");
+          }}
+        />
+      )}
 
       <AccountFormModal
         key={accountModal.open ? (accountModal.account?.id ?? "new-account") : "closed"}

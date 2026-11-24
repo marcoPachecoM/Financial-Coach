@@ -11,6 +11,8 @@ erDiagram
     users ||--o{ import_batches : "uploads"
     accounts ||--o{ transactions : "contains"
     accounts ||--o{ recurring_transactions : "repeats"
+    accounts ||--o{ category_budgets : "limits"
+    category_groups ||--o{ category_budgets : "budgeted"
     recurring_transactions |o--o{ transactions : "occurrences"
     import_batches |o--o{ transactions : "imported"
     category_groups ||--o{ transactions : "classifies"
@@ -52,6 +54,14 @@ erDiagram
 
     category_groups {
         varchar name PK
+    }
+
+    category_budgets {
+        uuid id PK
+        uuid account_id FK
+        varchar category_group FK "unique per account"
+        numeric monthly_amount
+        timestamptz created_at
     }
 
     tags {
@@ -151,7 +161,8 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 | Category groups come from the allowed list | `fk_transactions_category_group`, `fk_merchant_category_cache_category_group` |
 | A CSV row cannot be imported twice into the same account | `ux_transactions_account_fingerprint` |
 | CSV rows always have a fingerprint, manual rows never do | `ck_transactions_fingerprint` |
-| Budgets are not negative | `ck_accounts_monthly_budget` |
+| Budgets are not negative | `ck_accounts_monthly_budget`, `ck_category_budgets_amount` |
+| One budget per category group and account | `ux_category_budgets_account_group` |
 | A recurring transaction belongs to an account of the same user | `fk_recurring_transactions_account` |
 | An occurrence belongs to a rule of its own account | `fk_transactions_recurring_transaction` (composite FK on `recurring_transaction_id, account_id`) |
 | A linked transaction always says which occurrence it covers | `ck_transactions_recurrence` |
@@ -172,7 +183,8 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 - **Recurring transactions create their occurrences automatically** (V8). A daily job (and one run at startup) inserts each due occurrence as a transaction with `source = RECURRING`. `next_due_date` only moves forward, so an occurrence the user deleted is not created again. Due dates are always computed from `start_date` (January 31 → February 28 → March 31).
 - **A real charge replaces the automatic one.** When a CSV row matches a rule (same account, type and merchant, within a few days of a due date), the generated transaction is soft-deleted and the CSV row takes its place, with the real amount. `ux_transactions_recurrence` excludes deleted rows so the two can coexist. This avoids counting a subscription twice and lets the alerts detect price changes.
 - **Tags belong to a user** (V9): `tags` holds each user's labels and `transaction_tags` links them to transactions (many to many). Names are compared ignoring case, so "Work" and "work" are one tag, spelled as first created. The application checks that a transaction only gets tags of its own user. A tag that no active transaction uses stays in the table but is not listed by `GET /tags`; deleting a transaction or a user removes its links (`ON DELETE CASCADE`). New tags are inserted with `ON CONFLICT DO NOTHING`, so two requests creating the same tag at once both get it instead of one failing on the unique index. Recurring rules have no tags of their own: each new occurrence copies the tags of the latest occurrence, and a CSV charge that replaces a generated occurrence keeps its tags.
-- **Alerts are not stored**: `GET /accounts/{id}/alerts` computes them on every request from the budget and the recurring transactions.
+- **Category budgets are opt-in** (V10): `category_budgets` has a row only for the groups the user wants to watch, so the dashboard never shows 26 bars. Like `accounts.monthly_budget`, the amount applies to every month and the spending is computed from the transactions. They are independent of the account's budget: adding up to more than it is allowed (the frontend only warns). `PUT` replaces them all with a bulk delete followed by inserts, so the unique index never sees two rows of the same group.
+- **Alerts are not stored**: `GET /accounts/{id}/alerts` computes them on every request from the budgets and the recurring transactions.
 
 ## Not migrated
 

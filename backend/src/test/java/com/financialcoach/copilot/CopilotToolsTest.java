@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.financialcoach.accounts.AccountService;
+import com.financialcoach.analytics.CategoryBudgetService;
 import com.financialcoach.shared.error.NotFoundException;
 import com.financialcoach.support.ApiIntegrationTest;
 import com.financialcoach.support.FixedClockConfiguration;
@@ -35,6 +36,9 @@ class CopilotToolsTest extends ApiIntegrationTest {
 
     @Autowired
     private AccountService accountService;
+
+    @Autowired
+    private CategoryBudgetService categoryBudgetService;
 
     @Autowired
     private Clock clock;
@@ -120,6 +124,18 @@ class CopilotToolsTest extends ApiIntegrationTest {
     }
 
     @Test
+    void budgetStatusListsTheCategoryBudgets() {
+        jdbc.update("INSERT INTO category_budgets (account_id, category_group, monthly_amount) VALUES (?, 'Entertainment', 300)",
+                accountId);
+
+        assertThat(tools.budgetStatus("2026-09")).isEqualTo("""
+                Month 2026-09. Budget: 1000.00. Spent: 669.50. Remaining: 330.50. Used: 67.0%.
+                Category budgets:
+                - Entertainment: spent 349.00 of 300.00 (116.3%, exceeded)
+                Spent in groups without a budget: 320.50.""");
+    }
+
+    @Test
     void budgetStatusWithoutBudget() {
         UUID cash = account(user, "Cash", null);
         assertThat(toolsFor(user, cash).budgetStatus("2026-09"))
@@ -183,7 +199,8 @@ class CopilotToolsTest extends ApiIntegrationTest {
     }
 
     private CopilotTools toolsFor(TestUser owner, UUID account) {
-        return new CopilotTools(statistics, recurringReport, accountService, clock, owner.id(), account);
+        return new CopilotTools(statistics, recurringReport, accountService, categoryBudgetService, clock, owner.id(),
+                account);
     }
 
     private UUID account(TestUser owner, String name, String monthlyBudget) {

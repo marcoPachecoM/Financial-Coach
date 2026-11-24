@@ -18,6 +18,7 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 
 import com.financialcoach.accounts.AccountService;
+import com.financialcoach.analytics.CategoryBudgetService;
 import com.financialcoach.shared.error.ApiException;
 import com.financialcoach.shared.error.ServiceUnavailableException;
 import com.financialcoach.shared.error.UpstreamUnavailableException;
@@ -64,16 +65,19 @@ public class CopilotService {
     private final TransactionStatistics statistics;
     private final RecurringReport recurringReport;
     private final AccountService accountService;
+    private final CategoryBudgetService categoryBudgetService;
     private final Clock clock;
     private final CopilotProperties properties;
 
     public CopilotService(ChatClient chatClient, TransactionStatistics statistics, RecurringReport recurringReport,
-            AccountService accountService, Clock clock, CopilotProperties properties, ChatMemory chatMemory) {
+            AccountService accountService, CategoryBudgetService categoryBudgetService, Clock clock,
+            CopilotProperties properties, ChatMemory chatMemory) {
         this.chatClient = chatClient;
         this.memoryAdvisor = MessageChatMemoryAdvisor.builder(chatMemory).build();
         this.statistics = statistics;
         this.recurringReport = recurringReport;
         this.accountService = accountService;
+        this.categoryBudgetService = categoryBudgetService;
         this.clock = clock;
         this.properties = properties;
     }
@@ -206,8 +210,8 @@ public class CopilotService {
     /** The request to the model, shared by {@link #chat} and {@link #stream}. */
     private ChatClient.ChatClientRequestSpec prompt(UUID userId, ChatRequestRecord request,
                                                     TokenUsageAdvisor usageAdvisor) {
-        CopilotTools tools = new CopilotTools(statistics, recurringReport, accountService, clock, userId,
-                request.accountId());
+        CopilotTools tools = new CopilotTools(statistics, recurringReport, accountService, categoryBudgetService,
+                clock, userId, request.accountId());
         ChatClient.ChatClientRequestSpec prompt = chatClient.prompt()
                 .system(SYSTEM_PROMPT.formatted(LocalDate.now(clock), properties.amountFormat()))
                 .user(request.message())

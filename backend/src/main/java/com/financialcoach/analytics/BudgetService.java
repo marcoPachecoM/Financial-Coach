@@ -18,9 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 class BudgetService {
 
-    private static final BigDecimal WARNING_FROM = BigDecimal.valueOf(80);
-    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
-
     private final AccountService accountService;
     private final TransactionStatistics statistics;
 
@@ -47,21 +44,6 @@ class BudgetService {
                 Money.format(spent),
                 Money.format(limit.subtract(spent)),
                 limit.signum() == 0 ? null : Percentages.of(spent, limit).toPlainString(),
-                status(spent, limit));
-    }
-
-    /**
-     * Compared on exact amounts, not on the rounded percentage: 79.999 % is still ON_TRACK.
-     * A zero budget is EXCEEDED as soon as anything is spent.
-     */
-    private static BudgetStatus status(BigDecimal spent, BigDecimal budget) {
-        BigDecimal spentTimes100 = spent.multiply(HUNDRED);
-        if (spentTimes100.compareTo(budget.multiply(HUNDRED)) > 0) {
-            return BudgetStatus.EXCEEDED;
-        }
-        if (budget.signum() > 0 && spentTimes100.compareTo(budget.multiply(WARNING_FROM)) >= 0) {
-            return BudgetStatus.WARNING;
-        }
-        return BudgetStatus.ON_TRACK;
+                BudgetStatus.of(spent, limit));
     }
 }

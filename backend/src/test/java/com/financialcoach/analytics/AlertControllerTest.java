@@ -73,6 +73,29 @@ class AlertControllerTest extends ApiIntegrationTest {
     }
 
     @Test
+    void categoryBudgetsCloseToOrOverTheirLimit() throws Exception {
+        jdbc.update("""
+                INSERT INTO category_budgets (account_id, category_group, monthly_amount)
+                VALUES (?, 'Food', 200), (?, 'Entertainment', 500), (?, 'Travel', 500)
+                """, card, card, card);
+        data.expense(alice, card, "2026-11-02T10:00:00", "250.00", "Food");          // 125 %
+        data.expense(alice, card, "2026-11-03T10:00:00", "420.00", "Entertainment"); // 84 %
+        data.expense(alice, card, "2026-11-04T10:00:00", "100.00", "Travel");        // 20 %: no alert
+
+        alerts("")
+                .andExpect(jsonPath("$[*].type", contains("CATEGORY_BUDGET_EXCEEDED", "CATEGORY_BUDGET_WARNING")))
+                .andExpect(jsonPath("$[0].id").value("CATEGORY_BUDGET_EXCEEDED:2026-11:Food"))
+                .andExpect(jsonPath("$[0].severity").value("CRITICAL"))
+                .andExpect(jsonPath("$[0].data.category_group").value("Food"))
+                .andExpect(jsonPath("$[0].data.budget").value("200.00"))
+                .andExpect(jsonPath("$[0].data.spent").value("250.00"))
+                .andExpect(jsonPath("$[0].data.remaining").value("-50.00"))
+                .andExpect(jsonPath("$[0].data.percentage_used").value("125.00"))
+                .andExpect(jsonPath("$[1].id").value("CATEGORY_BUDGET_WARNING:2026-11:Entertainment"))
+                .andExpect(jsonPath("$[1].severity").value("WARNING"));
+    }
+
+    @Test
     void budgetExceededInAnotherMonth() throws Exception {
         data.expense(alice, card, "2026-05-02T10:00:00", "1200.00", "Entertainment");
 

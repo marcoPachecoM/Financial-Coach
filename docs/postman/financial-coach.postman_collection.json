@@ -547,6 +547,60 @@
             },
             "description": "Without month: current month. Status: ON_TRACK, WARNING (80-100%), EXCEEDED, NO_BUDGET."
           }
+        },
+        {
+          "name": "Category budgets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/category-budgets?month={{month}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "category-budgets"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "{{month}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Budgets per category group with the month's spending, closest to the limit first, plus the spending without a budget. Without month: current month."
+          }
+        },
+        {
+          "name": "Replace category budgets",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"budgets\": [\n    {\n      \"category_group\": \"Food\",\n      \"monthly_amount\": \"5000\"\n    },\n    {\n      \"category_group\": \"Entertainment\",\n      \"monthly_amount\": \"1500\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/category-budgets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "category-budgets"
+              ]
+            },
+            "description": "Replaces every category budget of the account; groups left out lose theirs, [] removes them all."
+          }
         }
       ]
     },

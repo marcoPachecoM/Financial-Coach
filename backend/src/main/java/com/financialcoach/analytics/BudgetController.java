@@ -3,6 +3,7 @@ package com.financialcoach.analytics;
 import com.financialcoach.auth.AuthenticatedUser;
 import com.financialcoach.shared.web.QueryParameters;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.time.Clock;
 import java.time.YearMonth;
 import java.util.Set;
@@ -11,20 +12,27 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** {@code GET /accounts/{account_id}/budget} of openapi.yaml (see BudgetService for why it is here). */
+/**
+ * {@code GET /accounts/{account_id}/budget} and {@code /category-budgets} of openapi.yaml (see
+ * BudgetService for why they are here and not in the accounts module).
+ */
 @RestController
 class BudgetController {
 
     private static final Set<String> PARAMETERS = Set.of("month");
 
     private final BudgetService budgetService;
+    private final CategoryBudgetService categoryBudgetService;
     private final Clock clock;
 
-    BudgetController(BudgetService budgetService, Clock clock) {
+    BudgetController(BudgetService budgetService, CategoryBudgetService categoryBudgetService, Clock clock) {
         this.budgetService = budgetService;
+        this.categoryBudgetService = categoryBudgetService;
         this.clock = clock;
     }
 
@@ -36,5 +44,27 @@ class BudgetController {
                                @DateTimeFormat(pattern = "uuuu-MM") YearMonth month) {
         QueryParameters.requireOnly(request, PARAMETERS);
         return budgetService.usage(user.id(), accountId, month != null ? month : YearMonth.now(clock));
+    }
+
+    /** Budgets per category group with the month's spending, plus the spending without a budget. */
+    @GetMapping("/api/v1/accounts/{accountId}/category-budgets")
+    CategoryBudgetsResponse categoryBudgets(@AuthenticationPrincipal AuthenticatedUser user,
+                                            HttpServletRequest request,
+                                            @PathVariable UUID accountId,
+                                            @RequestParam(name = "month", required = false)
+                                            @DateTimeFormat(pattern = "uuuu-MM") YearMonth month) {
+        QueryParameters.requireOnly(request, PARAMETERS);
+        YearMonth shown = month != null ? month : YearMonth.now(clock);
+        return CategoryBudgetsResponse.from(accountId, categoryBudgetService.usage(user.id(), accountId, shown));
+    }
+
+    /** Replaces every category budget of the account; answers with the current month's usage. */
+    @PutMapping("/api/v1/accounts/{accountId}/category-budgets")
+    CategoryBudgetsResponse replaceCategoryBudgets(@AuthenticationPrincipal AuthenticatedUser user,
+                                                   @PathVariable UUID accountId,
+                                                   @Valid @RequestBody CategoryBudgetsRequest body) {
+        CategoryBudgetReport report = categoryBudgetService.replace(user.id(), accountId, body.budgets(),
+                YearMonth.now(clock));
+        return CategoryBudgetsResponse.from(accountId, report);
     }
 }
