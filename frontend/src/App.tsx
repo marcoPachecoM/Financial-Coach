@@ -12,6 +12,10 @@ function App() {
   const [authView, setAuthView] = useState<AuthView>("login");
 
   if (isAuthenticated) {
+    // Logging out later lands on the sign-in screen, not on the one used to get in (adjusted during render).
+    if (authView !== "login") {
+      setAuthView("login");
+    }
     return <HomeScreen />;
   }
   if (authView === "register") {

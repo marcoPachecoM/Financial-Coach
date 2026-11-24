@@ -266,7 +266,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onImp
                 disabled={!csvText.trim() || isUploading}
                 className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-xl text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
               >
-                <span className="material-symbols-outlined !text-[16px]">
+                <span aria-hidden="true" className="material-symbols-outlined !text-[16px]">
                   {isUploading ? 'hourglass_top' : 'file_upload'}
                 </span>
                 {isUploading ? 'Importing...' : 'Import'}

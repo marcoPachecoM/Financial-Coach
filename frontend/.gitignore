@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# npm is the package manager (CI runs `npm ci` with package-lock.json): no other lockfiles.
+pnpm-lock.yaml
+yarn.lock
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/

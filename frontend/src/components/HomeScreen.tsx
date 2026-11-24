@@ -560,7 +560,7 @@ export const HomeScreen: React.FC = () => {
 
       {accountId && categoryBudgets.data && (
         <CategoryBudgetsModal
-          key={isCategoryBudgetsOpen ? `category-budgets-${accountId}` : "closed"}
+          key={isCategoryBudgetsOpen ? `category-budgets-${accountId}` : "category-budgets-closed"}
           isOpen={isCategoryBudgetsOpen}
           accountId={accountId}
           current={categoryBudgets.data}
@@ -577,7 +577,7 @@ export const HomeScreen: React.FC = () => {
       {isSecurityOpen && <SecurityDialog onClose={() => setIsSecurityOpen(false)} onSay={copilot.say} />}
 
       <AccountFormModal
-        key={accountModal.open ? (accountModal.account?.id ?? "new-account") : "closed"}
+        key={accountModal.open ? `account-${accountModal.account?.id ?? "new"}` : "account-closed"}
         isOpen={accountModal.open}
         account={accountModal.account}
         onClose={() => setAccountModal({ open: false, account: null })}

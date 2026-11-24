@@ -1,5 +1,7 @@
 import type { ChatMessage } from '../types/copilot';
 
+/** Copilot chat: the welcome message and the suggestion chips shown under the input. */
+
 export const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
   {
     id: 'msg-1',

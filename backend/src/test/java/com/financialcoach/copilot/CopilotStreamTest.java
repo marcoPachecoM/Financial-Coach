@@ -83,6 +83,13 @@ class CopilotStreamTest extends ApiIntegrationTest {
     }
 
     @Test
+    void sseFieldsAreComparedWithOrWithoutTheSpaceAfterTheColon() {
+        String expected = "event:delta\ndata:{\"text\":\"a: b\"}\n\n";
+        assertThat(normalizeSse("event: delta\ndata: {\"text\":\"a: b\"}\n\n")).isEqualTo(expected);
+        assertThat(normalizeSse(expected)).isEqualTo(expected);
+    }
+
+    @Test
     void asksProxiesNotToBufferTheStream() throws Exception {
         mvc.perform(streamRequest(alice, null))
                 .andExpect(request().asyncStarted())
@@ -145,16 +152,28 @@ class CopilotStreamTest extends ApiIntegrationTest {
                 .doesNotContain("outcome=ok");
     }
 
-    /** Runs the request and returns the SSE body once the stream ends. */
+    /** Runs the request and returns the SSE body once the stream ends, in {@link #normalizeSse} form. */
     private String stream(TestUser user, UUID conversationId) throws Exception {
         MvcResult started = mvc.perform(streamRequest(user, conversationId))
                 .andExpect(request().asyncStarted())
                 .andReturn();
-        return mvc.perform(asyncDispatch(started))
+        return normalizeSse(mvc.perform(asyncDispatch(started))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
-                .andReturn().getResponse().getContentAsString();
+                .andReturn().getResponse().getContentAsString());
     }
+
+    /**
+     * "data: x" and "data:x" are the same event: the SSE format allows one space after the colon
+     * and clients drop it. Spring writes it without the space up to Boot 4.1 and with it from 4.2,
+     * so the assertions compare the form without it.
+     */
+    static String normalizeSse(String body) {
+        return SSE_FIELD_SPACE.matcher(body).replaceAll("$1:");
+    }
+
+    private static final java.util.regex.Pattern SSE_FIELD_SPACE =
+            java.util.regex.Pattern.compile("(?m)^(event|data|id|retry): ");
 
     private RequestBuilder streamRequest(TestUser user, UUID conversationId) {
         String conversation = conversationId == null ? "" : ", \"conversation_id\": \"" + conversationId + "\"";
