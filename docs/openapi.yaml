@@ -2408,9 +2408,10 @@ components:
         records_categorized:
           type: integer
           description: |
-            Imported rows with an empty `Category Group` that got a group automatically:
-            from the user's earlier corrections, the shared merchant cache or the LLM.
-            The other empty ones got `Other`. Rows with a group in the file keep it.
+            Imported rows with an empty `Category Group`, or with `Other`, that got a group
+            other than `Other` automatically: from the user's earlier corrections, the shared
+            merchant cache or the LLM. The rest got (or kept) `Other`. Rows with any other
+            group in the file keep it.
           example: 41
         accounts_created:
           type: array
