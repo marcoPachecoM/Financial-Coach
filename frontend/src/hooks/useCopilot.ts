@@ -117,7 +117,14 @@ export const useCopilot = ({ accountId, alerts, onDataChanged }: CopilotInput) =
   // React recommends, instead of an effect that would first paint the previous account's messages).
   if (accountId !== chatAccount) {
     setChatAccount(accountId);
-    if (!chats[chatKey]) setChats((cs) => (cs[chatKey] ? cs : { ...cs, [chatKey]: newChat() }));
+    // The first account of a new user (created by an import): its chat keeps what was said before
+    // there was any account, such as the import confirmation. That chat holds no other account's data.
+    const carried = chatAccount === null ? chats[NO_ACCOUNT]?.messages : undefined;
+    if (!chats[chatKey]) {
+      setChats((cs) =>
+        cs[chatKey] ? cs : { ...cs, [chatKey]: carried ? { ...newChat(), messages: carried } : newChat() },
+      );
+    }
     setThinking(false);
     setBusy(false);
   }

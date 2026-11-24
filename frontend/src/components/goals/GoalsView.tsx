@@ -112,7 +112,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({ goals, loading, error, onC
       )}
 
       <GoalFormModal
-        key={form.open ? (form.goal?.id ?? 'new-goal') : 'closed'}
+        key={form.open ? `goal-form-${form.goal?.id ?? 'new'}` : 'goal-form-closed'}
         isOpen={form.open}
         goal={form.goal}
         onClose={() => setForm({ open: false, goal: null })}
@@ -123,7 +123,7 @@ export const GoalsView: React.FC<GoalsViewProps> = ({ goals, loading, error, onC
       />
 
       <AddMoneyModal
-        key={addingTo?.id ?? 'closed'}
+        key={`add-money-${addingTo?.id ?? 'closed'}`}
         goal={addingTo}
         onClose={() => setAddingTo(null)}
         onSaved={(goal) => {

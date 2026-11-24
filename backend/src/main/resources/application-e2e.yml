@@ -1,0 +1,10 @@
+# Browser tests (Playwright), on top of dev: ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev,e2e
+# Each test signs up its own user from the same IP, and nothing may call the LLM.
+# Never use it in production: it lifts the protection against bots and brute force.
+financial-coach:
+  rate-limit:
+    login: 1000
+    register: 1000
+    password-reset: 1000
+  categorization:
+    llm-enabled: false

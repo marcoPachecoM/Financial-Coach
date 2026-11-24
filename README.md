@@ -365,7 +365,43 @@ What it has:
 ```bash
 npm run lint     # ESLint
 npm run build    # type check + production build
+npm test         # unit tests (Vitest)
+npm run e2e      # browser tests (Playwright): see Tests below
 ```
+
+### Tests
+
+**Unit tests (Vitest)**: `npm test` (`npm run test:watch` re-runs on save). They cover the plain logic in `src/**/*.test.ts`: money and date formatting, date presets, alert texts, goal status lines, tag names. No browser or backend needed.
+
+**Browser tests (Playwright)**: `e2e/*.spec.ts` drive a real Chromium through the whole app like a person would: sign up and recover a password with a recovery code, import a CSV and filter by tag, create a goal and add money, and the phone layout (Pixel 7). Each test signs up its own user (`e2e-…@example.test`), so they do not depend on the demo data or on each other. The copilot chat is not tested here (it would call Gemini); the backend tests cover it with a mocked model.
+
+1. Install the browser once: `npx playwright install chromium`.
+2. Start the backend with the `e2e` profile on top of `dev`:
+
+   ```bash
+   cd backend
+   ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev,e2e
+   ```
+
+   The profile ([application-e2e.yml](backend/src/main/resources/application-e2e.yml)) turns off AI categorization (no Gemini calls) and raises the sign-up, login and password-reset limits, because every test signs up its own user from the same IP. Without it, the fourth sign-up of the hour gets `429` and the tests stop with a message saying so; the counters live in memory, so restart the backend with the profile to clear them. Never use this profile in production.
+
+3. Run them from `frontend/` (Vite starts by itself, or your running `npm run dev` is reused):
+
+   ```bash
+   npm run e2e                 # all, headless
+   npm run e2e -- --ui         # watch them step by step (the best way to learn Playwright)
+   npm run e2e -- --headed     # see the browser
+   npx playwright show-report  # the last run's report, with traces of failed tests
+   ```
+
+   To keep your own backend on 8080 untouched, run the e2e one on another port and point the tests at it:
+   `SERVER_PORT=8081 CORS_ALLOWED_ORIGINS=http://localhost:5174 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev,e2e` for the backend, then
+   `E2E_PORT=5174 VITE_API_URL=http://localhost:8081/api/v1 npm run e2e`.
+
+The test users stay in the dev database; remove them with
+`docker compose exec postgres psql -U financial_coach -c "DELETE FROM users WHERE email LIKE 'e2e-%@example.test'"` (from `backend/`; their data goes with them).
+
+A manual checklist for what is not automated (visual details, mobile, the copilot) is in [docs/qa-checklist.md](docs/qa-checklist.md).
 
 Troubleshooting:
 
@@ -410,7 +446,8 @@ Modular monolith, one package per feature under `backend/src/main/java/com/finan
 GitHub Actions on push and pull request:
 
 - `backend`: `./mvnw verify` on Java 25 (unit and integration tests, Flyway migrations against PostgreSQL with Testcontainers).
-- `frontend`: `npm ci`, ESLint, type check and build.
+- `frontend`: `npm ci`, ESLint, unit tests (Vitest), type check and build.
+- `e2e`: PostgreSQL as a service, the backend jar (`dev,e2e` profiles: AI categorization off, high sign-up limits) and the Playwright tests in Chromium. When a test fails, the HTML report (with traces and screenshots) and the backend log are uploaded as the `playwright-report` artifact.
 
 Dependabot ([.github/dependabot.yml](.github/dependabot.yml)) opens weekly pull requests for Maven, npm and GitHub Actions updates (minor and patch grouped per ecosystem). For immediate pull requests on security advisories, enable *Dependabot alerts* and *Dependabot security updates* in the repository settings.
 

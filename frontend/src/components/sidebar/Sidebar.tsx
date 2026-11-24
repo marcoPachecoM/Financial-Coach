@@ -67,7 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               compact ? 'justify-center p-2.5' : 'px-3 py-2.5'
             } ${active ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
           >
-            <span className="material-symbols-outlined !text-[20px]">{item.icon}</span>
+            <span aria-hidden="true" className="material-symbols-outlined !text-[20px]">{item.icon}</span>
             {!compact && item.label}
             {badge > 0 &&
               (compact ? (
@@ -135,8 +135,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         <div className="flex items-center justify-between lg:hidden px-1">
           <p className="text-sm font-bold text-slate-900">Menu</p>
-          <button onClick={onCloseMobile} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 cursor-pointer">
-            <span className="material-symbols-outlined !text-[20px]">close</span>
+          <button onClick={onCloseMobile} aria-label="Close menu" className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 cursor-pointer">
+            <span aria-hidden="true" className="material-symbols-outlined !text-[20px]">close</span>
           </button>
         </div>
         {nav}

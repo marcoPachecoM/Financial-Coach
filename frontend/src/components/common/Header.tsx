@@ -29,9 +29,10 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={onToggleSidebar}
           title="Menu"
+          aria-label="Menu"
           className="p-2 -ml-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 cursor-pointer"
         >
-          <span className="material-symbols-outlined !text-[22px]">menu</span>
+          <span aria-hidden="true" className="material-symbols-outlined !text-[22px]">menu</span>
         </button>
         {/* Brand Logo */}
         <div className="flex items-center gap-3">
@@ -69,7 +70,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenNewTransaction}
             className="bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 hover:border-emerald-300 px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 shadow-2xs cursor-pointer"
           >
-            <span className="material-symbols-outlined !text-[18px]">add</span>
+            <span aria-hidden="true" className="material-symbols-outlined !text-[18px]">add</span>
             <span className="hidden sm:inline">Add transaction</span>
             <span className="sm:hidden">Add</span>
           </button>
@@ -90,7 +91,7 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onOpenUpload}
           className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 shadow-sm shadow-emerald-200 hover:shadow-md hover:shadow-emerald-200 cursor-pointer"
         >
-          <span className="material-symbols-outlined !text-[18px]">
+          <span aria-hidden="true" className="material-symbols-outlined !text-[18px]">
             upload_file
           </span>
           <span className="hidden sm:inline">Import CSV</span>
@@ -108,7 +109,7 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onLogout}
           className="bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 px-3.5 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
         >
-          <span className="material-symbols-outlined !text-[18px] text-slate-500">logout</span>
+          <span aria-hidden="true" className="material-symbols-outlined !text-[18px] text-slate-500">logout</span>
           <span className="hidden sm:inline">Log out</span>
           <span className="sm:hidden">Log out</span>
         </button>

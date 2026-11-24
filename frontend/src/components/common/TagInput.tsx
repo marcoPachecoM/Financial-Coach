@@ -1,4 +1,5 @@
 import React, { useId, useState } from 'react';
+import { TAG_MAX_LENGTH, cleanTagName } from '../../utils/tagNames';
 
 interface TagInputProps {
   id?: string;
@@ -10,10 +11,8 @@ interface TagInputProps {
   max?: number;
 }
 
-const MAX_LENGTH = 40;
-
-/** Same cleaning as the API: spaces trimmed and collapsed, a leading "#" removed. */
-const clean = (value: string) => value.trim().replace(/\s+/g, ' ').replace(/^#\s*/, '');
+const MAX_LENGTH = TAG_MAX_LENGTH;
+const clean = cleanTagName;
 
 /**
  * Tags as removable chips, plus a text box: Enter or "," adds what was typed, Backspace on an empty
