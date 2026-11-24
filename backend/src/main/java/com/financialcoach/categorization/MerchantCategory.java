@@ -38,6 +38,10 @@ class MerchantCategory {
         // Required by JPA.
     }
 
+    String getMerchantName() {
+        return merchantName;
+    }
+
     CategoryGroup getCategoryGroup() {
         return categoryGroup;
     }

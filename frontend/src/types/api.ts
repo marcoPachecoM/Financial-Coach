@@ -182,6 +182,8 @@ export interface CsvUploadResponse {
   records_duplicated: number;
   /** Rows linked to a recurring transaction (they replace the automatic occurrence). */
   recurring_matched: number;
+  /** Rows without a group in the file that got one automatically (corrections, cache or AI). */
+  records_categorized: number;
   accounts_created: ApiAccount[];
 }
 

@@ -18,6 +18,8 @@ erDiagram
     import_batches |o--o{ transactions : "imported"
     category_groups ||--o{ transactions : "classifies"
     category_groups ||--o{ merchant_category_cache : "classifies"
+    users ||--o{ user_merchant_categories : "corrects"
+    category_groups ||--o{ user_merchant_categories : "chosen"
     users ||--o{ tags : "labels"
     users ||--o{ savings_goals : "saves for"
     savings_goals ||--o{ goal_contributions : "funded by"
@@ -44,6 +46,13 @@ erDiagram
         varchar replaced_by_jti
         timestamptz reuse_detected_at
         timestamptz created_at
+    }
+
+    user_merchant_categories {
+        uuid user_id PK,FK
+        varchar merchant_name PK "normalized"
+        varchar category_group FK
+        timestamptz updated_at
     }
 
     recovery_codes {
@@ -211,7 +220,8 @@ These are business rules from the contract that PostgreSQL itself guarantees, ev
 - **`users.id` is the public id** (JWT `sub`). The Flask schema had an integer `id` plus a separate `public_id`.
 - **`source` and `category_group_source` are internal**: not exposed by the API, but they record which channel created a row (form, CSV, later WhatsApp) and who chose the category group (user, CSV, rules, LLM).
 - **`import_batches`** keeps one row per upload, for auditing and a future "undo import".
-- **`merchant_category_cache` is shared** by all users, so a merchant is sent to the LLM only once.
+- **`merchant_category_cache` is shared** by all users, so a merchant is sent to the LLM only once. Only LLM answers are written to it (with `INSERT ... ON CONFLICT DO NOTHING`, so two imports of the same new merchant do not collide).
+- **Corrections are per user** (V13, `user_merchant_categories`): the group a user chooses or changes for a merchant applies to their next transactions of it, before the shared cache. Writing corrections to the shared cache would let one user change everyone's categorization.
 - **Recurring transactions create their occurrences automatically** (V8). A daily job (and one run at startup) inserts each due occurrence as a transaction with `source = RECURRING`. `next_due_date` only moves forward, so an occurrence the user deleted is not created again. Due dates are always computed from `start_date` (January 31 → February 28 → March 31).
 - **A real charge replaces the automatic one.** When a CSV row matches a rule (same account, type and merchant, within a few days of a due date), the generated transaction is soft-deleted and the CSV row takes its place, with the real amount. `ux_transactions_recurrence` excludes deleted rows so the two can coexist. This avoids counting a subscription twice and lets the alerts detect price changes.
 - **Tags belong to a user** (V9): `tags` holds each user's labels and `transaction_tags` links them to transactions (many to many). Names are compared ignoring case, so "Work" and "work" are one tag, spelled as first created. The application checks that a transaction only gets tags of its own user. A tag that no active transaction uses stays in the table but is not listed by `GET /tags`; deleting a transaction or a user removes its links (`ON DELETE CASCADE`). New tags are inserted with `ON CONFLICT DO NOTHING`, so two requests creating the same tag at once both get it instead of one failing on the unique index. Recurring rules have no tags of their own: each new occurrence copies the tags of the latest occurrence, and a CSV charge that replaces a generated occurrence keeps its tags.

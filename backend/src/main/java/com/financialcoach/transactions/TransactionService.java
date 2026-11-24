@@ -81,9 +81,14 @@ public class TransactionService {
         checkAmountSign(request.type(), amount);
 
         String name = request.name().strip();
-        CategoryGroupAssignment group = request.categoryGroup() != null
-                ? new CategoryGroupAssignment(request.categoryGroup(), CategoryGroupSource.USER)
-                : categorizationService.categorize(name);
+        CategoryGroupAssignment group;
+        if (request.categoryGroup() != null) {
+            group = new CategoryGroupAssignment(request.categoryGroup(), CategoryGroupSource.USER);
+            // The user chose it: their next transactions of this merchant get it too.
+            categorizationService.rememberUserChoice(userId, name, request.categoryGroup());
+        } else {
+            group = categorizationService.categorize(userId, name);
+        }
 
         List<String> tagNames = request.tags() == null ? List.of() : TagService.validate("tags", request.tags());
 
@@ -157,7 +162,12 @@ public class TransactionService {
 
         // Checked on the final state: changing only the type can break the sign rule.
         checkAmountSign(transaction.getType(), transaction.getAmount());
-        return transactions.saveAndFlush(transaction);
+        Transaction saved = transactions.saveAndFlush(transaction);
+        if (request.categoryGroupProvided()) {
+            // A correction: learned for this user's next transactions of the same merchant.
+            categorizationService.rememberUserChoice(userId, saved.getName(), saved.getCategoryGroup());
+        }
+        return saved;
     }
 
     @Transactional

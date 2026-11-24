@@ -226,6 +226,7 @@ export const HomeScreen: React.FC = () => {
       `Imported ${result.records_imported} transaction(s)` +
         (result.records_duplicated ? `; ${result.records_duplicated} already imported were skipped` : "") +
         (result.recurring_matched ? `; ${result.recurring_matched} matched recurring charges` : "") +
+        (result.records_categorized ? `; ${result.records_categorized} categorized automatically` : "") +
         ".",
     );
   };

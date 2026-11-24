@@ -5,6 +5,7 @@ import com.financialcoach.accounts.ResolvedAccounts;
 import com.financialcoach.categorization.CategorizationService;
 import com.financialcoach.categorization.CategoryGroupAssignment;
 import com.financialcoach.categorization.CategoryGroupSource;
+import com.financialcoach.categorization.Categorizations;
 import com.financialcoach.shared.error.ConflictException;
 import com.financialcoach.shared.error.ValidationException;
 import java.time.Clock;
@@ -72,9 +73,9 @@ class CsvImportService {
                 alreadyImported);
 
         ImportBatch batch = importBatches.save(new ImportBatch(userId, filename));
-        Map<String, CategoryGroupAssignment> groupByName = new HashMap<>();
         List<Transaction> newTransactions = new ArrayList<>();
         List<CsvRow> newRows = new ArrayList<>();
+        List<String> newFingerprints = new ArrayList<>();
 
         for (int i = 0; i < rows.size(); i++) {
             CsvRow row = rows.get(i);
@@ -82,14 +83,30 @@ class CsvImportService {
             if (alreadyImported.contains(fingerprint) || claimUnfingerprinted(unfingerprinted, row, accounts)) {
                 continue;
             }
-            CategoryGroupAssignment group = row.categoryGroup() != null
-                    ? new CategoryGroupAssignment(row.categoryGroup(), CategoryGroupSource.CSV)
-                    : groupByName.computeIfAbsent(row.name(), categorizationService::categorize);
+            newRows.add(row);
+            newFingerprints.add(fingerprint);
+        }
+
+        // Only rows the file left without a group are categorized, all in one go (one LLM round at most).
+        Categorizations categorized = categorizationService.categorizeAll(userId, newRows.stream()
+                .filter(row -> row.categoryGroup() == null).map(CsvRow::name).toList());
+        int automaticallyCategorized = 0;
+        for (int i = 0; i < newRows.size(); i++) {
+            CsvRow row = newRows.get(i);
+            String fingerprint = newFingerprints.get(i);
+            CategoryGroupAssignment group;
+            if (row.categoryGroup() != null) {
+                group = new CategoryGroupAssignment(row.categoryGroup(), CategoryGroupSource.CSV);
+            } else {
+                group = categorized.of(row.name());
+                if (!categorized.isFallback(row.name())) {
+                    automaticallyCategorized++;
+                }
+            }
             newTransactions.add(Transaction.fromCsv(
                     userId, accounts.idFor(row.account()), row.type(), row.occurredAt(), row.name(), row.amount(),
                     group.group(), group.source(), row.category(), row.notes(),
                     batch.getId(), fingerprint));
-            newRows.add(row);
         }
 
         // Tags of the new rows only: a skipped duplicate does not create tags. One lookup for the file.
@@ -104,7 +121,7 @@ class CsvImportService {
         batch.recordCounts(newTransactions.size(), rows.size() - newTransactions.size());
         importBatches.flush();
         return new CsvUploadResponse(newTransactions.size(), rows.size() - newTransactions.size(),
-                recurringMatched, accounts.created());
+                recurringMatched, automaticallyCategorized, accounts.created());
     }
 
     /** Only the base name is kept: some browsers send the full client path. */
