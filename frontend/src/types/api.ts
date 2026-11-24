@@ -208,3 +208,30 @@ export interface ProblemDetail {
   code: string;
   errors?: ApiFieldError[];
 }
+
+export type GoalStatus = "OVERDUE" | "BEHIND" | "ON_TRACK" | "NO_TARGET_DATE" | "COMPLETED";
+
+/** GET /goals, and the answer of every change to a goal or its contributions. */
+export interface ApiGoal {
+  id: string;
+  name: string;
+  target_amount: string;
+  target_date: string | null;
+  saved: string;
+  remaining: string;
+  percentage: string;
+  monthly_pace: string;
+  required_monthly: string | null;
+  projected_date: string | null;
+  status: GoalStatus;
+  created_at: string;
+}
+
+export interface ApiGoalContribution {
+  id: string;
+  /** Negative: a withdrawal. */
+  amount: string;
+  date: string;
+  note: string | null;
+  created_at: string;
+}

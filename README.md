@@ -66,6 +66,13 @@ All under `/api/v1`. Everything except login, refresh and the public health chec
 | `GET /analytics/summary?account_id=…` | Total expenses and income, net, counts, average and largest expense, and the dates of the first and last transaction, optionally between `start_date` and `end_date`. |
 | `GET /analytics/daily?account_id=…` | One entry per day with transactions (expense total and count, transactions of any type), optionally between dates and of one `category_group`. Feeds the calendar and the spending trend. |
 | `GET /analytics/by-category-group?account_id=…` | Totals per category group for `type` (`EXPENSE` by default or `INCOME`), optionally between dates. |
+| **Goals** | |
+| `GET /goals` | The user's savings goals (not tied to an account) with saved amount, percentage, monthly pace (last 90 days), what is needed per month to arrive by the target date, projected date and status (`OVERDUE`, `BEHIND`, `ON_TRACK`, `NO_TARGET_DATE`, `COMPLETED`), the ones needing attention first. |
+| `POST /goals` | Creates one: `name` (unique per user, else `409`), `target_amount`, optional `target_date` (not in the past). |
+| `GET` / `PATCH` / `DELETE /goals/{id}` | One goal; changes name, target or date (`"target_date": null` removes it); deletes it with its history. |
+| `GET /goals/{id}/contributions` | Money put in or taken out, newest first. |
+| `POST /goals/{id}/contributions` | `amount` (negative = withdrawal, never more than what was saved), optional `date` (default today, not in the future) and `note`. Answers with the updated goal. |
+| `DELETE /goals/{id}/contributions/{contribution_id}` | Answers with the updated goal. |
 | **Copilot** | |
 | `POST /copilot/chat` | A question about an account (`message`, `account_id`, optional `conversation_id`) → the whole answer as JSON, with the model and token usage. See [Copilot](#copilot-ai-chat). |
 | `POST /copilot/chat/stream` | Same body; the answer arrives while it is written, as Server-Sent Events. This is what the frontend uses. See [Streaming](#streaming-server-sent-events). |
@@ -141,6 +148,12 @@ curl -H "$AUTH" "$API/analytics/daily?account_id=$ACCOUNT&start_date=2026-11-01&
 curl -H "$AUTH" "$API/accounts/$ACCOUNT/budget?month=2026-11"
 curl -H "$AUTH" -X PUT -H "Content-Type: application/json" \
      -d '{"budgets": [{"category_group": "Food", "monthly_amount": "5000"}]}' $API/accounts/$ACCOUNT/category-budgets
+
+# Savings goals (per user): a trip by June 2027, then money put in
+GOAL=$(curl -s -H "$AUTH" -H "Content-Type: application/json" \
+     -d '{"name": "Trip to Japan", "target_amount": "40000", "target_date": "2027-06-30"}' $API/goals | jq -r .id)
+curl -H "$AUTH" -H "Content-Type: application/json" -d '{"amount": "2000", "note": "Bonus"}' $API/goals/$GOAL/contributions
+curl -H "$AUTH" $API/goals
 
 # Recurring: Netflix every month from September. The occurrences already due
 # (October, November) are created at once; the next ones, every day at 00:05.
@@ -321,6 +334,7 @@ What it has:
 
 - **Sidebar** (collapsible; a drawer on phones): the Dashboard and Transactions views, and the **accounts**. Picking an account switches every view to it. Each account shows the month's spending against its budget and against last month; accounts can be created and edited there.
 - **Dashboard**: metric cards, budget, **category budgets** (only the categories you set a limit for, closest to the limit first, with a "Manage" dialog to pick them), recurring transactions, spending by category group and the spending trend, for a chosen period. Every figure comes already added up from the `/analytics` endpoints (the calendar too), so the browser never downloads the whole history: the page stays as fast with years of transactions as with a month.
+- **Goals** (own view in the sidebar, so the dashboard stays about this month): one card per savings goal with what's saved, whether it arrives on time in plain words ("needs $2,750/mo", "You're saving $2,100/mo → ⚠ Aug 2027") and an "Add money" button. Clicking a card opens a panel with a chart (saved so far, the projection at your pace, the target and the deadline) and the history. The sidebar shows a badge when a goal is behind or overdue. Goals belong to the user, so they stay the same when switching accounts.
 - **Tags**: a field with suggestions in the transaction form; each row shows its tags (click one to filter), the most used tags appear as chips above the list, and the search box also finds tags.
 - **Transactions**: a calendar (each day shaded by what was spent; click a day to filter) above the list, with search, a category filter and an amount range (e.g. $50–$200). The list asks the server for one page of 10 with every filter applied, so it does not load the whole history; typing waits 300 ms before sending the request. Each row can be viewed, edited, deleted or made recurring.
 - **Header**: add a transaction (optionally repeating), import a CSV, and export one (a dialog to pick one account or all, and a period).

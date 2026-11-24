@@ -20,6 +20,10 @@ import { AccountFormModal } from "./sidebar/AccountFormModal";
 import { CategoryBudgetsCard } from "./dashboard/CategoryBudgetsCard";
 import { CategoryBudgetsModal } from "./dashboard/CategoryBudgetsModal";
 import { TransactionsView } from "./transactions/TransactionsView";
+import { GoalsView } from "./goals/GoalsView";
+import { useAsync } from "../hooks/useAsync";
+import { getGoals } from "../services/goals";
+import { needsAttention } from "../utils/goalStyles";
 import { TransactionDetailModal } from "./transactions/TransactionDetailModal";
 import type { Account } from "../types/account";
 
@@ -164,6 +168,9 @@ export const HomeScreen: React.FC = () => {
   const recurringList = useMemo(() => recurring.data ?? [], [recurring.data]);
   const alertList = useMemo(() => alerts.data ?? [], [alerts.data]);
   const accountIds = useMemo(() => accountList.map((a) => a.id), [accountList]);
+  // Goals belong to the user, not to an account: loaded once, for the Goals view and the sidebar badge.
+  const goals = useAsync(getGoals, "goals");
+  const goalsNeedingAttention = (goals.data ?? goals.previousData ?? []).filter((g) => needsAttention(g.status)).length;
   const spending = useAccountsSpending(accountIds);
 
   /** After any change: every card depends on the transactions. */
@@ -330,6 +337,7 @@ export const HomeScreen: React.FC = () => {
         onSelectAccount={selectAccount}
         onEditAccount={(account) => setAccountModal({ open: true, account })}
         onCreateAccount={() => setAccountModal({ open: true, account: null })}
+        goalsNeedingAttention={goalsNeedingAttention}
       />
 
       <main className="flex-1 min-w-0 w-full max-w-[1440px] mx-auto p-4 md:p-8">
@@ -342,7 +350,15 @@ export const HomeScreen: React.FC = () => {
               </div>
             )}
 
-            {noAccounts ? (
+            {view === "goals" ? (
+              <GoalsView
+                goals={goals.data ?? goals.previousData}
+                loading={goals.loading}
+                error={goals.error}
+                onChanged={goals.refetch}
+                onSay={copilot.say}
+              />
+            ) : noAccounts ? (
               <div className="bg-white rounded-2xl p-10 border border-slate-200/80 card-shadow text-center">
                 <span className="material-symbols-outlined !text-[40px] text-slate-300">account_balance</span>
                 <p className="mt-2 font-semibold text-slate-900">No accounts yet</p>
