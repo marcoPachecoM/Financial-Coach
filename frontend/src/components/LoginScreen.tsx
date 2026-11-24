@@ -219,7 +219,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   <button
                     type="button"
                     onClick={onForgotPassword}
-                    className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
+                    className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors cursor-pointer"
                   >
                     Forgot password?
                   </button>
@@ -321,53 +321,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </button>
             </form>
 
-            {/* Divider */}
-            <div className="flex items-center gap-4 my-7">
-              <div className="h-px flex-1 bg-slate-100" />
-              <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">
-                or continue with
-              </span>
-              <div className="h-px flex-1 bg-slate-100" />
-            </div>
-
-            {/* Google */}
-            <button
-              type="button"
-              className="w-full h-12 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-sm font-semibold text-slate-700 transition-all flex items-center justify-center gap-3"
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  fill="#4285F4"
-                  d="M21.35 12.23c0-.72-.06-1.41-.18-2.08H12v3.94h5.22a4.47 4.47 0 0 1-1.94 2.93v2.44h3.14c1.84-1.69 2.93-4.18 2.93-7.23Z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 21.69c2.63 0 4.84-.87 6.45-2.36l-3.14-2.44c-.87.58-1.98.92-3.31.92-2.54 0-4.69-1.72-5.46-4.03H3.3v2.52A9.75 9.75 0 0 0 12 21.69Z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M6.54 13.78A5.86 5.86 0 0 1 6.23 12c0-.62.11-1.22.31-1.78V7.7H3.3A9.76 9.76 0 0 0 2.25 12c0 1.57.38 3.05 1.05 4.3l3.24-2.52Z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 6.19c1.43 0 2.71.49 3.72 1.46l2.79-2.79C16.84 3.29 14.63 2.31 12 2.31A9.75 9.75 0 0 0 3.3 7.7l3.24 2.52C7.31 7.91 9.46 6.19 12 6.19Z"
-                />
-              </svg>
-              Continue with Google
-            </button>
-
             {/* Register */}
-            <p className="text-center text-sm text-slate-500 mt-8">
+            <p className="text-center text-sm text-slate-500 mt-7">
               Don't have an account?{" "}
               <button
                 type="button"
                 onClick={onCreateAccount}
-                className="font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
+                className="font-semibold text-emerald-600 hover:text-emerald-700 transition-colors cursor-pointer"
               >
                 Create one
               </button>

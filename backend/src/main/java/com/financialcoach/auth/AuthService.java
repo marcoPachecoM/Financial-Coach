@@ -124,6 +124,16 @@ class AuthService {
                 .orElseThrow(() -> new UnauthorizedException("INVALID_TOKEN", "The user no longer exists."));
     }
 
+    /** A new token pair for a user who just proved who they are (sign-up, password change). */
+    TokenPairResponse issueFor(UUID userId, UserRole role) {
+        return issue(userId, role).pair();
+    }
+
+    /** Ends every session of the user (after a password change); returns how many tokens were revoked. */
+    int revokeAllSessions(UUID userId) {
+        return refreshTokens.revokeAllActive(userId, clock.instant());
+    }
+
     private Issued issue(UUID userId, UserRole role) {
         TokenService.IssuedRefreshToken refresh = tokens.createRefreshToken(userId);
         refreshTokens.save(new RefreshToken(refresh.jti(), userId, refresh.expiresAt()));

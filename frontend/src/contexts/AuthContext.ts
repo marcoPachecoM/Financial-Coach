@@ -13,6 +13,8 @@ interface AuthContextValue {
     rememberMe: boolean,
   ) => Promise<void>;
   logout: () => Promise<void>;
+  /** Signs in with a pair obtained elsewhere (sign-up), after the recovery codes were shown. */
+  signInWithTokens: (accessToken: string, refreshToken: string, rememberMe: boolean) => void;
 }
 
 export const useAuth = () => {
