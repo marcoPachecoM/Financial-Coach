@@ -24,10 +24,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class TransactionStatistics {
 
     private final TransactionRepository transactions;
+    private final TagRepository tagRepository;
     private final AccountService accountService;
 
-    TransactionStatistics(TransactionRepository transactions, AccountService accountService) {
+    TransactionStatistics(TransactionRepository transactions, TagRepository tagRepository,
+                          AccountService accountService) {
         this.transactions = transactions;
+        this.tagRepository = tagRepository;
         this.accountService = accountService;
     }
 
@@ -86,29 +89,47 @@ public class TransactionStatistics {
 
     /**
      * Transactions whose name or category contains {@code text} (case-insensitive) and, when
-     * {@code categoryGroup} is given, of that group. Totals cover every match; only the newest
-     * {@code limit} rows are returned. A null or blank {@code text} matches every transaction.
+     * given, of {@code categoryGroup} and carrying {@code tag} (compared like tag names: case,
+     * spaces and a leading "#" do not matter). Totals cover every match; only the newest
+     * {@code limit} rows are returned. A null or blank {@code text} or {@code tag} matches all.
      */
     @Transactional(readOnly = true)
     public TransactionSearch search(UUID userId, UUID accountId, DateRange range, String text,
-                                    CategoryGroup categoryGroup, int limit) {
+                                    CategoryGroup categoryGroup, String tag, int limit) {
         accountService.requireOwned(userId, accountId);
         String pattern = likePattern(text);
         Collection<CategoryGroup> groups = categoryGroup == null
                 ? Arrays.asList(CategoryGroup.values())
                 : Set.of(categoryGroup);
 
-        List<TypeTotals> totals = transactions.searchTotals(userId, accountId, range.from(), range.to(), pattern, groups);
+        String tagKey = tag == null ? "" : TagService.key(tag);
+        boolean anyTag = tagKey.isEmpty();
+        List<TypeTotals> totals = transactions.searchTotals(userId, accountId, range.from(), range.to(), pattern, groups,
+                anyTag, tagKey);
         TypeTotals expenses = totals.stream().filter(t -> t.type() == TransactionType.EXPENSE).findFirst()
                 .orElseGet(() -> empty(TransactionType.EXPENSE));
         TypeTotals income = totals.stream().filter(t -> t.type() == TransactionType.INCOME).findFirst()
                 .orElseGet(() -> empty(TransactionType.INCOME));
 
         List<TransactionLine> latest = transactions.search(userId, accountId, range.from(), range.to(), pattern, groups,
-                        PageRequest.of(0, limit, Sort.by(Sort.Order.desc("occurredAt"), Sort.Order.desc("id"))))
+                        anyTag, tagKey, PageRequest.of(0, limit, Sort.by(Sort.Order.desc("occurredAt"), Sort.Order.desc("id"))))
                 .stream().map(TransactionLine::from).toList();
 
         return new TransactionSearch(expenses.count(), expenses.sum(), income.count(), income.sum().negate(), latest);
+    }
+
+    /** Expenses per tag in the range, largest first. */
+    @Transactional(readOnly = true)
+    public List<TagTotal> tagTotals(UUID userId, UUID accountId, DateRange range) {
+        accountService.requireOwned(userId, accountId);
+        return transactions.tagTotals(userId, accountId, range.from(), range.to(), TransactionType.EXPENSE);
+    }
+
+    /** Names of the tags the account's transactions use, most used first. */
+    @Transactional(readOnly = true)
+    public List<String> tagNames(UUID userId, UUID accountId) {
+        accountService.requireOwned(userId, accountId);
+        return tagRepository.usageInAccount(userId, accountId).stream().map(TagUsage::name).toList();
     }
 
     /** "%text%" in lower case, with LIKE wildcards in the text escaped (the queries use escape '\\'). */

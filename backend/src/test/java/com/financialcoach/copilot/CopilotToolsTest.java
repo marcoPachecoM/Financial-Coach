@@ -74,7 +74,7 @@ class CopilotToolsTest extends ApiIntegrationTest {
 
     @Test
     void searchMatchesMerchantTextCaseInsensitively() {
-        String result = tools.searchTransactions(SEP_1, LocalDate.of(2026, 10, 31), "UBER", null);
+        String result = tools.searchTransactions(SEP_1, LocalDate.of(2026, 10, 31), "UBER", null, null);
 
         assertThat(result).startsWith("2 matches. Expenses: 400.50 (2). Income: 0.00 (0).");
         assertThat(result).contains("2026-10-02 | EXPENSE | Uber | 80.00 | Travel");
@@ -83,18 +83,18 @@ class CopilotToolsTest extends ApiIntegrationTest {
 
     @Test
     void searchFiltersByCategoryGroupAndCategoryText() {
-        assertThat(tools.searchTransactions(SEP_1, SEP_30, null, "entertainment")).startsWith("2 matches.");
-        assertThat(tools.searchTransactions(SEP_1, SEP_30, "stream", null)).startsWith("1 matches.").contains("Netflix");
+        assertThat(tools.searchTransactions(SEP_1, SEP_30, null, "entertainment", null)).startsWith("2 matches.");
+        assertThat(tools.searchTransactions(SEP_1, SEP_30, "stream", null, null)).startsWith("1 matches.").contains("Netflix");
     }
 
     @Test
     void searchTreatsLikeWildcardsAsText() {
-        assertThat(tools.searchTransactions(SEP_1, SEP_30, "%", null)).isEqualTo("No matching transactions.");
+        assertThat(tools.searchTransactions(SEP_1, SEP_30, "%", null, null)).isEqualTo("No matching transactions.");
     }
 
     @Test
     void searchExplainsAnUnknownCategoryGroup() {
-        assertThat(tools.searchTransactions(SEP_1, SEP_30, null, "Movies"))
+        assertThat(tools.searchTransactions(SEP_1, SEP_30, null, "Movies", null))
                 .startsWith("Unknown category group 'Movies'. Valid groups:")
                 .contains("Entertainment");
     }
@@ -104,11 +104,70 @@ class CopilotToolsTest extends ApiIntegrationTest {
         for (int day = 1; day <= 25; day++) {
             expense("2026-08-%02dT12:00".formatted(day), "Oxxo", "10.00", "Snacks", null);
         }
-        String result = tools.searchTransactions(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), "oxxo", null);
+        String result = tools.searchTransactions(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), "oxxo", null, null);
 
         assertThat(result).startsWith("25 matches. Expenses: 250.00 (25). Income: 0.00 (0). Newest 20:");
         assertThat(result.lines().count()).isEqualTo(1 + CopilotTools.SEARCH_LIMIT);
         assertThat(result.lines().skip(1).findFirst()).hasValueSatisfying(row -> assertThat(row).startsWith("2026-08-25"));
+    }
+
+    @Test
+    void searchFiltersByTagIgnoringCaseAndHashOverTheWholeHistory() {
+        tag("Trip Cancun", "Uber Eats", "Uber");
+        tag("work", "Netflix");
+
+        String result = tools.searchTransactions(null, null, null, null, "#trip  CANCUN");
+
+        assertThat(result).startsWith("2 matches. Expenses: 400.50 (2). Income: 0.00 (0).");
+        assertThat(result.lines().skip(1).findFirst())
+                .hasValue("2026-10-02 | EXPENSE | Uber | 80.00 | Travel | #Trip Cancun");
+        assertThat(result).doesNotContain("Netflix");
+    }
+
+    @Test
+    void theTagCombinesWithDatesTextAndGroup() {
+        tag("Trip Cancun", "Uber Eats", "Uber");
+
+        assertThat(tools.searchTransactions(SEP_1, SEP_30, null, null, "Trip Cancun")).startsWith("1 matches.");
+        assertThat(tools.searchTransactions(LocalDate.of(2026, 10, 1), null, null, null, "Trip Cancun"))
+                .startsWith("1 matches.").contains("| Uber |");
+        assertThat(tools.searchTransactions(null, null, "eats", null, "Trip Cancun")).startsWith("1 matches.");
+        assertThat(tools.searchTransactions(null, null, null, "Entertainment", "Trip Cancun"))
+                .isEqualTo("No matching transactions.");
+    }
+
+    @Test
+    void anUnknownTagListsTheTagsOfThisAccountOnly() {
+        tag("Trip Cancun", "Uber Eats", "Uber");
+        tag("work", "Netflix");
+        TestUser other = users.create("other", user.role(), true);
+        jdbc.update("INSERT INTO tags (user_id, name) VALUES (?, 'beach')", other.id());
+
+        assertThat(tools.searchTransactions(null, null, null, null, "beach"))
+                .isEqualTo("Unknown tag 'beach'. Tags of this account: Trip Cancun, work.");
+        UUID cash = account(user, "Cash", null);
+        assertThat(toolsFor(user, cash).searchTransactions(null, null, null, null, "work"))
+                .isEqualTo("Unknown tag 'work'. This account has no tagged transactions.");
+    }
+
+    @Test
+    void spendingByTagListsExpensesPerTagLargestFirst() {
+        tag("Trip Cancun", "Uber Eats", "Uber");
+        tag("work", "Netflix", "ACME payroll"); // the income does not count
+
+        assertThat(tools.spendingByTag(null, null))
+                .isEqualTo("Trip Cancun: 400.50 (2 transactions)\nwork: 199.00 (1 transactions)");
+        assertThat(tools.spendingByTag(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31)))
+                .isEqualTo("Trip Cancun: 80.00 (1 transactions)");
+
+        jdbc.update("UPDATE transactions SET deleted_at = now() WHERE name = 'Netflix'");
+        assertThat(tools.spendingByTag(null, null)).isEqualTo("Trip Cancun: 400.50 (2 transactions)");
+    }
+
+    @Test
+    void spendingByTagWithoutTagsOrWithAnInvalidRange() {
+        assertThat(tools.spendingByTag(null, null)).isEqualTo("No tagged expenses in that period.");
+        assertThat(tools.spendingByTag(SEP_30, SEP_1)).isEqualTo("Invalid range: startDate is after endDate.");
     }
 
     @Test
@@ -224,6 +283,21 @@ class CopilotToolsTest extends ApiIntegrationTest {
                                           source, category_group_source)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', 'USER')
                 """, user.id(), accountId, type, LocalDateTime.parse(datetime), name, amount, group, category);
+    }
+
+    /** Tags the transactions with these names (creating the tag for the user). */
+    private void tag(String tagName, String... transactionNames) {
+        UUID tagId = jdbc.queryForObject("""
+                INSERT INTO tags (user_id, name) VALUES (?, ?)
+                ON CONFLICT (user_id, lower(name)) DO UPDATE SET name = EXCLUDED.name
+                RETURNING id
+                """, UUID.class, user.id(), tagName);
+        for (String name : transactionNames) {
+            jdbc.update("""
+                    INSERT INTO transaction_tags (transaction_id, tag_id)
+                    SELECT id, ? FROM transactions WHERE user_id = ? AND name = ?
+                    """, tagId, user.id(), name);
+        }
     }
 
     /** {@code nextDueDate} null means the rule has ended. Starts on Saturday 2026-01-03. */

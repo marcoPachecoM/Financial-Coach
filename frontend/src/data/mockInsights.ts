@@ -4,7 +4,7 @@ export const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
   {
     id: 'msg-1',
     sender: 'assistant',
-    text: "Hi! Ask me about your spending, budget or subscriptions. I answer with the data of the selected account.",
+    text: "Hi! Ask me about your spending, budget, subscriptions or a tag (e.g. #trip-cancun). I answer with the data of the selected account.",
     timestamp: '',
   },
 ];
@@ -14,4 +14,5 @@ export const SUGGESTION_CHIPS = [
   'Budget recommendations',
   'Subscription audit',
   'Forecast month end',
+  'Spending by tag',
 ];

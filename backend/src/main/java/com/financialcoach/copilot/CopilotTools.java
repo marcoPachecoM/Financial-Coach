@@ -28,6 +28,7 @@ import com.financialcoach.transactions.RecurringOverview;
 import com.financialcoach.transactions.RecurringOverview.UpcomingCharge;
 import com.financialcoach.transactions.RecurringReport;
 import com.financialcoach.transactions.RecurringRuleSummary;
+import com.financialcoach.transactions.TagTotal;
 import com.financialcoach.transactions.TransactionSearch;
 import com.financialcoach.transactions.TransactionStatistics;
 import com.financialcoach.transactions.TransactionTotals;
@@ -44,6 +45,9 @@ class CopilotTools {
 
     /** Rows returned by the search; totals still cover every match. */
     static final int SEARCH_LIMIT = 20;
+
+    /** Tags named in the "unknown tag" answer, most used first. */
+    private static final int MAX_TAGS_LISTED = 30;
 
     private static final String GROUPS = Arrays.stream(CategoryGroup.values())
             .map(CategoryGroup::label).collect(Collectors.joining(", "));
@@ -100,17 +104,22 @@ class CopilotTools {
     }
 
     @Tool(description = """
-            Finds transactions between two dates (inclusive) by merchant or category text and/or by
-            category group. Returns the totals of all matches and the newest 20 of them.
-            Use it for questions about a merchant (e.g. "Uber", "Netflix") or to list transactions.""")
+            Finds transactions by merchant or category text, category group and/or tag, between two
+            dates (inclusive) or over the whole history when both dates are omitted. Returns the
+            totals of all matches and the newest 20 of them, with their tags. Use it for questions
+            about a merchant (e.g. "Uber"), a tag (e.g. "trip-cancun", "#work") or to list transactions.""")
     String searchTransactions(
-            @ToolParam(description = "Start date, yyyy-MM-dd") LocalDate startDate,
-            @ToolParam(description = "End date (inclusive), yyyy-MM-dd") LocalDate endDate,
+            @ToolParam(description = "Start date, yyyy-MM-dd. Omit both dates for the whole history.",
+                    required = false) LocalDate startDate,
+            @ToolParam(description = "End date (inclusive), yyyy-MM-dd. Omit both dates for the whole history.",
+                    required = false) LocalDate endDate,
             @ToolParam(description = "Text contained in the merchant name or category, e.g. uber. Omit to match all.",
                     required = false) String text,
             @ToolParam(description = "Exact category group, e.g. Entertainment. Omit for all groups.",
-                    required = false) String categoryGroup) {
-        if (startDate.isAfter(endDate)) {
+                    required = false) String categoryGroup,
+            @ToolParam(description = "Exact tag, e.g. trip-cancun (with or without #). Omit for any tag.",
+                    required = false) String tag) {
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             return "Invalid range: startDate is after endDate.";
         }
         Optional<CategoryGroup> group = Optional.empty();
@@ -120,9 +129,20 @@ class CopilotTools {
                 return "Unknown category group '%s'. Valid groups: %s.".formatted(categoryGroup, GROUPS);
             }
         }
+        boolean byTag = tag != null && !tag.isBlank();
+        if (byTag) {
+            List<String> tags = statistics.tagNames(userId, accountId);
+            String wanted = normalizeTag(tag);
+            if (tags.stream().noneMatch(name -> normalizeTag(name).equals(wanted))) {
+                return tags.isEmpty()
+                        ? "Unknown tag '%s'. This account has no tagged transactions.".formatted(tag)
+                        : "Unknown tag '%s'. Tags of this account: %s.".formatted(tag,
+                                String.join(", ", tags.subList(0, Math.min(MAX_TAGS_LISTED, tags.size()))));
+            }
+        }
 
         TransactionSearch result = statistics.search(userId, accountId, DateRange.between(startDate, endDate), text,
-                group.orElse(null), SEARCH_LIMIT);
+                group.orElse(null), byTag ? tag : null, SEARCH_LIMIT);
         if (result.matches() == 0) {
             return "No matching transactions.";
         }
@@ -131,10 +151,39 @@ class CopilotTools {
                 money(result.incomeTotal()), result.incomeCount(),
                 result.matches() > result.latest().size() ? " Newest %d:".formatted(result.latest().size()) : "");
         String rows = result.latest().stream()
-                .map(t -> "%s | %s | %s | %s | %s".formatted(t.date(), t.type(), t.name(), money(t.amount()),
-                        t.categoryGroup().label() + (t.category() == null ? "" : " / " + t.category())))
+                .map(t -> "%s | %s | %s | %s | %s%s".formatted(t.date(), t.type(), t.name(), money(t.amount()),
+                        t.categoryGroup().label() + (t.category() == null ? "" : " / " + t.category()),
+                        t.tags().isEmpty() ? "" : " | " + t.tags().stream().map(name -> "#" + name)
+                                .collect(Collectors.joining(" "))))
                 .collect(Collectors.joining("\n"));
         return header + "\n" + rows;
+    }
+
+    @Tool(description = """
+            Expenses per tag (labels like trip-cancun or work), largest first, between two dates
+            (inclusive) or over the whole history when both are omitted. Also lists the tag names:
+            use it to find the right tag when the user mentions a trip, event or project.""")
+    String spendingByTag(
+            @ToolParam(description = "Start date, yyyy-MM-dd. Omit both dates for the whole history.",
+                    required = false) LocalDate startDate,
+            @ToolParam(description = "End date (inclusive), yyyy-MM-dd. Omit both dates for the whole history.",
+                    required = false) LocalDate endDate) {
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            return "Invalid range: startDate is after endDate.";
+        }
+        List<TagTotal> tags = statistics.tagTotals(userId, accountId, DateRange.between(startDate, endDate));
+        if (tags.isEmpty()) {
+            return "No tagged expenses in that period.";
+        }
+        return tags.stream()
+                .map(t -> "%s: %s (%d transactions)".formatted(t.name(), money(t.amount()), t.count()))
+                .collect(Collectors.joining("\n"));
+    }
+
+    /** Same comparison as the API: case, repeated spaces and a leading "#" do not matter. */
+    private static String normalizeTag(String name) {
+        String cleaned = name.strip().replaceAll("\\s+", " ");
+        return (cleaned.startsWith("#") ? cleaned.substring(1).strip() : cleaned).toLowerCase(Locale.ROOT);
     }
 
     @Tool(description = """

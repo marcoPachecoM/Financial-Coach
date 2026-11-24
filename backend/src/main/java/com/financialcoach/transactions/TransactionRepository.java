@@ -242,10 +242,12 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
               and t.occurredAt >= :from and t.occurredAt < :to
               and t.categoryGroup in :groups
               and (lower(t.name) like :pattern escape '\\' or lower(coalesce(t.category, '')) like :pattern escape '\\')
+              and (:anyTag = true or exists (select 1 from t.tags g where lower(g.name) = :tagKey))
             """)
     List<Transaction> search(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
                              @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
                              @Param("pattern") String pattern, @Param("groups") Collection<CategoryGroup> groups,
+                             @Param("anyTag") boolean anyTag, @Param("tagKey") String tagKey,
                              Pageable pageable);
 
     /** Totals per type over the same filters as {@link #search}. */
@@ -256,9 +258,24 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
               and t.occurredAt >= :from and t.occurredAt < :to
               and t.categoryGroup in :groups
               and (lower(t.name) like :pattern escape '\\' or lower(coalesce(t.category, '')) like :pattern escape '\\')
+              and (:anyTag = true or exists (select 1 from t.tags g where lower(g.name) = :tagKey))
             group by t.type
             """)
     List<TypeTotals> searchTotals(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
                                   @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
-                                  @Param("pattern") String pattern, @Param("groups") Collection<CategoryGroup> groups);
+                                  @Param("pattern") String pattern, @Param("groups") Collection<CategoryGroup> groups,
+                                  @Param("anyTag") boolean anyTag, @Param("tagKey") String tagKey);
+
+    /** Expenses per tag in the period, largest first (a transaction counts once for each of its tags). */
+    @Query("""
+            select new com.financialcoach.transactions.TagTotal(g.name, count(t), sum(t.amount))
+            from Transaction t join t.tags g
+            where t.userId = :userId and t.accountId = :accountId and t.type = :expense
+              and t.occurredAt >= :from and t.occurredAt < :to
+            group by g.name
+            order by sum(t.amount) desc, lower(g.name)
+            """)
+    List<TagTotal> tagTotals(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
+                             @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
+                             @Param("expense") TransactionType expense);
 }
