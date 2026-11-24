@@ -1,14 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import type { Transaction } from '../../types/transaction';
+import type { DailyTotal } from '../../types/transaction';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
 interface SpendingTrendChartProps {
-  transactions: Transaction[];
+  /** Daily totals of the period, already filtered by category on the server. */
+  days: DailyTotal[];
   selectedCategory: string;
 }
 
 export const SpendingTrendChart: React.FC<SpendingTrendChartProps> = ({
-  transactions,
+  days,
   selectedCategory,
 }) => {
   const [hoveredDay, setHoveredDay] = useState<{
@@ -17,41 +18,19 @@ export const SpendingTrendChart: React.FC<SpendingTrendChartProps> = ({
     count: number;
   } | null>(null);
 
-  // Group transactions by date (normalized to YYYY-MM-DD dayKey)
-  const chartData = useMemo(() => {
-    // Filter by category if selected
-    // Spending only: income would inflate the daily totals.
-    const filtered = transactions.filter((tx) => {
-      if (tx.type !== 'EXPENSE') return false;
-      if (selectedCategory === 'all') return true;
-      return tx.categoryGroup === selectedCategory;
-    });
-
-    // Extract unique dates sorted ascending
-    const dateMap = new Map<string, { total: number; count: number }>();
-
-    // Sort transactions chronologically by normalized day
-    const sortedTx = [...filtered].sort((a, b) => a.datetime.localeCompare(b.datetime));
-
-    sortedTx.forEach((tx) => {
-      const dayKey = tx.datetime.split('T')[0];
-      const expense = Math.abs(tx.amount);
-      const current = dateMap.get(dayKey) || { total: 0, count: 0 };
-      dateMap.set(dayKey, {
-        total: current.total + expense,
-        count: current.count + 1,
-      });
-    });
-
-    const dataList = Array.from(dateMap.entries()).map(([date, val]) => ({
-      date,
-      formattedDate: formatDate(date),
-      total: val.total,
-      count: val.count,
-    }));
-
-    return dataList;
-  }, [transactions, selectedCategory]);
+  // One bar per day with spending: days with only income have nothing to draw.
+  const chartData = useMemo(
+    () =>
+      days
+        .filter((day) => day.expenseCount > 0)
+        .map((day) => ({
+          date: day.date,
+          formattedDate: formatDate(day.date),
+          total: day.expenseTotal,
+          count: day.expenseCount,
+        })),
+    [days],
+  );
 
   const totalPeriodSpending = useMemo(() => {
     return chartData.reduce((acc, curr) => acc + curr.total, 0);

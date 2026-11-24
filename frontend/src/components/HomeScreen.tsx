@@ -25,7 +25,6 @@ import {
   calculateDateRangeLimits,
   formatLocalDateToISO,
   generateDatePresets,
-  isDateWithinRange,
   type DatePresetId,
 } from "../utils/dateHelper";
 import {
@@ -37,7 +36,8 @@ import {
   useCategoryGroupSummary,
   useCurrentUser,
   useRecurringTransactions,
-  useTransactions,
+  useActivitySpan,
+  useDailyTotals,
 } from "../hooks/useDashboardData";
 import { updateMonthlyBudget } from "../services/accounts";
 import { getErrorMessage } from "../services/errors";
@@ -125,24 +125,19 @@ export const HomeScreen: React.FC = () => {
     setSelectedDay(null);
   };
 
-  // 3. All transactions of the account: the presets are anchored to its latest transaction,
-  //    and the table and trend chart filter them locally.
-  const allTransactions = useTransactions(accountId ? { accountId } : null);
-  const transactions = useMemo(() => allTransactions.data ?? [], [allTransactions.data]);
-
-  const datePresets = useMemo(() => generateDatePresets(calculateDateRangeLimits(transactions)), [transactions]);
+  // 3. The presets are anchored to the account's first and last transaction. Every figure below
+  //    is computed by the backend: the browser never downloads the whole history.
+  const span = useActivitySpan(accountId);
+  const firstDate = span.data?.firstDate ?? null;
+  const lastDate = span.data?.lastDate ?? null;
+  const datePresets = useMemo(
+    () => generateDatePresets(calculateDateRangeLimits(firstDate, lastDate)),
+    [firstDate, lastDate],
+  );
   const activePreset = datePresets.find((p) => p.id === selectedPresetId) ?? datePresets[0];
   const isAllTime = selectedPresetId === "all_time";
 
-  const dateFilteredTransactions = useMemo(
-    () =>
-      isAllTime
-        ? transactions
-        : transactions.filter((tx) => isDateWithinRange(tx.datetime, activePreset.startDate, activePreset.endDate)),
-    [transactions, activePreset, isAllTime],
-  );
-
-  // 4. Aggregates computed by the backend for the same period.
+  // 4. Aggregates for the selected period.
   const periodFilters = useMemo(
     () =>
       accountId
@@ -156,6 +151,7 @@ export const HomeScreen: React.FC = () => {
   );
   const summary = useAnalyticsSummary(periodFilters);
   const categories = useCategoryGroupSummary(periodFilters);
+  const daily = useDailyTotals(periodFilters, selectedCategory === "all" ? null : selectedCategory);
   const budget = useBudgetUsage(accountId);
   const recurring = useRecurringTransactions(accountId);
   const alerts = useAlerts(accountId);
@@ -169,7 +165,8 @@ export const HomeScreen: React.FC = () => {
   const refreshAll = () => {
     setListVersion((v) => v + 1);
     accounts.refetch();
-    allTransactions.refetch();
+    span.refetch();
+    daily.refetch();
     summary.refetch();
     categories.refetch();
     budget.refetch();
@@ -299,7 +296,7 @@ export const HomeScreen: React.FC = () => {
   };
 
   const loadError =
-    accounts.error ?? allTransactions.error ?? summary.error ?? categories.error ?? recurring.error ?? alerts.error;
+    accounts.error ?? span.error ?? summary.error ?? daily.error ?? categories.error ?? recurring.error ?? alerts.error;
   const noAccounts = !accounts.loading && accountList.length === 0 && !accounts.error;
 
   return (
@@ -357,7 +354,6 @@ export const HomeScreen: React.FC = () => {
               <TransactionsView
                 accountId={accountId ?? ""}
                 refreshKey={listVersion}
-                transactions={transactions}
                 month={calendarMonth}
                 selectedDay={selectedDay}
                 selectedCategory={selectedCategory}
@@ -466,7 +462,7 @@ export const HomeScreen: React.FC = () => {
                   />
                 </div>
 
-                <SpendingTrendChart transactions={dateFilteredTransactions} selectedCategory={selectedCategory} />
+                <SpendingTrendChart days={daily.days} selectedCategory={selectedCategory} />
 
                 <SpendingByCategoryChart
                   categorySummary={categorySummary}

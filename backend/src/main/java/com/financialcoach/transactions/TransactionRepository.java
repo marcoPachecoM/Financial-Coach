@@ -189,6 +189,36 @@ interface TransactionRepository extends JpaRepository<Transaction, UUID> {
     BigDecimal recurringExpenseTotal(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
                                      @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
+    /**
+     * One row per day with transactions in the period, oldest first, counting only {@code groups}.
+     * Expenses are stored positive, so their sum is already positive.
+     */
+    @Query("""
+            select new com.financialcoach.transactions.DailyTotal(cast(t.occurredAt as LocalDate),
+                       sum(case when t.type = :expense then 1L else 0L end),
+                       coalesce(sum(case when t.type = :expense then t.amount end), 0),
+                       count(t))
+            from Transaction t
+            where t.userId = :userId and t.accountId = :accountId
+              and t.occurredAt >= :from and t.occurredAt < :to
+              and t.categoryGroup in :groups
+            group by cast(t.occurredAt as LocalDate)
+            order by cast(t.occurredAt as LocalDate)
+            """)
+    List<DailyTotal> dailyTotals(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
+                                 @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
+                                 @Param("groups") Collection<CategoryGroup> groups,
+                                 @Param("expense") TransactionType expense);
+
+    @Query("""
+            select new com.financialcoach.transactions.DateSpan(min(t.occurredAt), max(t.occurredAt))
+            from Transaction t
+            where t.userId = :userId and t.accountId = :accountId
+              and t.occurredAt >= :from and t.occurredAt < :to
+            """)
+    DateSpan dateSpan(@Param("userId") UUID userId, @Param("accountId") UUID accountId,
+                      @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
     /** Amounts as positive values; largest first, ties by group name. */
     @Query("""
             select new com.financialcoach.transactions.CategoryGroupTotal(t.categoryGroup, count(t), abs(sum(t.amount)))

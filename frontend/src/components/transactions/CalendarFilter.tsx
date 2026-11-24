@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type { Transaction } from '../../types/transaction';
+import type { DailyTotal } from '../../types/transaction';
 import { formatCurrency } from '../../utils/formatters';
 
 interface CalendarFilterProps {
@@ -7,7 +7,8 @@ interface CalendarFilterProps {
   month: Date;
   /** "YYYY-MM-DD" or null. */
   selectedDay: string | null;
-  transactions: Transaction[];
+  /** Daily totals of the month shown (GET /analytics/daily). */
+  days: DailyTotal[];
   onChangeMonth: (month: Date) => void;
   onSelectDay: (day: string | null) => void;
 }
@@ -33,7 +34,7 @@ const intensityClass = (ratio: number) =>
 export const CalendarFilter: React.FC<CalendarFilterProps> = ({
   month,
   selectedDay,
-  transactions,
+  days,
   onChangeMonth,
   onSelectDay,
 }) => {
@@ -48,17 +49,12 @@ export const CalendarFilter: React.FC<CalendarFilterProps> = ({
   const monthPrefix = `${year}-${pad(monthIndex + 1)}`;
   const byDay = useMemo(() => {
     const totals = new Map<string, { spent: number; count: number }>();
-    for (const tx of transactions) {
-      if (!tx.datetime.startsWith(monthPrefix)) continue;
-      const key = tx.datetime.slice(0, 10);
-      const previous = totals.get(key) ?? { spent: 0, count: 0 };
-      totals.set(key, {
-        count: previous.count + 1,
-        spent: previous.spent + (tx.type === 'EXPENSE' ? Math.abs(tx.amount) : 0),
-      });
+    for (const day of days) {
+      if (!day.date.startsWith(monthPrefix)) continue; // the previous month's, while the new one loads
+      totals.set(day.date, { spent: day.expenseTotal, count: day.transactionCount });
     }
     return totals;
-  }, [transactions, monthPrefix]);
+  }, [days, monthPrefix]);
 
   const maxSpent = Math.max(0, ...[...byDay.values()].map((d) => d.spent));
   const monthSpent = [...byDay.values()].reduce((sum, d) => sum + d.spent, 0);

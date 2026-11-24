@@ -1,4 +1,3 @@
-import type { Transaction } from '../types/transaction';
 
 export interface DateRangeLimit {
   minDate: Date;
@@ -73,10 +72,13 @@ export function formatMonthYear(d: Date): string {
 }
 
 /**
- * Calculates date boundaries for presets.
+ * Date boundaries for the presets: the account's first and last transaction ("YYYY-MM-DD", from
+ * GET /analytics/summary). Without transactions, the last 30 days.
  */
-export function calculateDateRangeLimits(transactions: Transaction[]): DateRangeLimit {
-  if (!transactions || transactions.length === 0) {
+export function calculateDateRangeLimits(firstDate: string | null, lastDate: string | null): DateRangeLimit {
+  const min = firstDate ? parseDateOnly(firstDate) : null;
+  const max = lastDate ? parseDateOnly(lastDate) : null;
+  if (!min || !max) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -87,39 +89,7 @@ export function calculateDateRangeLimits(transactions: Transaction[]): DateRange
       maxDateStr: formatLocalDateToISO(today),
     };
   }
-
-  let minTimestamp = Infinity;
-  let maxTimestamp = -Infinity;
-
-  transactions.forEach((tx) => {
-    const d = parseDateOnly(tx.datetime);
-    if (d) {
-      const time = d.getTime();
-      if (time < minTimestamp) minTimestamp = time;
-      if (time > maxTimestamp) maxTimestamp = time;
-    }
-  });
-
-  if (minTimestamp === Infinity || maxTimestamp === -Infinity) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return {
-      minDate: today,
-      maxDate: today,
-      minDateStr: formatLocalDateToISO(today),
-      maxDateStr: formatLocalDateToISO(today),
-    };
-  }
-
-  const minDate = new Date(minTimestamp);
-  const maxDate = new Date(maxTimestamp);
-
-  return {
-    minDate,
-    maxDate,
-    minDateStr: formatLocalDateToISO(minDate),
-    maxDateStr: formatLocalDateToISO(maxDate),
-  };
+  return { minDate: min, maxDate: max, minDateStr: formatLocalDateToISO(min), maxDateStr: formatLocalDateToISO(max) };
 }
 
 export function generateDatePresets(limits: DateRangeLimit): DatePreset[] {
@@ -150,15 +120,4 @@ export function generateDatePresets(limits: DateRangeLimit): DatePreset[] {
     { id: 'last_30_days', label: last30Label, sublabel: last30Sublabel, startDate: last30Start, endDate: last30End },
     { id: 'last_7_days', label: last7Label, sublabel: last7Sublabel, startDate: last7Start, endDate: last7End },
   ];
-}
-
-export function isDateWithinRange(txDateStr: string, startDate: Date, endDate: Date): boolean {
-  const d = parseDateOnly(txDateStr);
-  if (!d) return false;
-
-  const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0, 0).getTime();
-  const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59, 999).getTime();
-  const time = d.getTime();
-
-  return time >= start && time <= end;
 }

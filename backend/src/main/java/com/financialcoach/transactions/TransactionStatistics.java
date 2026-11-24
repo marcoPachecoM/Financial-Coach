@@ -65,6 +65,26 @@ public class TransactionStatistics {
     }
 
     /**
+     * One entry per day with transactions in the range, oldest first (for the calendar and the
+     * spending trend). With {@code categoryGroup}, only that group counts.
+     */
+    @Transactional(readOnly = true)
+    public List<DailyTotal> dailyTotals(UUID userId, UUID accountId, DateRange range, CategoryGroup categoryGroup) {
+        accountService.requireOwned(userId, accountId);
+        Collection<CategoryGroup> groups = categoryGroup == null
+                ? Arrays.asList(CategoryGroup.values())
+                : Set.of(categoryGroup);
+        return transactions.dailyTotals(userId, accountId, range.from(), range.to(), groups, TransactionType.EXPENSE);
+    }
+
+    /** First and last transaction of the range (the dashboard's date presets are anchored to them). */
+    @Transactional(readOnly = true)
+    public DateSpan dateSpan(UUID userId, UUID accountId, DateRange range) {
+        accountService.requireOwned(userId, accountId);
+        return transactions.dateSpan(userId, accountId, range.from(), range.to());
+    }
+
+    /**
      * Transactions whose name or category contains {@code text} (case-insensitive) and, when
      * {@code categoryGroup} is given, of that group. Totals cover every match; only the newest
      * {@code limit} rows are returned. A null or blank {@code text} matches every transaction.

@@ -129,6 +129,16 @@ export interface ApiAnalyticsSummary {
   income_count: number;
   average_expense: string;
   largest_expense: string;
+  /** First and last transaction of the period ("YYYY-MM-DD"); null when there are none. */
+  first_date: string | null;
+  last_date: string | null;
+}
+
+export interface ApiDailyTotal {
+  date: string;
+  expense_total: string;
+  expense_count: number;
+  transaction_count: number;
 }
 
 export interface ApiCategoryGroupBreakdown {
