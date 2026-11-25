@@ -397,7 +397,7 @@ export const HomeScreen: React.FC = () => {
             {/* Greeting & Date Selector */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                <h2 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight flex flex-wrap items-center gap-2">
                   {greeting()}, {me.data?.username ?? "there"}! <span className="animate-bounce">👋</span>
                 </h2>
                 <p className="text-sm text-slate-500 mt-0.5">
