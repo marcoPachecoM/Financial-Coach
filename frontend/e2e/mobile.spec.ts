@@ -34,6 +34,14 @@ test('on a phone the sidebar is a drawer and nothing scrolls sideways', async ({
   await expect(page.getByRole('button', { name: 'Export CSV' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 
+  // On mobile the copilot is a floating circular trigger in the bottom-right corner.
+  const copilotTrigger = page.getByRole('button', { name: /open mush copilot/i });
+  await expect(copilotTrigger).toBeVisible();
+  await copilotTrigger.click();
+  await expect(page.getByText(/Imported 1 transaction/)).toBeVisible();
+  await page.getByRole('button', { name: 'Close copilot' }).click();
+  await expect(copilotTrigger).toBeVisible();
+
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await expect.poll(() => isOnScreen(goals)).toBe(true);
   await goals.click();
