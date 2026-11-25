@@ -8,8 +8,14 @@ on:
 
 jobs:
   backend:
-    name: backend (Spring Boot)
+    name: backend (Spring Boot, ${{ matrix.postgres }})
     runs-on: ubuntu-latest
+    # Production (Supabase) runs PostgreSQL 17; local development (compose.yaml) runs 18. The
+    # migrations and every test run on both (see db/migration/beforeMigrate.sql).
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ["postgres:17-alpine", "postgres:18-alpine"]
     defaults:
       run:
         working-directory: backend
@@ -27,7 +33,19 @@ jobs:
 
       # Testcontainers starts PostgreSQL in Docker (available on ubuntu-latest runners).
       - name: Build and test (migrations against PostgreSQL)
-        run: ./mvnw -B verify
+        run: ./mvnw -B verify -Dtest.postgres.image=${{ matrix.postgres }}
+
+  docker:
+    name: docker image (backend)
+    runs-on: ubuntu-latest
+    # The production image builds (deploy.yml builds and pushes it after CI on main).
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build the image
+        working-directory: backend
+        run: docker build -t financial-coach-api:ci .
 
   frontend:
     name: frontend (React + Vite)
@@ -62,10 +80,11 @@ jobs:
   e2e:
     name: e2e (Playwright)
     runs-on: ubuntu-latest
-    # The whole app: PostgreSQL, the backend (dev profile, demo data) and Vite, driven by a real browser.
+    # The whole app: PostgreSQL (17, as in production), the backend (dev profile, demo data) and
+    # Vite, driven by a real browser.
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_DB: financial_coach
           POSTGRES_USER: financial_coach

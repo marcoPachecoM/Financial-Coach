@@ -1,0 +1,182 @@
+name: Deploy
+
+# Production: the API on Cloud Run and the frontend on Firebase Hosting (docs/deploy.md).
+# Runs after CI passes on a push to main, or by hand (Actions > Deploy > Run workflow) on main.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # Workload Identity Federation: GitHub's OIDC token instead of a JSON key
+
+# Never two deploys at once; a newer one waits for the running one instead of cancelling it.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  REGION: us-west1
+  SERVICE: financial-coach-api
+  # The exact commit CI tested. With workflow_run, github.sha would be the tip of main instead.
+  COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  backend:
+    name: backend (Cloud Run)
+    # Only a real push to main of this repository whose CI passed, or a manual run on main. A pull
+    # request from a fork whose branch is also called "main" has head_branch == 'main' too: the
+    # event and repository checks keep it out.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      REGISTRY: us-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/financial-coach
+      TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Checkout the tested commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.COMMIT }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Build and push the images
+        run: |
+          gcloud auth configure-docker us-west1-docker.pkg.dev --quiet
+          docker build -t "$REGISTRY/api:$TAG" backend
+          docker build -t "$REGISTRY/db-backup:$TAG" -f backend/ops/Dockerfile.db-backup backend/ops
+          docker push "$REGISTRY/api:$TAG"
+          docker push "$REGISTRY/db-backup:$TAG"
+
+      # The service's whole configuration lives here, so every deploy applies it (nothing set by
+      # hand in the console drifts). Secrets are references to Secret Manager, never values.
+      - name: Deploy to Cloud Run
+        id: deploy
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          DB_URL: ${{ vars.DB_URL }}
+          DB_USER: ${{ vars.DB_USER }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --project "$PROJECT" --region "$REGION" --image "$REGISTRY/api:$TAG" \
+            --service-account "api-runtime@$PROJECT.iam.gserviceaccount.com" \
+            --allow-unauthenticated \
+            --min-instances 0 --max-instances 1 --concurrency 80 \
+            --cpu 1 --memory 1Gi --cpu-boost --timeout 300 \
+            --set-env-vars "^@^SPRING_PROFILES_ACTIVE=prod@TZ=America/Mexico_City@DB_URL=$DB_URL@DB_USER=$DB_USER@GEMINI_MODEL=$GEMINI_MODEL@CORS_ALLOWED_ORIGINS=https://$PROJECT.web.app,https://$PROJECT.firebaseapp.com" \
+            --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest,JWT_SECRET_KEY=JWT_SECRET_KEY:latest,DB_PASSWORD=DB_PASSWORD:latest" \
+            --labels "commit=${COMMIT:0:12}" \
+            --quiet
+          url=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format 'value(status.url)')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # The daily backup job (Cloud Scheduler runs it; see docs/deploy.md). Deployed with the API so its
+      # image and settings are versioned too. It is not run here.
+      - name: Deploy the backup job
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          DB_URL: ${{ vars.DB_URL }}
+          DB_USER: ${{ vars.DB_USER }}
+        run: |
+          gcloud run jobs deploy db-backup \
+            --project "$PROJECT" --region "$REGION" --image "$REGISTRY/db-backup:$TAG" \
+            --service-account "db-backup@$PROJECT.iam.gserviceaccount.com" \
+            --memory 512Mi --cpu 1 --max-retries 2 --task-timeout 10m \
+            --set-env-vars "^@^DB_URL=$DB_URL@PGUSER=$DB_USER@BACKUP_DIR=/backups" \
+            --set-secrets "PGPASSWORD=DB_PASSWORD:latest" \
+            --clear-volumes --clear-volume-mounts \
+            --add-volume "name=backups,type=cloud-storage,bucket=$PROJECT-db-backups" \
+            --add-volume-mount "volume=backups,mount-path=/backups" \
+            --quiet
+
+      - name: Smoke test (the API and its database)
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf "$URL/actuator/health" | grep -q '"status":"UP"'; then exit 0; fi
+            sleep 5
+          done
+          echo "::error::$URL/actuator/health is not UP"
+          exit 1
+
+  frontend:
+    name: frontend (Firebase Hosting)
+    needs: backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout the tested commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.COMMIT }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      # The API URL comes from the deploy that just ran: no variable to keep in sync by hand.
+      - name: Build
+        env:
+          VITE_API_URL: ${{ needs.backend.outputs.url }}/api/v1
+        run: |
+          npm ci
+          npm run build
+
+      # The versioned firebase.json is not modified: a copy with the API origin in the CSP is
+      # deployed from a staging directory, together with the build.
+      - name: Prepare the hosting directory
+        env:
+          API_ORIGIN: ${{ needs.backend.outputs.url }}
+        run: |
+          stage="$RUNNER_TEMP/hosting"
+          mkdir -p "$stage"
+          cp -R dist "$stage/dist"
+          sed "s|__API_ORIGIN__|$API_ORIGIN|g" firebase.json > "$stage/firebase.json"
+          grep -q "connect-src 'self' $API_ORIGIN;" "$stage/firebase.json"
+
+      - name: Deploy to Firebase Hosting
+        working-directory: ${{ runner.temp }}/hosting
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+        run: npx --yes firebase-tools@15.34.2 deploy --only hosting --project "$PROJECT" --non-interactive
+
+      - name: Smoke test (the site and its CSP)
+        env:
+          SITE: https://${{ vars.GCP_PROJECT_ID }}.web.app
+          API_ORIGIN: ${{ needs.backend.outputs.url }}
+        run: |
+          headers=$(curl -sfI "$SITE/")
+          echo "$headers" | grep -qi "content-security-policy:.*$API_ORIGIN"
+          curl -sf "$SITE/" | grep -q '<div id="root">'
