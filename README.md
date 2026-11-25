@@ -6,7 +6,7 @@
 
 Financial Coach is a personal finance assistant. Users sign in, import their bank transactions from CSV files (or type them in), and get a categorized view of their spending: analytics by period and category, monthly budgets, recurring transactions that are added automatically, and alerts (budget limits, upcoming or missing recurring charges, price changes, suggested subscriptions).
 
-- **Backend:** Spring Boot 4 (Java 25) in `backend/`, PostgreSQL 18, Flyway, JWT authentication. Contract: [docs/openapi.yaml](docs/openapi.yaml). Data model: [docs/database.md](docs/database.md).
+- **Backend:** Spring Boot 4 (Java 25) in `backend/`, PostgreSQL 18 locally and 17 in production (Supabase), Flyway, JWT authentication. Contract: [docs/openapi.yaml](docs/openapi.yaml). Data model: [docs/database.md](docs/database.md).
 - **Frontend:** React 19 + Vite + Tailwind in `frontend/`.
 - **API collection:** [docs/postman/financial-coach.postman_collection.json](docs/postman/financial-coach.postman_collection.json) (Postman → Import).
 
@@ -445,13 +445,24 @@ Modular monolith, one package per feature under `backend/src/main/java/com/finan
 
 GitHub Actions on push and pull request:
 
-- `backend`: `./mvnw verify` on Java 25 (unit and integration tests, Flyway migrations against PostgreSQL with Testcontainers).
+- `backend`: `./mvnw verify` on Java 25 (unit and integration tests, Flyway migrations against PostgreSQL with Testcontainers), on **PostgreSQL 17** (production, Supabase) and **18** (local `compose.yaml`). Locally the tests use 17; `-Dtest.postgres.image=postgres:18-alpine` runs them on 18.
+- `docker image`: the production image of the backend builds.
 - `frontend`: `npm ci`, ESLint, unit tests (Vitest), type check and build.
-- `e2e`: PostgreSQL as a service, the backend jar (`dev,e2e` profiles: AI categorization off, high sign-up limits) and the Playwright tests in Chromium. When a test fails, the HTML report (with traces and screenshots) and the backend log are uploaded as the `playwright-report` artifact.
+- `e2e`: PostgreSQL 17 as a service, the backend jar (`dev,e2e` profiles: AI categorization off, high sign-up limits) and the Playwright tests in Chromium. When a test fails, the HTML report (with traces and screenshots) and the backend log are uploaded as the `playwright-report` artifact.
+
+After CI passes on a push to `main`, [deploy.yml](.github/workflows/deploy.yml) deploys to production (see below).
 
 Dependabot ([.github/dependabot.yml](.github/dependabot.yml)) opens weekly pull requests for Maven, npm and GitHub Actions updates (minor and patch grouped per ecosystem). For immediate pull requests on security advisories, enable *Dependabot alerts* and *Dependabot security updates* in the repository settings.
 
-## 7. Production Security Requirements
+## 7. Production
+
+Cloud Run (API) + Supabase (PostgreSQL 17) + Firebase Hosting (frontend), with backups to Cloud Storage, about 1–2 USD a month. First deploy, rollback, restoring a backup and rotating secrets: [docs/deploy.md](docs/deploy.md).
+
+- `SPRING_PROFILES_ACTIVE=prod` ([application-prod.yml](backend/src/main/resources/application-prod.yml)): real client IP behind the proxy, logs to stdout, small connection pool, graceful shutdown.
+- Image: [backend/Dockerfile](backend/Dockerfile) (time zone `America/Mexico_City`, non-root user).
+- PostgreSQL 17 lacks two things the migrations use from 18: `uuidv7()` and named NOT NULL constraints. The Flyway callbacks `db/migration/beforeMigrate.sql` and `beforeEachMigrate.sql` provide them on 17 and do nothing on 18; already-applied migrations are not edited.
+
+## 8. Production Security Requirements
 
 - Set a strong, unique `JWT_SECRET_KEY` (never the `dev` one) and real database credentials.
 - Never use wildcard CORS for authenticated APIs.

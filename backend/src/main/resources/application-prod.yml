@@ -1,0 +1,44 @@
+# Production (Cloud Run + Supabase): SPRING_PROFILES_ACTIVE=prod. See docs/deploy.md.
+# Secrets come from the environment (Secret Manager); without them the app does not start.
+server:
+  # Cloud Run tells the container which port to listen on.
+  port: ${PORT:8080}
+  # Behind Google's front end: the client IP is read from X-Forwarded-For by Tomcat's
+  # RemoteIpValve, right to left (the entry Google appends), so a forged value sent by the client is
+  # ignored. The per-IP rate limits depend on it (RateLimitConfig). Checked after each infra change:
+  # docs/deploy.md, "Client IP".
+  forward-headers-strategy: native
+  # Finish the requests in flight (a streamed copilot answer) when Cloud Run stops the instance.
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    hikari:
+      # Supabase's session pooler gives each connection a server connection, and the Free plan has
+      # few of them. One instance (max-instances=1) rarely needs more than a couple at once.
+      maximum-pool-size: 4
+      minimum-idle: 0
+      # Drop idle connections before the pooler or the network does.
+      idle-timeout: 120000
+      max-lifetime: 600000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      # /actuator/health/liveness (startup probe) and /readiness; /actuator/health also checks the
+      # database (uptime check).
+      probes:
+        enabled: true
+
+# Cloud Run sends stdout to Cloud Logging: no log file inside the container.
+logging:
+  file:
+    name: ""
+  level:
+    root: INFO

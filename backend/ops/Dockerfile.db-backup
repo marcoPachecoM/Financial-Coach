@@ -1,0 +1,7 @@
+# Image of the Cloud Run Job "db-backup" (built and deployed by .github/workflows/deploy.yml).
+# pg_dump must be at least the server's major version: Supabase runs PostgreSQL 17.
+FROM postgres:17-alpine
+COPY db-backup.sh /usr/local/bin/db-backup.sh
+# Runs as root: Cloud Run mounts the Cloud Storage volume for root by default. A short-lived job
+# that only runs pg_dump, with no network listener.
+ENTRYPOINT ["/usr/local/bin/db-backup.sh"]

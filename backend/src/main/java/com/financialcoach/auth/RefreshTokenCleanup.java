@@ -5,12 +5,16 @@ import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Deletes expired refresh tokens once a day (otherwise refresh_tokens grows forever).
+ * Deletes expired refresh tokens once a day (otherwise refresh_tokens grows forever), and once at
+ * startup: on Cloud Run the instance scales to zero, so the nightly cron may never fire. Running it
+ * again, or on two instances at once, only deletes rows that are already expired.
  *
  * <p>Safe for reuse detection: an expired token is rejected by its {@code exp} claim before
  * the database is checked, so its row is no longer needed. The one-day margin covers the
@@ -30,6 +34,13 @@ class RefreshTokenCleanup {
     RefreshTokenCleanup(RefreshTokenRepository refreshTokens, Clock clock) {
         this.refreshTokens = refreshTokens;
         this.clock = clock;
+    }
+
+    /** Separate from deleteExpired: an event listener that returns a value publishes it as an event. */
+    @EventListener(ApplicationReadyEvent.class)
+    @Transactional
+    void deleteExpiredAtStartup() {
+        deleteExpired();
     }
 
     @Scheduled(cron = "${financial-coach.refresh-token-cleanup.cron:0 30 3 * * *}")

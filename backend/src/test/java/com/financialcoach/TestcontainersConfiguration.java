@@ -10,8 +10,11 @@ import org.testcontainers.utility.DockerImageName;
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
 
-	/** Same major version as compose.yaml, so tests run against the real database engine. */
-	static final String POSTGRES_IMAGE = "postgres:18-alpine";
+	/**
+	 * Production (Supabase) runs PostgreSQL 17, so tests do too by default. CI also runs them on 18
+	 * (compose.yaml, local development): -Dtest.postgres.image=postgres:18-alpine.
+	 */
+	static final String POSTGRES_IMAGE = System.getProperty("test.postgres.image", "postgres:17-alpine");
 
 	@Bean
 	@ServiceConnection

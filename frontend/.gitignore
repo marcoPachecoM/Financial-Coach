@@ -31,3 +31,7 @@ yarn.lock
 test-results/
 playwright-report/
 playwright/.cache/
+
+# Firebase CLI (deploy and emulators)
+.firebase/
+firebase-debug.log
