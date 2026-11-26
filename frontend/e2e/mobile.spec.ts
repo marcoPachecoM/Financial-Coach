@@ -45,6 +45,7 @@ test('on a phone the sidebar is a drawer and nothing scrolls sideways', async ({
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await expect.poll(() => isOnScreen(goals)).toBe(true);
   await page.getByRole('button', { name: 'Transactions', exact: true }).click();
+  await expect.poll(() => isOnScreen(goals)).toBe(false);
   await expect(page.getByRole('heading', { name: 'Transactions', exact: true })).toBeVisible();
   // On mobile, transactions render as cards (no HTML table).
   await expect(page.getByRole('article').filter({ hasText: 'Coffee' })).toBeVisible();
