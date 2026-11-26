@@ -142,6 +142,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {nav}
         <div className="border-t border-slate-100" />
         {accountsBlock}
+        <div className={`mt-auto pt-3 border-t border-slate-100 text-[11px] font-mono text-slate-400 ${compact ? 'text-center' : 'px-2 flex items-center justify-between'}`}>
+          {!compact && <span className="font-sans font-medium text-slate-500">Mush</span>}
+          <span>v1.0.1</span>
+        </div>
       </aside>
     </>
   );

@@ -46,7 +46,7 @@ final class CsvTransactionReader {
     static final int MAX_REPORTED_ERRORS = 100;
 
     private static final DateTimeFormatter DATE_FORMAT =
-            DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").withResolverStyle(ResolverStyle.STRICT);
+            DateTimeFormatter.ofPattern("uuuu-MM-dd H:mm:ss").withResolverStyle(ResolverStyle.STRICT);
 
     private static final Pattern SIGNED_AMOUNT = Pattern.compile(Money.SIGNED_PATTERN);
 

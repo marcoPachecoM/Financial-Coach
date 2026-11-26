@@ -153,9 +153,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </div>
 
               <div>
-                <p className="font-bold text-lg tracking-tight">FinSight</p>
+                <p className="font-bold text-lg tracking-tight">Mush</p>
                 <p className="text-[9px] text-slate-400 font-mono uppercase tracking-[0.15em]">
-                  Financial Intelligence
+                  Your financial intelligence
                 </p>
               </div>
             </div>
@@ -338,7 +338,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <span className="material-symbols-outlined !text-[13px]">
                 shield
               </span>
-              Secured with industry-standard encryption
+              <span>Secured with industry-standard encryption</span>
+              <span className="text-slate-300">·</span>
+              <span className="font-mono">v1.0.1</span>
             </div>
           </div>
         </section>

@@ -219,6 +219,17 @@ class CsvImportTest extends ApiIntegrationTest {
         }
 
         @Test
+        void acceptsSingleDigitHourInDate() throws Exception {
+            upload(alice, HEADER
+                    + "Income,2026-11-24 6:55:57,6:55,venta,301.92,Others,Awards,Debit card,Mercado libre\n")
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.records_imported").value(1));
+
+            Map<String, Object> row = jdbc.queryForMap("SELECT datetime FROM transactions WHERE account_id = ?", aliceCard);
+            assertThat(row).containsEntry("datetime", java.sql.Timestamp.valueOf("2026-11-24 06:55:57"));
+        }
+
+        @Test
         void acceptsExcelByteOrderMarkAndCrlfLineEndings() throws Exception {
             String csv = "\uFEFF" + HEADER.replace("\n", "\r\n")
                     + "Expense,2026-01-02 13:35:00,,La tiendita,100,Food,,Debit card,\r\n";

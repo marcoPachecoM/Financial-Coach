@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
 import type { Transaction } from '../../types/transaction';
 import type { RecurrenceFrequency } from '../../types/api';
 import { FREQUENCY_LABELS } from '../../types/recurring';
@@ -7,6 +7,14 @@ import { formatCurrency, formatDate } from '../../utils/formatters';
 import { useAsync } from '../../hooks/useAsync';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { getTransactionPage } from '../../services/transactions';
+
+const DESKTOP_QUERY = '(min-width: 768px)';
+const subscribeDesktop = (onChange: () => void) => {
+  const mq = window.matchMedia(DESKTOP_QUERY);
+  mq.addEventListener('change', onChange);
+  return () => mq.removeEventListener('change', onChange);
+};
+const isDesktopSnapshot = () => window.matchMedia(DESKTOP_QUERY).matches;
 
 interface TransactionsTableProps {
   /** Heading, e.g. the day or month shown. */
@@ -62,6 +70,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   onDelete,
   onMakeRecurring,
 }) => {
+  const isDesktop = useSyncExternalStore(subscribeDesktop, isDesktopSnapshot, () => true);
   const [searchQuery, setSearchQuery] = useState('');
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
@@ -212,7 +221,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             )}
           </div>
 
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 !text-[18px]">
               search
             </span>
@@ -221,7 +230,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search merchant, category, notes, tags..."
-              className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-hidden w-48 sm:w-56 transition-all"
+              className="pl-8 pr-7 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-hidden w-full sm:w-56 transition-all"
             />
             {searchQuery && (
               <button
@@ -235,116 +244,275 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         </div>
       </div>
 
-      {/* Transactions Data Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse min-w-[640px]">
-          <thead>
-            <tr className="bg-slate-50/75 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase font-mono tracking-wider">
-              <th className="py-3 px-5">Date</th>
-              <th className="py-3 px-5">Merchant</th>
-              <th className="py-3 px-5">Category</th>
-              <th className="py-3 px-5 text-right">Amount</th>
-              <th className="py-3 pr-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 text-sm">
-            {result.error && !page ? (
-              <tr>
-                <td colSpan={5} role="alert" className="py-12 text-center text-sm text-rose-600">
-                  {result.error}
-                </td>
+      {/* Transactions: Data Table on md+, Cards on mobile */}
+      {isDesktop ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[640px]">
+            <thead>
+              <tr className="bg-slate-50/75 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase font-mono tracking-wider">
+                <th className="py-3 px-5">Date</th>
+                <th className="py-3 px-5">Merchant</th>
+                <th className="py-3 px-5">Category</th>
+                <th className="py-3 px-5 text-right">Amount</th>
+                <th className="py-3 pr-4 text-right">Actions</th>
               </tr>
-            ) : displayedTransactions.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="py-12 text-center text-slate-400">
-                  <div className="flex flex-col items-center justify-center">
-                    <span className="material-symbols-outlined !text-[36px] text-slate-300 mb-2">
-                      receipt_long
-                    </span>
-                    <p className="text-sm font-medium text-slate-600">
-                      {loading ? 'Loading transactions...' : 'No transactions match your criteria'}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-1">Try clearing your filters or upload a new dataset.</p>
-                    <button
-                      onClick={onOpenUpload}
-                      className="mt-3 text-xs text-emerald-600 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-sm">
+              {result.error && !page ? (
+                <tr>
+                  <td colSpan={5} role="alert" className="py-12 text-center text-sm text-rose-600">
+                    {result.error}
+                  </td>
+                </tr>
+              ) : displayedTransactions.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-12 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center">
+                      <span className="material-symbols-outlined !text-[36px] text-slate-300 mb-2">
+                        receipt_long
+                      </span>
+                      <p className="text-sm font-medium text-slate-600">
+                        {loading ? 'Loading transactions...' : 'No transactions match your criteria'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">Try clearing your filters or upload a new dataset.</p>
+                      <button
+                        onClick={onOpenUpload}
+                        className="mt-3 text-xs text-emerald-600 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined !text-[16px]">add_circle</span>
+                        Upload new CSV
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                displayedTransactions.map((tx) => {
+                  const isExpense = tx.type === 'EXPENSE';
+                  return (
+                    <tr
+                      key={tx.id}
+                      className="hover:bg-slate-50/80 transition-colors group"
                     >
-                      <span className="material-symbols-outlined !text-[16px]">add_circle</span>
-                      Upload new CSV
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ) : (
-              displayedTransactions.map((tx) => {
-                const isExpense = tx.type === 'EXPENSE';
-                return (
-                  <tr
-                    key={tx.id}
-                    className="hover:bg-slate-50/80 transition-colors group"
-                  >
-                    {/* Date */}
-                    <td className="py-3.5 px-5 text-xs font-medium text-slate-500 whitespace-nowrap">
-                      {formatDate(tx.datetime)}
-                      <span className="block text-[11px] font-mono text-slate-400">{tx.datetime.slice(11, 16)}</span>
-                    </td>
+                      {/* Date */}
+                      <td className="py-3.5 px-5 text-xs font-medium text-slate-500 whitespace-nowrap">
+                        {formatDate(tx.datetime)}
+                        <span className="block text-[11px] font-mono text-slate-400">{tx.datetime.slice(11, 16)}</span>
+                      </td>
 
-                    {/* Merchant & notes */}
-                    <td className="py-3.5 px-5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200/60 flex items-center justify-center text-slate-700 font-semibold text-xs shrink-0 group-hover:bg-white group-hover:border-emerald-200 transition-colors">
-                          {tx.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-slate-900 leading-tight flex items-center gap-1">
-                            {tx.name}
-                            {tx.recurringTransactionId && (
-                              <span
-                                className="material-symbols-outlined !text-[14px] text-emerald-600"
-                                title="Recurring: the next ones are added automatically"
-                              >
-                                repeat
+                      {/* Merchant & notes */}
+                      <td className="py-3.5 px-5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200/60 flex items-center justify-center text-slate-700 font-semibold text-xs shrink-0 group-hover:bg-white group-hover:border-emerald-200 transition-colors">
+                            {tx.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-slate-900 leading-tight flex items-center gap-1">
+                              {tx.name}
+                              {tx.recurringTransactionId && (
+                                <span
+                                  className="material-symbols-outlined !text-[14px] text-emerald-600"
+                                  title="Recurring: the next ones are added automatically"
+                                >
+                                  repeat
+                                </span>
+                              )}
+                            </p>
+                            {tx.notes && (
+                              <span className="text-[11px] text-slate-400" title={tx.notes}>
+                                {tx.notes}
                               </span>
                             )}
-                          </p>
-                          {tx.notes && (
-                            <span className="text-[11px] text-slate-400" title={tx.notes}>
-                              {tx.notes}
+                            {tx.tags.length > 0 && (
+                              <span className="flex flex-wrap gap-1 mt-0.5">
+                                {tx.tags.map((tag) => (
+                                  <button
+                                    key={tag}
+                                    type="button"
+                                    onClick={() => onSelectTag(tag)}
+                                    title={`Show only #${tag}`}
+                                    className={`px-1.5 py-px rounded-full text-[10px] font-medium border cursor-pointer transition-colors ${
+                                      selectedTag?.toLowerCase() === tag.toLowerCase()
+                                        ? 'bg-emerald-600 border-emerald-600 text-white'
+                                        : 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                                    }`}
+                                  >
+                                    #{tag}
+                                  </button>
+                                ))}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Category */}
+                      <td className="py-3.5 px-5 whitespace-nowrap">
+                        <CategoryBadge group={tx.categoryGroup} />
+                        {tx.category && (
+                          <span className="block text-[11px] text-slate-500 mt-1 pl-1">{tx.category}</span>
+                        )}
+                      </td>
+
+                      {/* Amount */}
+                      <td className="py-3.5 px-5 text-right whitespace-nowrap">
+                        <span
+                          className={`font-semibold font-mono text-sm ${
+                            isExpense ? 'text-slate-900' : 'text-emerald-600'
+                          }`}
+                        >
+                          {isExpense ? '' : '+'}{formatCurrency(tx.amount)}
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3.5 pr-4 text-right relative whitespace-nowrap">
+                        <div className="inline-flex items-center gap-0.5">
+                          <button
+                            onClick={() => onView(tx)}
+                            title="View"
+                            className={`${actionButton} hover:text-slate-700 hover:bg-slate-100`}
+                          >
+                            <span className="material-symbols-outlined !text-[18px]">visibility</span>
+                          </button>
+                          <button
+                            onClick={() => onEdit(tx)}
+                            title="Edit"
+                            className={`${actionButton} hover:text-emerald-700 hover:bg-emerald-50`}
+                          >
+                            <span className="material-symbols-outlined !text-[18px]">edit</span>
+                          </button>
+                          <button
+                            onClick={() => onDelete(tx)}
+                            title="Delete"
+                            className={`${actionButton} hover:text-rose-600 hover:bg-rose-50`}
+                          >
+                            <span className="material-symbols-outlined !text-[18px]">delete</span>
+                          </button>
+                          {tx.recurringTransactionId ? (
+                            <span className="p-1.5 text-emerald-600" title="Already recurring">
+                              <span className="material-symbols-outlined !text-[18px]">event_repeat</span>
                             </span>
-                          )}
-                          {tx.tags.length > 0 && (
-                            <span className="flex flex-wrap gap-1 mt-0.5">
-                              {tx.tags.map((tag) => (
-                                <button
-                                  key={tag}
-                                  type="button"
-                                  onClick={() => onSelectTag(tag)}
-                                  title={`Show only #${tag}`}
-                                  className={`px-1.5 py-px rounded-full text-[10px] font-medium border cursor-pointer transition-colors ${
-                                    selectedTag?.toLowerCase() === tag.toLowerCase()
-                                      ? 'bg-emerald-600 border-emerald-600 text-white'
-                                      : 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
-                                  }`}
-                                >
-                                  #{tag}
-                                </button>
-                              ))}
-                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setMenuFor(menuFor === tx.id ? null : tx.id)}
+                              title="Make recurring"
+                              className={`${actionButton} hover:text-emerald-700 hover:bg-emerald-50`}
+                            >
+                              <span className="material-symbols-outlined !text-[18px]">event_repeat</span>
+                            </button>
                           )}
                         </div>
+                        {menuFor === tx.id && (
+                          <div
+                            className="absolute right-4 top-full -mt-2 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-1.5 text-left"
+                            onMouseLeave={() => setMenuFor(null)}
+                          >
+                            <p className="px-2 py-1 text-[10px] font-mono font-semibold uppercase text-slate-400">
+                              Make recurring
+                            </p>
+                            {FREQUENCIES.map((frequency) => (
+                              <button
+                                key={frequency}
+                                onClick={() => {
+                                  setMenuFor(null);
+                                  onMakeRecurring(tx, frequency);
+                                }}
+                                className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer"
+                              >
+                                {FREQUENCY_LABELS[frequency]}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="p-3 space-y-3 bg-slate-50/40">
+          {result.error && !page ? (
+            <p role="alert" className="py-10 text-center text-sm text-rose-600">
+              {result.error}
+            </p>
+          ) : displayedTransactions.length === 0 ? (
+            <div className="py-10 px-4 text-center text-slate-400 flex flex-col items-center justify-center">
+              <span className="material-symbols-outlined !text-[36px] text-slate-300 mb-2">
+                receipt_long
+              </span>
+              <p className="text-sm font-medium text-slate-600">
+                {loading ? 'Loading transactions...' : 'No transactions match your criteria'}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">Try clearing your filters or upload a new dataset.</p>
+              <button
+                onClick={onOpenUpload}
+                className="mt-3 text-xs text-emerald-600 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+              >
+                <span className="material-symbols-outlined !text-[16px]">add_circle</span>
+                Upload new CSV
+              </button>
+            </div>
+          ) : (
+            displayedTransactions.map((tx) => {
+              const isExpense = tx.type === 'EXPENSE';
+              return (
+                <article
+                  key={tx.id}
+                  className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-3.5 space-y-3"
+                >
+                  {/* Card Header: Merchant + quick Edit/Delete */}
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-slate-100 border border-slate-200/60 flex items-center justify-center text-slate-700 font-semibold text-xs shrink-0">
+                        {tx.name.charAt(0).toUpperCase()}
                       </div>
-                    </td>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm text-slate-900 leading-tight flex items-center gap-1 truncate">
+                          <span className="truncate">{tx.name}</span>
+                          {tx.recurringTransactionId && (
+                            <span
+                              className="material-symbols-outlined !text-[14px] text-emerald-600 shrink-0"
+                              title="Recurring: the next ones are added automatically"
+                            >
+                              repeat
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
+                          {formatDate(tx.datetime)} · {tx.datetime.slice(11, 16)}
+                        </p>
+                      </div>
+                    </div>
 
-                    {/* Category */}
-                    <td className="py-3.5 px-5 whitespace-nowrap">
-                      <CategoryBadge group={tx.categoryGroup} />
-                      {tx.category && (
-                        <span className="block text-[11px] text-slate-500 mt-1 pl-1">{tx.category}</span>
-                      )}
-                    </td>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onEdit(tx)}
+                        title="Edit"
+                        aria-label={`Edit ${tx.name}`}
+                        className="p-1.5 rounded-lg bg-slate-50 border border-slate-200/80 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200 transition-colors cursor-pointer"
+                      >
+                        <span aria-hidden="true" className="material-symbols-outlined !text-[16px]">edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(tx)}
+                        title="Delete"
+                        aria-label={`Delete ${tx.name}`}
+                        className="p-1.5 rounded-lg bg-rose-50/60 border border-rose-200/70 text-rose-500 hover:text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer"
+                      >
+                        <span aria-hidden="true" className="material-symbols-outlined !text-[16px]">delete</span>
+                      </button>
+                    </div>
+                  </div>
 
-                    {/* Amount */}
-                    <td className="py-3.5 px-5 text-right whitespace-nowrap">
+                  {/* Card Details (structured rows) */}
+                  <div className="divide-y divide-slate-100 border-t border-slate-100 text-xs">
+                    <div className="py-2 flex items-center justify-between gap-2">
+                      <span className="text-slate-400 font-medium">Amount</span>
                       <span
                         className={`font-semibold font-mono text-sm ${
                           isExpense ? 'text-slate-900' : 'text-emerald-600'
@@ -352,76 +520,109 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                       >
                         {isExpense ? '' : '+'}{formatCurrency(tx.amount)}
                       </span>
-                    </td>
+                    </div>
 
-                    {/* Actions */}
-                    <td className="py-3.5 pr-4 text-right relative whitespace-nowrap">
-                      <div className="inline-flex items-center gap-0.5">
-                        <button
-                          onClick={() => onView(tx)}
-                          title="View"
-                          className={`${actionButton} hover:text-slate-700 hover:bg-slate-100`}
-                        >
-                          <span className="material-symbols-outlined !text-[18px]">visibility</span>
-                        </button>
-                        <button
-                          onClick={() => onEdit(tx)}
-                          title="Edit"
-                          className={`${actionButton} hover:text-emerald-700 hover:bg-emerald-50`}
-                        >
-                          <span className="material-symbols-outlined !text-[18px]">edit</span>
-                        </button>
-                        <button
-                          onClick={() => onDelete(tx)}
-                          title="Delete"
-                          className={`${actionButton} hover:text-rose-600 hover:bg-rose-50`}
-                        >
-                          <span className="material-symbols-outlined !text-[18px]">delete</span>
-                        </button>
-                        {tx.recurringTransactionId ? (
-                          <span className="p-1.5 text-emerald-600" title="Already recurring">
-                            <span className="material-symbols-outlined !text-[18px]">event_repeat</span>
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => setMenuFor(menuFor === tx.id ? null : tx.id)}
-                            title="Make recurring"
-                            className={`${actionButton} hover:text-emerald-700 hover:bg-emerald-50`}
-                          >
-                            <span className="material-symbols-outlined !text-[18px]">event_repeat</span>
-                          </button>
+                    <div className="py-2 flex items-center justify-between gap-2">
+                      <span className="text-slate-400 font-medium">Category</span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <CategoryBadge group={tx.categoryGroup} />
+                        {tx.category && (
+                          <span className="text-[11px] text-slate-500 truncate max-w-[120px]">{tx.category}</span>
                         )}
                       </div>
-                      {menuFor === tx.id && (
-                        <div
-                          className="absolute right-4 top-full -mt-2 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-1.5 text-left"
-                          onMouseLeave={() => setMenuFor(null)}
-                        >
-                          <p className="px-2 py-1 text-[10px] font-mono font-semibold uppercase text-slate-400">
-                            Make recurring
-                          </p>
-                          {FREQUENCIES.map((frequency) => (
+                    </div>
+
+                    {tx.notes && (
+                      <div className="py-2 flex items-start justify-between gap-3">
+                        <span className="text-slate-400 font-medium shrink-0">Notes</span>
+                        <span className="text-slate-600 text-right break-words">{tx.notes}</span>
+                      </div>
+                    )}
+
+                    {tx.tags.length > 0 && (
+                      <div className="py-2 flex items-start justify-between gap-3">
+                        <span className="text-slate-400 font-medium shrink-0">Tags</span>
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {tx.tags.map((tag) => (
                             <button
-                              key={frequency}
-                              onClick={() => {
-                                setMenuFor(null);
-                                onMakeRecurring(tx, frequency);
-                              }}
-                              className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer"
+                              key={tag}
+                              type="button"
+                              onClick={() => onSelectTag(tag)}
+                              title={`Show only #${tag}`}
+                              className={`px-1.5 py-px rounded-full text-[10px] font-medium border cursor-pointer transition-colors ${
+                                selectedTag?.toLowerCase() === tag.toLowerCase()
+                                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                                  : 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                              }`}
                             >
-                              {FREQUENCY_LABELS[frequency]}
+                              #{tag}
                             </button>
                           ))}
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Card Footer Actions */}
+                  <div className="flex items-center gap-2 pt-1 relative">
+                    <button
+                      type="button"
+                      onClick={() => onView(tx)}
+                      className="flex-1 py-1.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <span aria-hidden="true" className="material-symbols-outlined !text-[16px]">visibility</span>
+                      View details
+                    </button>
+
+                    {tx.recurringTransactionId ? (
+                      <span
+                        className="py-1.5 px-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-700 flex items-center gap-1"
+                        title="Already recurring"
+                      >
+                        <span aria-hidden="true" className="material-symbols-outlined !text-[16px]">event_repeat</span>
+                        Recurring
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setMenuFor(menuFor === tx.id ? null : tx.id)}
+                        className="py-1.5 px-3 rounded-xl bg-emerald-50/70 hover:bg-emerald-100/80 border border-emerald-200 text-xs font-semibold text-emerald-700 flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <span aria-hidden="true" className="material-symbols-outlined !text-[16px]">event_repeat</span>
+                        Repeat
+                      </button>
+                    )}
+
+                    {menuFor === tx.id && (
+                      <div
+                        className="absolute right-0 bottom-full mb-1.5 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-1.5 text-left"
+                        onMouseLeave={() => setMenuFor(null)}
+                      >
+                        <p className="px-2 py-1 text-[10px] font-mono font-semibold uppercase text-slate-400">
+                          Make recurring
+                        </p>
+                        {FREQUENCIES.map((frequency) => (
+                          <button
+                            key={frequency}
+                            type="button"
+                            onClick={() => {
+                              setMenuFor(null);
+                              onMakeRecurring(tx, frequency);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer"
+                          >
+                            {FREQUENCY_LABELS[frequency]}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
+      )}
 
       {/* Table Footer with Pagination Controls */}
       <div className="px-5 md:px-6 py-3.5 bg-slate-50/60 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
